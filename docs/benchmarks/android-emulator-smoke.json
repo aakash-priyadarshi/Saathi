@@ -1,0 +1,39 @@
+{
+  "recordedAt": "2026-10-05",
+  "scope": "Single Android emulator on Windows; software smoke only, not physical phone compatibility",
+  "device": {
+    "avd": "Medium_Phone_API_37.0",
+    "manufacturer": "Google",
+    "model": "sdk_gphone64_x86_64",
+    "android": "17",
+    "sdk": 37,
+    "securityPatch": "2026-05-05"
+  },
+  "app": {
+    "id": "org.saathi.probe",
+    "version": "0.1-probe",
+    "targetSdk": 36,
+    "nearbySdk": "19.5.1"
+  },
+  "checks": {
+    "wrapperBuild": "PASS: assembleDebug and lintDebug with pinned Gradle 9.4.1 and Studio JBR 25",
+    "installAndLaunch": "PASS",
+    "permissionDenial": "PASS: four permissions denied, advertising blocked with recovery text",
+    "permissionRetry": "PASS: all four permissions granted through Android prompt",
+    "advertising": "PASS: SDK advertising success callback; no second device paired",
+    "backgroundBoundary": "PASS: leaving foreground stops SDK discovery, advertising and endpoints",
+    "measurementExport": "PASS: document picker saved parseable local JSON",
+    "unpairedMeasurementControls": "PASS: RTT and transfer controls disabled",
+    "systemInsets": "PASS: status/navigation bars separated from scrolling controls",
+    "runtimeCrash": "NONE observed in app-filtered AndroidRuntime log"
+  },
+  "wifiDirectFeature": true,
+  "wifiAwareFeature": false,
+  "physicalPairingSuccess": null,
+  "physicalRangeMetres": null,
+  "nativeRoundTripMs": null,
+  "nativeThroughputMiBPerSecond": null,
+  "batteryImpact": null,
+  "samsungS24Android16": "NOT RUN: owner will connect later",
+  "secondAndroidPhone": "NOT RUN: model and OS not provided"
+}

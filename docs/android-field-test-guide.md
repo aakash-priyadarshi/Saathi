@@ -2,6 +2,8 @@
 
 The owner's confirmed first phone is a Samsung Galaxy S24 running Android 16. No physical phone tests have run from this workstation. A second Android phone is required for a nearby pairing test; a third is useful for relay testing. Record every model, Android/browser version and security patch in [the device worksheet](nearby-connectivity-device-tests.md).
 
+The owner chose to prepare the build and connect the S24 later. The debug APK is ready at `spikes/android/app/build/outputs/apk/debug/app-debug.apk`. A single Android 17/API 37 emulator passed installation, permission denial/retry, advertising, foreground-stop and JSON-export smoke checks. [Those results](benchmarks/android-emulator-smoke.json) do not fill any physical-phone compatibility row.
+
 ## Prepare on the same secure origin
 
 1. Serve the built web/API behind operator HTTPS with a certificate trusted by both phones. Keep `WEB_ORIGIN` and `PUBLIC_URL` exact. A plain LAN URL such as `http://192.168.1.10:3000` does not provide the secure context required by production service workers, camera and microphone.

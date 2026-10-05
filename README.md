@@ -4,6 +4,8 @@
 
 The web milestone and browser offline/nearby foundation are implemented with real PostgreSQL persistence. This is a local demonstration installation, not a live relief operation. Nearby browser communication is a phone-testing preview; native radio transports remain a measured-device gate. See [implementation status](docs/IMPLEMENTATION_STATUS.md) for the tested scope and remaining work.
 
+Source: [public GitHub repository](https://github.com/aakash-priyadarshi/Saathi). [GitHub Actions](https://github.com/aakash-priyadarshi/Saathi/actions/workflows/ci.yml) runs web/database/browser checks and builds/lints the Android probe on standard Ubuntu runners. Successful Android jobs provide a debug APK artifact retained for seven days. The isolated [Android transport probe](spikes/android/README.md) is ready for the owner's Samsung S24 / Android 16 field tests; it is not a production native client.
+
 ## Local setup
 
 Requires Node.js 22+, pnpm 10, and Docker Desktop with its daemon running.
@@ -48,7 +50,9 @@ packages/auth             Scrypt passwords, token hashing, TOTP verification
 packages/config           Validated configuration and production startup checks
 packages/types            Public response contracts
 packages/validation       Strict shared Zod schemas
+packages/protocol         Signed durable public relief envelopes and receipts
 packages/ui               Accessible common UI feedback and verification
+spikes/android            Synthetic native transport measurement instrument
 tests/unit                Domain and authentication tests
 tests/integration         Real PostgreSQL workflow, authorization, media tests
 tests/e2e                 Desktop/mobile browser workflows and captures

@@ -18,6 +18,8 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.Base64;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -70,6 +72,15 @@ public class ProbeActivity extends Activity {
         int padding = (int) (20 * getResources().getDisplayMetrics().density);
         body.setPadding(padding, padding, padding, padding);
         scroll.addView(body); setContentView(scroll);
+        scroll.setOnApplyWindowInsetsListener((view, insets) -> {
+            var bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+            return insets;
+        });
+        WindowInsetsController bars = getWindow().getInsetsController();
+        if (bars != null) bars.setSystemBarsAppearance(
+            WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
+            WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
         text(body, "Saathi transport test", 26);
         text(body, "Engineering probe only. Uses generated test bytes, not relief data. Keep both phones open. No calls, accounts or publication are provided here.", 16);
         text(body, "Nearby SDK measurement; Wi-Fi Direct discovery and Wi-Fi Aware availability probes. Radio range, lock behavior and battery use must be measured on real phones.", 14);

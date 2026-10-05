@@ -8,6 +8,8 @@ Open this directory as a project in Android Studio, or run `./gradlew :app:assem
 
 With a phone connected and USB debugging authorized, use `adb install -r app/build/outputs/apk/debug/app-debug.apk`, then launch **Saathi transport test**. Installing onto two phones is necessary for native pairing/throughput measurements. No Android Studio MCP is required for Gradle/ADB. Android Studio can be used for logcat/profiling; agent integration is optional.
 
+Local wrapper build, lint, debug signature verification, emulator installation/launch, permission denial/retry, advertising, foreground stop and local JSON export were checked on 5 October 2026. The emulator runs Android 17/API 37; it does not validate the owner's S24/Android 16. The [smoke record](../../docs/benchmarks/android-emulator-smoke.json) keeps all physical latency, throughput, range and battery results empty. The owner chose to connect the physical phone later.
+
 ## Measure
 
 1. On both phones, Allow nearby access. Test denial first and record the outcome. Enable Wi-Fi and Bluetooth through the provided system settings actions; the app never silently toggles radios.

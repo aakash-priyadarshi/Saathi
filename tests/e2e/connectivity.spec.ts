@@ -55,6 +55,9 @@ async function pair(a: Page, b: Page) {
   );
   await a.getByRole('button', { name: 'The codes match' }).click();
   await b.getByRole('button', { name: 'The codes match' }).click();
+  await Promise.all(
+    [a, b].map((p) => expect(p.getByLabel('Offer a small image or text file')).toBeEnabled()),
+  );
 }
 
 test('offline cold opening preserves public information and drafts without caching private URLs', async ({
@@ -151,6 +154,25 @@ test('nearby messages, consented attachment and synthetic video work with websit
     b = await cb.newPage();
   try {
     await ca.grantPermissions(['camera', 'microphone']);
+    // Lose the first capability frame on both phones. Code confirmation must
+    // refresh capabilities rather than permanently disabling files or calls.
+    await Promise.all(
+      [ca, cb].map((context) =>
+        context.addInitScript(() => {
+          const send = RTCDataChannel.prototype.send;
+          let dropped = false;
+          RTCDataChannel.prototype.send = function (
+            data: string | Blob | ArrayBuffer | ArrayBufferView,
+          ) {
+            if (!dropped && typeof data === 'string' && JSON.parse(data).kind === 'HELLO') {
+              dropped = true;
+              return;
+            }
+            return Reflect.apply(send, this, [data]);
+          };
+        }),
+      ),
+    );
     await Promise.all([prepareApp(a), prepareApp(b)]);
     await Promise.all([a.goto('/nearby'), b.goto('/nearby')]);
     // Block website traffic while retaining the local interfaces used by ICE.

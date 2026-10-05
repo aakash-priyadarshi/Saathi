@@ -33,11 +33,14 @@ export class NearbySession {
   private offered = new Set<string>();
   private accepted = new Set<string>();
   reset() {
+    this.remoteMedia = false;
+    this.remoteFiles = false;
     this.sharing.clear();
     this.requested.clear();
     this.offered.clear();
     this.accepted.clear();
     this.fragments.clear();
+    this.onChange();
   }
   onChange: () => void = () => {};
   onError: (message: string) => void = () => {};

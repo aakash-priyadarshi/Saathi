@@ -93,7 +93,10 @@ export class LocalPeer implements SaathiPeerTransport {
   private bind(channel: RTCDataChannel) {
     this.channel = channel;
     channel.bufferedAmountLowThreshold = 32768;
-    channel.onopen = async () => {
+    let opened = false;
+    const open = async () => {
+      if (opened || this.channel !== channel) return;
+      opened = true;
       clearTimeout(this.signalTimer);
       const fingerprints = [this.pc?.localDescription?.sdp, this.pc?.remoteDescription?.sdp]
         .map((sdp) => /a=fingerprint:([^\r\n]+)/.exec(sdp ?? '')?.[1] ?? '')
@@ -101,16 +104,13 @@ export class LocalPeer implements SaathiPeerTransport {
       this.verificationCode = (await hash({ fingerprints, session: this.session }))
         .slice(0, 8)
         .toUpperCase();
+      if (this.channel !== channel || channel.readyState !== 'open') return;
       this.status('CONNECTED');
       this.audio = this.pc?.getTransceivers().find((t) => t.receiver.track.kind === 'audio');
       this.video = this.pc?.getTransceivers().find((t) => t.receiver.track.kind === 'video');
-      void this.send('HELLO', {
-        protocol: 1,
-        maxFrame: 24000,
-        media: Boolean(navigator.mediaDevices?.getUserMedia),
-        files: true,
-      });
+      void this.announce().catch(() => {});
     };
+    channel.onopen = open;
     channel.onclose = () => {
       if (this.channel !== channel) return;
       this.stopMedia();
@@ -124,6 +124,15 @@ export class LocalPeer implements SaathiPeerTransport {
         /* Unrecognized/unbounded peer frames are ignored. */
       }
     };
+    if (channel.readyState === 'open') void open();
+  }
+  announce() {
+    return this.send('HELLO', {
+      protocol: 1,
+      maxFrame: 24000,
+      media: Boolean(navigator.mediaDevices?.getUserMedia),
+      files: true,
+    });
   }
   private async description(type: 'offer' | 'answer') {
     const pc = this.pc!;

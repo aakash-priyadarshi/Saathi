@@ -41,6 +41,7 @@ export function NearbyPage() {
     [mediaAvailable, setMediaAvailable] = useState(false),
     [supported, setSupported] = useState(false),
     [peerMedia, setPeerMedia] = useState(false),
+    [peerFiles, setPeerFiles] = useState(false),
     [code, setCode] = useState('');
   const pendingCall = useRef<{ video: boolean } | undefined>(undefined);
   useEffect(() => {
@@ -51,6 +52,7 @@ export function NearbyPage() {
       setHistory((await messages()).sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
       setAttachments(await (await db()).getAll('attachments'));
       setPeerMedia(value.remoteMedia);
+      setPeerFiles(value.remoteFiles);
     };
     value.peer.onState = (next) => {
       setState(next);
@@ -364,6 +366,9 @@ export function NearbyPage() {
                       onClick={() => {
                         session.current!.confirmed = true;
                         setConfirmed(true);
+                        void run(async () => {
+                          await session.current!.peer.announce();
+                        });
                       }}
                     >
                       The codes match
@@ -515,14 +520,14 @@ export function NearbyPage() {
               </div>
               <label
                 className="button secondary file-button"
-                aria-disabled={!confirmed || busy || paused}
+                aria-disabled={!confirmed || !peerFiles || busy || paused}
               >
                 <Upload size={16} />
                 Offer a small image or text file
                 <input
                   type="file"
                   accept="image/jpeg,image/png,image/webp,text/plain"
-                  disabled={!confirmed || busy || paused}
+                  disabled={!confirmed || !peerFiles || busy || paused}
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) void run(() => session.current!.offerFile(file));
@@ -532,6 +537,11 @@ export function NearbyPage() {
               </label>
               {!confirmed && (
                 <p className="form-hint">Pair and confirm the codes before offering a file.</p>
+              )}
+              {confirmed && !peerFiles && (
+                <p className="form-hint">
+                  Waiting for the other phone to confirm file sharing support.
+                </p>
               )}
               {confirmed && paused && (
                 <p className="form-hint">
