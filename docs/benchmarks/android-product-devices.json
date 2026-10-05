@@ -1,0 +1,547 @@
+{
+  "recordedOn": "2026-10-05",
+  "application": "apps/android, org.saathi.android.dev 1.0.0-dev",
+  "androidVersion": "16 (API 36)",
+  "browser": "Windows Chromium, fresh fixture profiles",
+  "environment": "Fictional isolated local PostgreSQL/API; fixture coordination and native API access via USB reverse",
+  "timingLimits": "Dual fixture milliseconds measure peer barrier arrival skew; browser fixture milliseconds measure driver steps. Neither is radio latency or throughput. Instrumentation seconds come from successful runner output.",
+  "privacy": "No serials, addresses, pairing descriptions, credentials, relief payloads, media recordings or owner data.",
+  "limits": [
+    "Short foreground runs",
+    "No range, sustained battery, degraded-call, screen-lock or reboot proof",
+    "No Android-browser or iOS interoperability claim"
+  ],
+  "runs": [
+    {
+      "fixture": "dual-nearby",
+      "testedAt": "2026-10-05T15:53:18.224Z",
+      "completed": true,
+      "models": ["SM-S921B", "SM-X510"],
+      "transport": "nearby",
+      "thirdPeer": null,
+      "instrumentationSeconds": {
+        "s24": 76.459,
+        "tablet": 76.145
+      },
+      "steps": [
+        {
+          "step": "prepared",
+          "milliseconds": 171,
+          "authorInternetValidated": false,
+          "carrierInternetValidated": false
+        },
+        {
+          "step": "pair-ready-1",
+          "milliseconds": 1
+        },
+        {
+          "step": "code-1",
+          "milliseconds": 67
+        },
+        {
+          "step": "connected-1",
+          "milliseconds": 74,
+          "authorInternetValidated": false,
+          "carrierInternetValidated": false
+        },
+        {
+          "step": "messages-acknowledged",
+          "milliseconds": 100
+        },
+        {
+          "step": "payload-ready",
+          "milliseconds": 2927
+        },
+        {
+          "step": "partial-file-persisted",
+          "milliseconds": 4130
+        },
+        {
+          "step": "interrupted",
+          "milliseconds": 624
+        },
+        {
+          "step": "pair-ready-2",
+          "milliseconds": 22
+        },
+        {
+          "step": "code-2",
+          "milliseconds": 135
+        },
+        {
+          "step": "connected-2",
+          "milliseconds": 593,
+          "authorInternetValidated": false,
+          "carrierInternetValidated": false
+        },
+        {
+          "step": "urgent-event-before-file",
+          "milliseconds": 450
+        },
+        {
+          "step": "resumed-file-hash-verified",
+          "milliseconds": 121
+        },
+        {
+          "step": "author-disconnected",
+          "milliseconds": 696
+        },
+        {
+          "step": "carrier-published-original-signature",
+          "milliseconds": 2704
+        },
+        {
+          "step": "pair-ready-3",
+          "milliseconds": 2
+        },
+        {
+          "step": "code-3",
+          "milliseconds": 66
+        },
+        {
+          "step": "connected-3",
+          "milliseconds": 41,
+          "authorInternetValidated": false,
+          "carrierInternetValidated": false
+        },
+        {
+          "step": "receipt-returned-to-author",
+          "milliseconds": 233
+        },
+        {
+          "step": "complete",
+          "milliseconds": 12
+        }
+      ]
+    },
+    {
+      "fixture": "dual-wifi",
+      "testedAt": "2026-10-05T16:11:12.301Z",
+      "completed": true,
+      "models": ["SM-S921B", "SM-X510"],
+      "transport": "wifi",
+      "thirdPeer": null,
+      "instrumentationSeconds": {
+        "s24": 76.18,
+        "tablet": 75.871
+      },
+      "steps": [
+        {
+          "step": "prepared",
+          "milliseconds": 417,
+          "authorInternetValidated": true,
+          "carrierInternetValidated": true
+        },
+        {
+          "step": "pair-ready-1",
+          "milliseconds": 0
+        },
+        {
+          "step": "offer-1",
+          "milliseconds": 189
+        },
+        {
+          "step": "reply-1",
+          "milliseconds": 336
+        },
+        {
+          "step": "code-1",
+          "milliseconds": 33
+        },
+        {
+          "step": "connected-1",
+          "milliseconds": 5,
+          "authorInternetValidated": true,
+          "carrierInternetValidated": true
+        },
+        {
+          "step": "messages-acknowledged",
+          "milliseconds": 51
+        },
+        {
+          "step": "payload-ready",
+          "milliseconds": 4263
+        },
+        {
+          "step": "partial-file-persisted",
+          "milliseconds": 1918
+        },
+        {
+          "step": "interrupted",
+          "milliseconds": 103
+        },
+        {
+          "step": "pair-ready-2",
+          "milliseconds": 1
+        },
+        {
+          "step": "offer-2",
+          "milliseconds": 424
+        },
+        {
+          "step": "reply-2",
+          "milliseconds": 249
+        },
+        {
+          "step": "code-2",
+          "milliseconds": 79
+        },
+        {
+          "step": "connected-2",
+          "milliseconds": 37,
+          "authorInternetValidated": true,
+          "carrierInternetValidated": true
+        },
+        {
+          "step": "urgent-event-before-file",
+          "milliseconds": 235
+        },
+        {
+          "step": "resumed-file-hash-verified",
+          "milliseconds": 63
+        },
+        {
+          "step": "call-ready-false",
+          "milliseconds": 12
+        },
+        {
+          "step": "call-media-false",
+          "milliseconds": 137,
+          "authorAudioBytes": 99359,
+          "authorVideoFrames": 0,
+          "carrierAudioBytes": 92865,
+          "carrierVideoFrames": 0
+        },
+        {
+          "step": "call-ended-false",
+          "milliseconds": 10
+        },
+        {
+          "step": "call-ready-true",
+          "milliseconds": 2
+        },
+        {
+          "step": "call-media-true",
+          "milliseconds": 256,
+          "authorAudioBytes": 127687,
+          "authorVideoFrames": 98,
+          "carrierAudioBytes": 120784,
+          "carrierVideoFrames": 91
+        },
+        {
+          "step": "call-ended-true",
+          "milliseconds": 51
+        },
+        {
+          "step": "author-disconnected",
+          "milliseconds": 404
+        },
+        {
+          "step": "carrier-published-original-signature",
+          "milliseconds": 576
+        },
+        {
+          "step": "pair-ready-3",
+          "milliseconds": 4
+        },
+        {
+          "step": "offer-3",
+          "milliseconds": 287
+        },
+        {
+          "step": "reply-3",
+          "milliseconds": 559
+        },
+        {
+          "step": "code-3",
+          "milliseconds": 22
+        },
+        {
+          "step": "connected-3",
+          "milliseconds": 24,
+          "authorInternetValidated": true,
+          "carrierInternetValidated": true
+        },
+        {
+          "step": "receipt-returned-to-author",
+          "milliseconds": 63
+        },
+        {
+          "step": "complete",
+          "milliseconds": 14
+        }
+      ]
+    },
+    {
+      "fixture": "SM-X510-browser",
+      "testedAt": "2026-10-05T16:21:20.741Z",
+      "completed": true,
+      "models": ["SM-X510"],
+      "transport": "local-wifi-browser",
+      "thirdPeer": null,
+      "instrumentationSeconds": {
+        "tablet": 21.738
+      },
+      "steps": [
+        {
+          "step": "diagnostic",
+          "milliseconds": 1
+        },
+        {
+          "step": "offer",
+          "milliseconds": 1282
+        },
+        {
+          "step": "diagnostic",
+          "milliseconds": 0
+        },
+        {
+          "step": "confirm",
+          "milliseconds": 20
+        },
+        {
+          "step": "message",
+          "milliseconds": 55
+        },
+        {
+          "step": "file-to-native",
+          "milliseconds": 106
+        },
+        {
+          "step": "file-to-browser",
+          "milliseconds": 8127
+        },
+        {
+          "step": "event",
+          "milliseconds": 115
+        },
+        {
+          "step": "disconnect",
+          "milliseconds": 33
+        },
+        {
+          "step": "diagnostic",
+          "milliseconds": 0
+        },
+        {
+          "step": "diagnostic",
+          "milliseconds": 0
+        },
+        {
+          "step": "diagnostic",
+          "milliseconds": 0
+        },
+        {
+          "step": "diagnostic",
+          "milliseconds": 1
+        },
+        {
+          "step": "offer",
+          "milliseconds": 408
+        },
+        {
+          "step": "diagnostic",
+          "milliseconds": 0
+        },
+        {
+          "step": "confirm",
+          "milliseconds": 23
+        },
+        {
+          "step": "reconnect",
+          "milliseconds": 3
+        },
+        {
+          "step": "complete",
+          "milliseconds": 1
+        }
+      ]
+    },
+    {
+      "fixture": "dual-wifi-browser",
+      "testedAt": "2026-10-05T16:49:24.594Z",
+      "completed": true,
+      "models": ["SM-S921B", "SM-X510"],
+      "transport": "wifi",
+      "thirdPeer": "Windows Chromium",
+      "instrumentationSeconds": {
+        "s24": 83.699,
+        "tablet": 82.86
+      },
+      "steps": [
+        {
+          "step": "prepared",
+          "milliseconds": 786,
+          "authorInternetValidated": true,
+          "carrierInternetValidated": true
+        },
+        {
+          "step": "pair-ready-1",
+          "milliseconds": 9
+        },
+        {
+          "step": "offer-1",
+          "milliseconds": 246
+        },
+        {
+          "step": "reply-1",
+          "milliseconds": 183
+        },
+        {
+          "step": "code-1",
+          "milliseconds": 23
+        },
+        {
+          "step": "connected-1",
+          "milliseconds": 10,
+          "authorInternetValidated": true,
+          "carrierInternetValidated": true
+        },
+        {
+          "step": "messages-acknowledged",
+          "milliseconds": 41
+        },
+        {
+          "step": "payload-ready",
+          "milliseconds": 3469
+        },
+        {
+          "step": "partial-file-persisted",
+          "milliseconds": 1813
+        },
+        {
+          "step": "interrupted",
+          "milliseconds": 6
+        },
+        {
+          "step": "pair-ready-2",
+          "milliseconds": 1
+        },
+        {
+          "step": "offer-2",
+          "milliseconds": 330
+        },
+        {
+          "step": "reply-2",
+          "milliseconds": 180
+        },
+        {
+          "step": "code-2",
+          "milliseconds": 2
+        },
+        {
+          "step": "connected-2",
+          "milliseconds": 2,
+          "authorInternetValidated": true,
+          "carrierInternetValidated": true
+        },
+        {
+          "step": "urgent-event-before-file",
+          "milliseconds": 172
+        },
+        {
+          "step": "resumed-file-hash-verified",
+          "milliseconds": 75
+        },
+        {
+          "step": "call-ready-false",
+          "milliseconds": 3
+        },
+        {
+          "step": "call-media-false",
+          "milliseconds": 142,
+          "authorAudioBytes": 125325,
+          "authorVideoFrames": 0,
+          "carrierAudioBytes": 122109,
+          "carrierVideoFrames": 0
+        },
+        {
+          "step": "call-ended-false",
+          "milliseconds": 5
+        },
+        {
+          "step": "call-ready-true",
+          "milliseconds": 0
+        },
+        {
+          "step": "call-media-true",
+          "milliseconds": 152,
+          "authorAudioBytes": 153049,
+          "authorVideoFrames": 109,
+          "carrierAudioBytes": 149305,
+          "carrierVideoFrames": 95
+        },
+        {
+          "step": "call-ended-true",
+          "milliseconds": 3
+        },
+        {
+          "step": "author-disconnected",
+          "milliseconds": 78
+        },
+        {
+          "step": "browser-offer-event",
+          "milliseconds": 1751
+        },
+        {
+          "step": "browser-code-event",
+          "milliseconds": 236
+        },
+        {
+          "step": "browser-original-event",
+          "milliseconds": 412
+        },
+        {
+          "step": "browser-offer-receipt",
+          "milliseconds": 729
+        },
+        {
+          "step": "browser-code-receipt",
+          "milliseconds": 273
+        },
+        {
+          "step": "browser-share-receipt",
+          "milliseconds": 43
+        },
+        {
+          "step": "browser-receipt-returned",
+          "milliseconds": 181
+        },
+        {
+          "step": "carrier-published-original-signature",
+          "milliseconds": 31
+        },
+        {
+          "step": "pair-ready-3",
+          "milliseconds": 7
+        },
+        {
+          "step": "offer-3",
+          "milliseconds": 287
+        },
+        {
+          "step": "reply-3",
+          "milliseconds": 264
+        },
+        {
+          "step": "code-3",
+          "milliseconds": 11
+        },
+        {
+          "step": "connected-3",
+          "milliseconds": 12,
+          "authorInternetValidated": true,
+          "carrierInternetValidated": true
+        },
+        {
+          "step": "receipt-returned-to-author",
+          "milliseconds": 97
+        },
+        {
+          "step": "complete",
+          "milliseconds": 2
+        }
+      ]
+    }
+  ]
+}

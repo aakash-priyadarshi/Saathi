@@ -182,6 +182,8 @@ The built world is text-led and task-first. Thin rules separate evidence, action
 
 This document refreshes the directional contract from the implemented source in `apps/web/src` and `packages/ui/src`. Token frontmatter is normative; the extension sidecar contains responsive values, motion, and self-contained component specimens. Product facts remain in `PRODUCT.md`.
 
+Native Android extends the same community noticeboard through Kotlin, Jetpack Compose, and Material 3. Read the [Android design extension](docs/android-design.md) with its [surface contract](.impeccable/surfaces/android.md) for implemented native roles, `dp`/`sp` measurements, navigation, states, assets, and bounded finish evidence. The root frontmatter and HTML/CSS component specimens describe the web; the native theme and Compose sources are authoritative for Android. Native metadata is recorded separately at `extensions.platforms.android` in the sidecar.
+
 ## Colors
 
 The palette feels like a public community noticeboard: warm neutrals carry most of the page, with teal for helpful actions and verification, amber for caution, and red for urgency and failure.

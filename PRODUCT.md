@@ -4,11 +4,13 @@
 
 ## Platform
 
-web
+adaptive
+
+Implemented surfaces: web and native Android. The web retains its responsive noticeboard; Android uses native Material 3. No iOS surface is implemented.
 
 ## Stack
 
-User-specified: TypeScript, pnpm, Turborepo, Next.js, NestJS, PostgreSQL/Prisma, Redis/BullMQ; React Native in a later phase.
+Web and service stack: TypeScript, pnpm, Turborepo, Next.js, NestJS, PostgreSQL/Prisma, Redis/BullMQ. Implemented Android client: Kotlin, Jetpack Compose and Material 3 in `apps/android`, supporting API 26+.
 
 ## Users
 

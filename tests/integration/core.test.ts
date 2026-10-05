@@ -14,7 +14,7 @@ import { MediaService, sanitizeImage } from '../../apps/api/src/media/media.serv
 import { ManagementService } from '../../apps/api/src/management/management.service';
 import { S3Storage } from '../../apps/api/src/media/storage';
 import { MediaWorker } from '../../apps/api/src/media/media-worker.service';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, utimes } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFile } from 'node:child_process';
@@ -153,6 +153,102 @@ describe('Real PostgreSQL core workflow', () => {
     expect((await db.mediaAsset.findUniqueOrThrow({ where: { id } })).processingState).toBe(
       'FAILED',
     );
+  });
+  it('prunes only aged unreferenced media while preserving references, fresh uploads and active work', async () => {
+    expect(env.STORAGE_PROVIDER).toBe('local');
+    const root = await mkdtemp(join(tmpdir(), 'saathi-orphan-test-'));
+    const storage = new S3Storage();
+    // Scope this real filesystem provider to the fixture, without changing global configuration.
+    Reflect.set(storage, 'localRoot', root);
+    Reflect.set(storage, 'provider', 'local');
+    const worker = new MediaWorker(db, new MediaService(db, auth, storage));
+    const referencedId = randomUUID(),
+      activeId = randomUUID(),
+      legacyId = randomUUID();
+    const orphanOriginal = `original/${randomUUID()}`;
+    const orphanPublic = `sanitized/${randomUUID()}.jpg`;
+    const fresh = `original/${randomUUID()}`;
+    const referenced = [
+      `original/${referencedId}`,
+      `sanitized/${referencedId}.jpg`,
+      `sanitized/${referencedId}-thumb.jpg`,
+    ];
+    const active = `sanitized/${activeId}-${randomUUID()}.jpg`;
+    const legacy = `sanitized/${legacyId}.jpg`;
+    const unrelated = `unrelated/${randomUUID()}`;
+    const bytes = Buffer.from('isolated storage inventory fixture');
+    const old = new Date(Date.now() - 96 * 60 * 60 * 1000);
+    async function put(key: string, published = false, aged = true) {
+      await storage.putPrivate(key, bytes, 'image/jpeg');
+      if (published) await storage.publish(key, 'image/jpeg');
+      if (aged) {
+        await utimes(resolve(root, 'private', key), old, old);
+        if (published) await utimes(resolve(root, 'public', key), old, old);
+      }
+    }
+    try {
+      for (const [id, processingState] of [
+        [referencedId, 'READY'],
+        [activeId, 'PROCESSING'],
+        [legacyId, 'FAILED'],
+      ] as const)
+        await db.mediaAsset.create({
+          data: {
+            id,
+            processingState,
+            ownerId: volunteer.id,
+            organizationId: volunteer.memberships[0]!.organizationId,
+            originalKey: `original/${id}`,
+            size: bytes.length,
+            mimeType: 'image/jpeg',
+            ...(id === referencedId
+              ? { publicKey: referenced[1], thumbnailKey: referenced[2] }
+              : {}),
+          },
+        });
+      await put(orphanOriginal);
+      await put(orphanPublic, true);
+      await put(fresh, false, false);
+      await put(referenced[0]!);
+      await put(referenced[1]!, true);
+      await put(referenced[2]!, true);
+      await put(active, true);
+      await put(legacy, true);
+      await put(unrelated);
+      expect(await worker.reconcileOrphans(storage)).toEqual({
+        inspected: 13,
+        retained: 10,
+        orphaned: 3,
+        deleted: 0,
+        prune: false,
+      });
+      expect(await storage.readPrivate(orphanOriginal)).toEqual(bytes);
+      expect(await storage.readPublic(orphanPublic)).toEqual(bytes);
+      expect(await worker.reconcileOrphans(storage, true)).toEqual({
+        inspected: 13,
+        retained: 10,
+        orphaned: 3,
+        deleted: 3,
+        prune: true,
+      });
+      await expect(storage.readPrivate(orphanOriginal)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(storage.readPrivate(orphanPublic)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(storage.readPublic(orphanPublic)).rejects.toMatchObject({ code: 'ENOENT' });
+      for (const key of [...referenced, fresh, active, legacy, unrelated])
+        expect(await storage.readPrivate(key!)).toEqual(bytes);
+      expect(await storage.readPublic(referenced[1]!)).toEqual(bytes);
+      expect(await storage.readPublic(active)).toEqual(bytes);
+      await db.mediaAsset.update({ where: { id: activeId }, data: { processingState: 'READY' } });
+      expect((await worker.reconcileOrphans(storage, true)).deleted).toBe(2);
+      await expect(storage.readPrivate(active)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(storage.readPublic(active)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(await storage.readPrivate(legacy)).toEqual(bytes);
+      expect(await storage.readPrivate(unrelated)).toEqual(bytes);
+    } finally {
+      await db.mediaAsset.deleteMany({ where: { id: { in: [referencedId, activeId, legacyId] } } });
+      // mkdtemp creates this exact, isolated directory; ordinary media storage is never pruned.
+      await rm(root, { recursive: true, force: true });
+    }
   });
   it('serves only sanitized reads in the public deployment without auth, signing or write routes', async () => {
     const publicApp = await createApp('public');

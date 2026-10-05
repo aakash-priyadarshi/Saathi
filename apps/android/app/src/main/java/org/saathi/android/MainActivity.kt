@@ -130,8 +130,12 @@ private val tabs = listOf(Triple("Needs", Icons.Outlined.VolunteerActivism, "Rel
             }
             Row(verticalAlignment = Alignment.CenterVertically) { Text(if (completed) "Help that has arrived" else "What’s needed now", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge); IconButton(onClick = { vm.refresh() }, enabled = !state.busy) { Icon(Icons.Outlined.Refresh, "Refresh relief needs") } }
             OutlinedTextField(search, { search = it }, label = { Text("Search needs or locations") }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("All", "Water", "Food", "Medical", "Hygiene", "Clothing", "Power", "Shelter", "Other").forEach { item -> FilterChip(category == item, { category = item }, label = { Text(item) }) } }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { FilterChip(!completed, { completed = false }, label = { Text("Active needs") }); FilterChip(completed, { completed = true }, label = { Text("Completed") }) }
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                FilterChip(!completed, { completed = false }, label = { Text("Active needs") })
+                FilterChip(completed, { completed = true }, label = { Text("Completed") })
+                VerticalDivider(Modifier.height(24.dp))
+                listOf("All", "Water", "Food", "Medical", "Hygiene", "Clothing", "Power", "Shelter", "Other").forEach { item -> FilterChip(category == item, { category = item }, label = { Text(item) }) }
+            }
             Freshness(state.savedAt)
         } }
         items(needs, key = { it.getString("publicId") }) { need -> NeedCard(need) { open(need) } }

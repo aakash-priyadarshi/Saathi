@@ -38,19 +38,42 @@ jobs:
           arch: x86_64
           working-directory: apps/android
           script: ./gradlew :app:connectedDebugAndroidTest --no-daemon
+      - name: Prepare persistent QA signer
+        id: qa-signing
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.SAATHI_STAGING_CONFIG_ROOT_PUBLIC_JWK != '' && vars.SAATHI_STAGING_CONFIG_BOOTSTRAP != ''
+        env:
+          QA_KEYSTORE_BASE64: ${{ secrets.SAATHI_QA_KEYSTORE_BASE64 }}
+          QA_STORE_PASSWORD: ${{ secrets.SAATHI_QA_STORE_PASSWORD }}
+          QA_KEY_ALIAS: ${{ secrets.SAATHI_QA_KEY_ALIAS }}
+          QA_KEY_PASSWORD: ${{ secrets.SAATHI_QA_KEY_PASSWORD }}
+        run: |
+          if [ -z "$QA_KEYSTORE_BASE64" ] || [ -z "$QA_STORE_PASSWORD" ] || [ -z "$QA_KEY_ALIAS" ] || [ -z "$QA_KEY_PASSWORD" ]; then
+            echo 'Staging distribution requires a persistent QA signer; artifact skipped.'
+            exit 0
+          fi
+          umask 077
+          printf '%s' "$QA_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/saathi-qa.jks"
+          echo 'ready=true' >> "$GITHUB_OUTPUT"
       - name: Provisioned staging APK
-        if: vars.SAATHI_STAGING_CONFIG_ROOT_PUBLIC_JWK != '' && vars.SAATHI_STAGING_CONFIG_BOOTSTRAP != ''
+        if: steps.qa-signing.outputs.ready == 'true'
         working-directory: apps/android
         env:
           SAATHI_CONFIG_ROOT_PUBLIC_JWK: ${{ vars.SAATHI_STAGING_CONFIG_ROOT_PUBLIC_JWK }}
           SAATHI_CONFIG_BOOTSTRAP: ${{ vars.SAATHI_STAGING_CONFIG_BOOTSTRAP }}
+          SAATHI_QA_KEYSTORE: ${{ runner.temp }}/saathi-qa.jks
+          SAATHI_QA_STORE_PASSWORD: ${{ secrets.SAATHI_QA_STORE_PASSWORD }}
+          SAATHI_QA_KEY_ALIAS: ${{ secrets.SAATHI_QA_KEY_ALIAS }}
+          SAATHI_QA_KEY_PASSWORD: ${{ secrets.SAATHI_QA_KEY_PASSWORD }}
         run: ./gradlew :app:assembleStaging :app:lintStaging :app:testStagingUnitTest --no-daemon
       - uses: actions/upload-artifact@v4
-        if: vars.SAATHI_STAGING_CONFIG_ROOT_PUBLIC_JWK != '' && vars.SAATHI_STAGING_CONFIG_BOOTSTRAP != ''
+        if: steps.qa-signing.outputs.ready == 'true'
         with:
           name: saathi-android-qa
           path: apps/android/app/build/outputs/apk/staging/app-staging.apk
           retention-days: 7
+      - name: Remove temporary QA signer
+        if: always()
+        run: rm -f "$RUNNER_TEMP/saathi-qa.jks"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

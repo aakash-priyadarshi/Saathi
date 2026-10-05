@@ -6,6 +6,8 @@ For a local development backend, migrate/seed only fictional development data an
 
 ```powershell
 .\scripts\android-build.ps1 -BuildType debug -TrustDirectory .data/android-development
+.\scripts\android-install.ps1 -Model SM-S921B -BuildType debug -ReverseDevelopmentApi
+# Equivalent direct ADB operations after selecting an authorized serial:
 & "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" -s <authorized-device> install -r apps/android/app/build/outputs/apk/debug/app-debug.apk
 & "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" -s <authorized-device> reverse tcp:4000 tcp:4000
 ```
@@ -23,8 +25,10 @@ apksigner verify --verbose --print-certs app-release.apk
 Get-FileHash -Algorithm SHA256 app-release.apk
 ```
 
-Debug/staging currently use the developer debug certificate, suitable for controlled QA, not production distribution. CI debug certificates differ across machines/runs, so replacing a locally signed installed QA app may require uninstalling it, which deletes its private work. Use an operator-owned persistent **QA** keystore before repeated public QA distribution; it must remain distinct from production signing. Preserve pending work before any uninstall or key change.
+Debug uses the local developer certificate. Staging supports an operator-owned persistent **QA** keystore through `SAATHI_QA_KEYSTORE`, `SAATHI_QA_STORE_PASSWORD`, `SAATHI_QA_KEY_ALIAS` and `SAATHI_QA_KEY_PASSWORD`; supplying only part of that configuration fails the build. The QA keystore must remain distinct from production signing. A local staging build without these variables uses the debug certificate for controlled testing only. Staging assembly refuses a missing trust anchor or non-HTTPS bootstrap.
 
-The Android product workflow builds/lints/tests the native app, runs secure-storage instrumentation on an API 36 emulator, and creates a seven-day QA artifact only when repository variables `SAATHI_STAGING_CONFIG_ROOT_PUBLIC_JWK` and `SAATHI_STAGING_CONFIG_BOOTSTRAP` are provisioned. Those variables are public trust data, not private keys. API/browser interoperability fixture tests are opt-in and skipped in the standalone emulator job. The workflow follows the [emulator runner's acceleration setup](https://github.com/ReactiveCircus/android-emulator-runner). Real release signing is deliberately outside the public non-production artifact workflow.
+Create and back up the QA keystore outside Git using the same documented Android signing procedure, with a separate alias and passwords. Keep the certificate stable across QA updates: a different certificate can require uninstalling the app and losing its private work. Preserve pending work before any uninstall or signing-key change. No production or QA keystore is committed.
+
+The Android product workflow builds/lints/tests the native app and runs secure-storage instrumentation on an API 36 emulator. On `main` pushes/manual runs, it creates a seven-day QA artifact only when public repository variables `SAATHI_STAGING_CONFIG_ROOT_PUBLIC_JWK` / `SAATHI_STAGING_CONFIG_BOOTSTRAP` and all four repository secrets `SAATHI_QA_KEYSTORE_BASE64` / `SAATHI_QA_STORE_PASSWORD` / `SAATHI_QA_KEY_ALIAS` / `SAATHI_QA_KEY_PASSWORD` are provisioned. The first secret is the operator's QA keystore encoded as base64; the two variables are public trust data. A missing signer skips distribution while still running Android validation. CI decodes the signer into a permission-restricted temporary file and removes it afterward; pull requests do not receive signing material. API/browser interoperability fixture tests are opt-in and skipped in the standalone emulator job. The workflow follows the [emulator runner's acceleration setup](https://github.com/ReactiveCircus/android-emulator-runner). Production release signing remains outside this public QA workflow.
 
 The public `/download` page displays a download action only after `ANDROID_QA_APK_URL` is set to an approved HTTPS artifact. Publish package/environment, signing-certificate fingerprint and APK SHA-256 alongside any release. Production provider, security and physical connectivity gates are documented in [deployment](deployment-resilience.md) and [testing](android-testing.md).

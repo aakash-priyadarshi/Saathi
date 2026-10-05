@@ -31,6 +31,19 @@ class NativeSyncTest {
             val event = repository.author("REQUEST_CREATED", payload, point.getString("organizationId"))
             val id = event.getString("id")
             assertTrue(Protocol.validEnvelope(event.getJSONObject("envelope"), 0))
+            val savedUser = repository.store.get("account", "user")!!
+            val savedDevice = repository.store.get("account", "device")!!.getString("id")
+            val identity = repository.store.publicKey(savedUser.getString("id")).encoded
+            // The same email must not rebind existing private work to a replacement account ID.
+            repository.store.put("account", "user", org.json.JSONObject(savedUser.toString()).put("id", UUID.randomUUID().toString()))
+            assertThrows(Exception::class.java) { runBlocking { repository.login("android-volunteer@saathi.test", arguments.getString("fixturePassword")!!, "") } }
+            assertNull(repository.store.get("credentials", "session"))
+            assertEquals(id, repository.events().single().getString("id"))
+            repository.store.put("account", "user", savedUser)
+            repository.login("android-volunteer@saathi.test", arguments.getString("fixturePassword")!!, "")
+            assertEquals(savedDevice, repository.store.get("account", "device")!!.getString("id"))
+            assertArrayEquals(identity, repository.store.publicKey(savedUser.getString("id")).encoded)
+            assertEquals(title, repository.store.get("drafts", "fixture")!!.getString("title"))
             repository.store.close()
             repository = Repository(context, scope)
             assertEquals(title, repository.store.get("drafts", "fixture")!!.getString("title"))

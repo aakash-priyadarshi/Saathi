@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-05T06:03:26.932Z",
+  "generatedAt": "2026-10-05T16:52:33.000Z",
   "title": "Design System: Saathi",
   "extensions": {
     "colorMeta": {
@@ -414,7 +414,197 @@
         "value": "1500px",
         "purpose": "min-width: outer container expands to 1360px; narrow surfaces retain their caps."
       }
-    ]
+    ],
+    "platforms": {
+      "android": {
+        "documentation": "docs/android-design.md",
+        "surfaceContract": ".impeccable/surfaces/android.md",
+        "runtime": "Kotlin / Jetpack Compose / Material 3",
+        "minimumApi": 26,
+        "sourcePaths": [
+          "apps/android/app/src/main/java/org/saathi/android/SaathiTheme.kt",
+          "apps/android/app/src/main/java/org/saathi/android/MainActivity.kt",
+          "apps/android/app/src/main/java/org/saathi/android/TeamScreens.kt",
+          "apps/android/app/src/main/java/org/saathi/android/NearbyScreens.kt",
+          "apps/android/app/src/main/java/org/saathi/android/SaathiViewModel.kt"
+        ],
+        "theme": {
+          "selection": "Explicit light/dark schemes selected by isSystemInDarkTheme(); no wallpaper-derived Dynamic Color.",
+          "source": "apps/android/app/src/main/java/org/saathi/android/SaathiTheme.kt",
+          "colorRoleRefs": {
+            "primary": { "light": "{colors.accent}", "dark": "{colors.dark-accent}" },
+            "onPrimary": { "light": "{colors.surface}", "dark": "{colors.dark-paper}" },
+            "primaryContainer": { "light": "{colors.soft}", "dark": "{colors.dark-soft}" },
+            "onPrimaryContainer": { "light": "{colors.ink}", "dark": "{colors.dark-ink}" },
+            "background": { "light": "{colors.paper}", "dark": "{colors.dark-paper}" },
+            "onBackground": { "light": "{colors.ink}", "dark": "{colors.dark-ink}" },
+            "surface": { "light": "{colors.surface}", "dark": "{colors.dark-surface}" },
+            "onSurface": { "light": "{colors.ink}", "dark": "{colors.dark-ink}" },
+            "surfaceVariant": { "light": "{colors.soft}", "dark": "{colors.dark-soft}" },
+            "onSurfaceVariant": { "light": "{colors.muted}", "dark": "{colors.dark-muted}" },
+            "outline": { "light": "{colors.line}", "dark": "{colors.dark-line}" },
+            "error": { "light": "{colors.red}", "dark": "{colors.dark-red}" },
+            "errorContainer": { "light": "{colors.red-bg}", "dark": "{colors.dark-red-bg}" },
+            "onErrorContainer": { "light": "{colors.red}", "dark": "{colors.dark-red}" }
+          },
+          "roleAliases": {
+            "secondary": "primary",
+            "onSecondary": "onPrimary",
+            "secondaryContainer": "primaryContainer",
+            "onSecondaryContainer": "onPrimaryContainer",
+            "outlineVariant": "outline",
+            "surfaceTint": "primary",
+            "surfaceContainer": "surface",
+            "surfaceContainerHigh": "surfaceVariant",
+            "surfaceContainerHighest": "surfaceVariant",
+            "surfaceContainerLow": "background",
+            "surfaceContainerLowest": "surface"
+          },
+          "defaultPolicy": "Unlisted Material color roles retain the installed library defaults. Shared Notice uses primaryContainer even for closed or unavailable states; its written copy supplies meaning."
+        },
+        "typographyMeta": {
+          "unit": "sp",
+          "source": "apps/android/app/src/main/java/org/saathi/android/SaathiTheme.kt",
+          "metricDocumentation": "docs/android-design.md#typography",
+          "loraRoles": ["displaySmall", "headlineMedium"],
+          "manropeRoles": ["headlineSmall", "titleLarge", "titleMedium", "bodyLarge", "bodyMedium", "bodySmall", "labelLarge", "labelMedium"],
+          "invitation": "Two headlineMedium-derived Lora lines; compact source override, italic primary-colored second line.",
+          "defaultPolicy": "Unlisted roles retain Material 3 defaults, including the titleSmall used by shared Notice headings. Native role metrics are not web CSS typography primitives."
+        },
+        "breakpoints": [
+          {
+            "name": "rail-and-two-column-needs",
+            "value": "600dp",
+            "condition": "min-width",
+            "purpose": "NavigationRail replaces NavigationBar; needs grid changes from one to two columns."
+          }
+        ],
+        "layout": {
+          "unit": "dp",
+          "contentMaxWidth": "1000dp",
+          "railWidth": "104dp",
+          "contentPadding": "20dp",
+          "needsGridGap": "16dp",
+          "insets": "Edge-to-edge activity, Scaffold content padding, rail statusBarsPadding, and content imePadding.",
+          "scrolling": "Lazy grids/lists retain viewport continuations; state and category FilterChips share one horizontal scrolling row."
+        },
+        "depth": {
+          "needCards": "Flat OutlinedCard with no custom shadow or hover lift.",
+          "compactNavigationTonalElevation": "0dp",
+          "defaultPolicy": "Other native Material controls and dialogs retain library defaults; the web no-shadow rule is not a claim that every Android component has zero elevation."
+        },
+        "motion": {
+          "policy": "Current Material controls, interaction feedback, and progress indicators; no custom duration token or transition choreography is established.",
+          "evidenceLimit": "The finish verdict did not independently verify Remove animations."
+        },
+        "componentSources": [
+          {
+            "name": "Native actions and fields",
+            "kind": "button / input",
+            "source": "apps/android/app/src/main/java/org/saathi/android/TeamScreens.kt",
+            "api": ["Button", "OutlinedButton", "TextButton", "OutlinedTextField"],
+            "description": "Material controls, written labels, keyboard-specific inputs, password masking, and busy/disabled actions."
+          },
+          {
+            "name": "Native navigation",
+            "kind": "nav",
+            "source": "apps/android/app/src/main/java/org/saathi/android/MainActivity.kt",
+            "api": ["TopAppBar", "NavigationBar", "NavigationRail", "BackHandler"],
+            "description": "Needs, Field, Nearby, Saved; Team action in app bar. Shared contextual Back closes form, then detail, then returns to Needs."
+          },
+          {
+            "name": "Need filters",
+            "kind": "chip",
+            "source": "apps/android/app/src/main/java/org/saathi/android/MainActivity.kt",
+            "api": ["FilterChip", "horizontalScroll"],
+            "description": "Active/Completed state and category selection share one horizontally scrolling row."
+          },
+          {
+            "name": "NeedCard",
+            "kind": "card",
+            "source": "apps/android/app/src/main/java/org/saathi/android/MainActivity.kt",
+            "api": ["OutlinedCard", "LinearProgressIndicator"],
+            "description": "Title, quantity, organization, and complete action precede supporting metadata. Completed uses received quantities/progress, View impact, Help has arrived, and no urgency."
+          },
+          {
+            "name": "Notice and freshness",
+            "kind": "custom",
+            "source": "apps/android/app/src/main/java/org/saathi/android/MainActivity.kt",
+            "api": ["Notice", "Freshness", "Surface"],
+            "description": "Explicit snapshot time, current connection capability, nonproduction disclosure, and dismissible general feedback."
+          },
+          {
+            "name": "Request detail eligibility",
+            "kind": "custom",
+            "source": "apps/android/app/src/main/java/org/saathi/android/TeamScreens.kt",
+            "api": ["RequestDetail"],
+            "description": "New contribution controls require verified organization, eligible nonterminal status, valid future deadline, and positive remaining quantity. Unavailable states show recovery guidance."
+          },
+          {
+            "name": "Nearby decisions",
+            "kind": "custom",
+            "source": "apps/android/app/src/main/java/org/saathi/android/MainActivity.kt",
+            "api": ["AlertDialog", "RequestMultiplePermissions"],
+            "description": "Matching-code pairing, file receipt, incoming calls, and permission actions; nearby connection does not verify identity."
+          },
+          {
+            "name": "Saved work and delivery stages",
+            "kind": "custom",
+            "source": "apps/android/app/src/main/java/org/saathi/android/NearbyScreens.kt",
+            "api": ["SavedScreen", "LazyColumn"],
+            "description": "Separate drafts, signed updates, pending operations, contributions, files, messages, and original-action retries; error text for rejection/conflict/invalidation."
+          },
+          {
+            "name": "Same-account recovery",
+            "kind": "custom",
+            "source": "apps/android/app/src/main/java/org/saathi/android/TeamScreens.kt",
+            "api": ["TeamScreen"],
+            "description": "Sign-in recovery preserves saved work and signing identity, with explicit same-account guidance."
+          }
+        ],
+        "previewPolicy": "Top-level HTML/CSS specimens remain the established web components. Native components are documented from Compose sources and device/emulator captures, not HTML facsimiles.",
+        "assets": {
+          "shippingRasters": [],
+          "launcherVector": "apps/android/app/src/main/res/drawable/ic_saathi.xml",
+          "fonts": [
+            { "family": "Lora", "file": "apps/android/app/src/main/res/font/lora.ttf", "license": "SIL Open Font License 1.1", "licenseFile": "apps/android/app/src/main/assets/lora-license.txt" },
+            { "family": "Manrope", "file": "apps/android/app/src/main/res/font/manrope.ttf", "license": "SIL Open Font License 1.1", "licenseFile": "apps/android/app/src/main/assets/manrope-license.txt" }
+          ],
+          "capturePolicy": "Review PNGs are ignored local-only QA evidence, not shipping artwork or public Git artifacts."
+        },
+        "deliveryStates": ["Saved on this phone", "Shared nearby", "Reached Saathi · Awaiting publication", "Published · Verified Saathi confirmation", "Needs attention"],
+        "narrative": {
+          "northStar": "The Community Noticeboard",
+          "thesis": "A readable community noticeboard that keeps relief quantities and saved-work status understandable in the field.",
+          "rules": [
+            { "name": "The Semantic Color Rule", "body": "Pair every status color with written state. Nearby connection is not volunteer verification, and local saving is not publication.", "section": "colors" },
+            { "name": "The Heading First Rule", "body": "Keep the human-readable need title ahead of quantity, category, and organization metadata.", "section": "typography" },
+            { "name": "The Task First Rule", "body": "Preserve the reviewed normal-phone path from compact invitation to search, filters, freshness, and the first need's quantity, organization, and complete action. Large text, landscape, and keyboard states may continue below the viewport through scrolling; the captures do not prove all device/font combinations.", "section": "layout" }
+          ]
+        },
+        "review": {
+          "verdict": ".impeccable/review/android/finish-verdict-final.md",
+          "visibility": "Verdict and captures are ignored local-only QA evidence; these paths are not public Git links.",
+          "publicEvidence": ["docs/android-testing.md", "docs/benchmarks/android-product-devices.json"],
+          "disposition": "ship",
+          "scope": "Exactly the original four material findings; all four resolved. Fix-list verdict only, not whole-surface, independent gesture/device, transport, or production certification.",
+          "sourceOnlyEvidence": ["Unavailable-verification eligibility branch", "Common contextual callback assignment for system and visible app-bar Back"],
+          "detector": "Skipped: native Kotlin/Compose is not HTML/CSS.",
+          "captures": [
+            ".impeccable/review/android/phone-needs-dark.png",
+            ".impeccable/review/android/tablet-needs-dark.png",
+            ".impeccable/review/android/emulator-needs-light.png",
+            ".impeccable/review/android/emulator-nearby-dark.png",
+            ".impeccable/review/android/emulator-nearby-large-text.png",
+            ".impeccable/review/android/emulator-team-keyboard.png",
+            ".impeccable/review/android/emulator-team-landscape.png",
+            ".impeccable/review/android/emulator-team-recovery.png",
+            ".impeccable/review/android/emulator-completed-light.png",
+            ".impeccable/review/android/emulator-closed-detail.png"
+          ]
+        }
+      }
+    }
   },
   "components": [
     {

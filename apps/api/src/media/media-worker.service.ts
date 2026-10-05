@@ -99,4 +99,59 @@ export class MediaWorker {
       cursor = assets[assets.length - 1]!.id;
     }
   }
+  async reconcileOrphans(storage: S3Storage, prune = false) {
+    // Three days cover ordinary upload/worker interruptions. Referenced originals are retained.
+    const cutoff = Date.now() - 72 * 60 * 60 * 1000;
+    const counts = { inspected: 0, retained: 0, orphaned: 0, deleted: 0, prune };
+    for (const area of ['private', 'public'] as const) {
+      for await (const object of storage.inventory(area)) {
+        counts.inspected++;
+        if (
+          !Number.isFinite(object.modifiedAt.getTime()) ||
+          object.modifiedAt.getTime() >= cutoff
+        ) {
+          counts.retained++;
+          continue;
+        }
+        const outcome = await this.db.atomic(async (tx) => {
+          const ownerId =
+            /^(?:original|sanitized)\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})(?:$|-|\.)/.exec(
+              object.key,
+            )?.[1];
+          if (ownerId)
+            await tx.$queryRaw`SELECT id FROM "MediaAsset" WHERE id=${ownerId} FOR UPDATE`;
+          const reference = await tx.mediaAsset.findFirst({
+            where: {
+              OR: [
+                { originalKey: object.key },
+                { publicKey: object.key },
+                { thumbnailKey: object.key },
+              ],
+            },
+            select: { id: true },
+          });
+          const owner = ownerId ? await tx.mediaAsset.findUnique({ where: { id: ownerId } }) : null;
+          // Preserve active attempts and legacy unversioned derivatives, which inline work may reuse.
+          const unversioned =
+            ownerId !== undefined &&
+            (object.key.startsWith(`sanitized/${ownerId}.`) ||
+              object.key.startsWith(`sanitized/${ownerId}-thumb.`));
+          if (
+            reference ||
+            (owner && (['PENDING', 'PROCESSING'].includes(owner.processingState) || unversioned))
+          ) {
+            return 'retained' as const;
+          }
+          if (prune) {
+            if (area === 'private') await storage.deletePrivate(object.key);
+            else await storage.hide(object.key);
+          }
+          return 'orphaned' as const;
+        });
+        counts[outcome]++;
+        if (outcome === 'orphaned' && prune) counts.deleted++;
+      }
+    }
+    return counts;
+  }
 }

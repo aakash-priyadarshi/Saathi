@@ -7,11 +7,12 @@ import {
   GetObjectCommand,
   DeleteObjectCommand,
   PutBucketPolicyCommand,
+  ListObjectsV2Command,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { env } from '@saathi/config';
 import { resolve, dirname } from 'node:path';
-import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, unlink, readdir, lstat } from 'node:fs/promises';
 import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
 export interface MediaStorageProvider {
   putPrivate(key: string, bytes: Buffer, mime: string): Promise<void>;
@@ -23,6 +24,7 @@ export interface MediaStorageProvider {
 }
 @Injectable()
 export class S3Storage implements MediaStorageProvider {
+  private readonly provider = env.STORAGE_PROVIDER;
   private readonly localRoot = env.LOCAL_MEDIA_DIR;
   private readonly signingKey = randomBytes(32);
   private readonly client = new S3Client({
@@ -32,7 +34,7 @@ export class S3Storage implements MediaStorageProvider {
     credentials: { accessKeyId: env.S3_ACCESS_KEY, secretAccessKey: env.S3_SECRET_KEY },
   });
   async initializeLocal() {
-    if (env.STORAGE_PROVIDER === 'local') {
+    if (this.provider === 'local') {
       await mkdir(this.localRoot, { recursive: true });
       return;
     }
@@ -66,8 +68,54 @@ export class S3Storage implements MediaStorageProvider {
       throw new Error('Invalid object key');
     return resolve(this.localRoot, area, key);
   }
+  /** Only Saathi-owned media prefixes; never inventory or delete unrelated bucket objects. */
+  async *inventory(area: 'private' | 'public') {
+    const owned = /^(original|sanitized)\/[a-f0-9-]+(?:-thumb)?(?:\.[a-z0-9]+)?$/;
+    for (const prefix of ['original', 'sanitized']) {
+      if (this.provider === 'local') {
+        const directory = resolve(this.localRoot, area, prefix);
+        const folder = await lstat(directory).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== 'ENOENT') throw error;
+          return null;
+        });
+        if (!folder) continue;
+        if (!folder.isDirectory() || folder.isSymbolicLink())
+          throw new Error('Media inventory requires an ordinary directory.');
+        for (const entry of await readdir(directory, { withFileTypes: true })) {
+          const key = `${prefix}/${entry.name}`;
+          if (!entry.isFile() || !owned.test(key)) continue;
+          const metadata = await lstat(this.path(area, key)).catch(
+            (error: NodeJS.ErrnoException) => {
+              if (error.code !== 'ENOENT') throw error;
+              return null;
+            },
+          );
+          if (metadata?.isFile()) yield { key, modifiedAt: metadata.mtime };
+        }
+      } else {
+        let continuation: string | undefined;
+        do {
+          const result = await this.client.send(
+            new ListObjectsV2Command({
+              Bucket: area === 'private' ? env.S3_PRIVATE_BUCKET : env.S3_PUBLIC_BUCKET,
+              Prefix: `${prefix}/`,
+              MaxKeys: 200,
+              ContinuationToken: continuation,
+            }),
+          );
+          for (const object of result.Contents || [])
+            if (object.Key && object.LastModified && owned.test(object.Key))
+              yield { key: object.Key, modifiedAt: object.LastModified };
+          const next = result.IsTruncated ? result.NextContinuationToken : undefined;
+          if (result.IsTruncated && (!next || next === continuation))
+            throw new Error('Media inventory pagination did not advance.');
+          continuation = next;
+        } while (continuation);
+      }
+    }
+  }
   async deletePrivate(key: string) {
-    if (env.STORAGE_PROVIDER === 'local') {
+    if (this.provider === 'local') {
       await unlink(this.path('private', key)).catch((error: NodeJS.ErrnoException) => {
         if (error.code !== 'ENOENT') throw error;
       });
@@ -75,7 +123,7 @@ export class S3Storage implements MediaStorageProvider {
       await this.client.send(new DeleteObjectCommand({ Bucket: env.S3_PRIVATE_BUCKET, Key: key }));
   }
   async putPrivate(key: string, bytes: Buffer, mime: string) {
-    if (env.STORAGE_PROVIDER === 'local') {
+    if (this.provider === 'local') {
       const path = this.path('private', key);
       await mkdir(dirname(path), { recursive: true });
       await writeFile(path, bytes);
@@ -91,7 +139,7 @@ export class S3Storage implements MediaStorageProvider {
     );
   }
   async readPrivate(key: string) {
-    if (env.STORAGE_PROVIDER === 'local') return readFile(this.path('private', key));
+    if (this.provider === 'local') return readFile(this.path('private', key));
     const r = await this.client.send(
       new GetObjectCommand({ Bucket: env.S3_PRIVATE_BUCKET, Key: key }),
     );
@@ -100,7 +148,7 @@ export class S3Storage implements MediaStorageProvider {
   }
   async publish(key: string, mime: string) {
     const bytes = await this.readPrivate(key);
-    if (env.STORAGE_PROVIDER === 'local') {
+    if (this.provider === 'local') {
       const path = this.path('public', key);
       await mkdir(dirname(path), { recursive: true });
       await writeFile(path, bytes);
@@ -117,8 +165,10 @@ export class S3Storage implements MediaStorageProvider {
     );
   }
   async hide(key: string) {
-    if (env.STORAGE_PROVIDER === 'local') {
-      await unlink(this.path('public', key)).catch(() => {});
+    if (this.provider === 'local') {
+      await unlink(this.path('public', key)).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw error;
+      });
       return;
     }
     await this.client.send(new DeleteObjectCommand({ Bucket: env.S3_PUBLIC_BUCKET, Key: key }));
@@ -127,7 +177,7 @@ export class S3Storage implements MediaStorageProvider {
     return readFile(this.path('public', key));
   }
   async signedOriginal(key: string) {
-    if (env.STORAGE_PROVIDER === 'local') {
+    if (this.provider === 'local') {
       const expires = Date.now() + 60000;
       const sig = createHmac('sha256', this.signingKey).update(`${key}:${expires}`).digest('hex');
       return `${env.PUBLIC_URL}/api/v1/local-original?key=${encodeURIComponent(key)}&expires=${expires}&signature=${sig}`;

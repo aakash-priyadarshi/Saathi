@@ -2,9 +2,9 @@
 
 ## Android production milestone — in progress, 5 October 2026
 
-`apps/android` is a native Kotlin/Compose product, separate from the research probe. Receipt rotation, signed endpoint configuration, fail-closed hosted signing, encrypted native work/Keystore identity, durable ordinary-write retry keys, public-read isolation, carrier observations and a leased media worker are implemented. Five native protocol tests, 15 shared unit tests, 32 PostgreSQL integration tests and all 14 browser cases pass. Both physical Samsung devices passed three secure-storage tests plus native signed API and lost-response/idempotent-retry tests; an emulator draft survived actual process death.
+`apps/android` is a native Kotlin/Compose product, separate from the research probe. Receipt rotation, signed endpoint configuration, fail-closed hosted signing, encrypted native work/Keystore identity, durable ordinary-write retry keys, public-read isolation, carrier observations, a leased media worker and explicit guarded orphan maintenance are implemented. Five native protocol tests, 17 shared/API unit tests, 33 PostgreSQL integration tests and all 14 browser cases pass. Both physical Samsung devices passed three secure-storage tests plus native signed API and lost-response/idempotent-retry tests; an emulator draft survived actual process death.
 
-The physical S24/tablet product passed offline native Nearby pairing, bidirectional durable messages, interrupted 4 MiB file resume/hash verification, urgent original-event priority, author-absent carrier publication and signed receipt return. The physical local-Wi-Fi fixture also passed both hardware audio/video receipt checks and the data/relay scenarios. Tablet-to-Windows-browser pairing, bidirectional 1 MiB files/messages, original event and reconnect passed. Hosted QA, provider/TLS/restore proof, broader lifecycle/range/battery tests, native finish review and final CI/publication remain incomplete. [Detailed evidence](android-testing.md), [architecture](android-architecture.md), [trust ADR](adr/0003-signed-service-configuration.md) and [release gates](deployment-resilience.md) state the limits precisely.
+The physical S24/tablet product passed offline native Nearby pairing, bidirectional durable messages, interrupted 4 MiB file resume/hash verification, urgent original-event priority, author-absent carrier publication and signed receipt return. The physical local-Wi-Fi fixture also passed both hardware audio/video receipt checks and the data/relay scenarios. Tablet-to-Windows-browser pairing, bidirectional 1 MiB files/messages, original event and reconnect passed. S24 → tablet → Windows Chromium → API also passed at two peer hops with the author disconnected and the signed receipt returning to the S24. Same-account recovery preserves the device identity/draft; same-email replacement identities are rejected. The native finish reviewer scored all four named fixes resolved, at that limited scope. Both native and web/API CI passed for `264d405`; follow-up corrections need a final run. Hosted QA, real provider/TLS/restore proof and broader lifecycle/range/battery tests remain incomplete. [Detailed evidence](android-testing.md), [architecture](android-architecture.md), [trust ADR](adr/0003-signed-service-configuration.md) and [release gates](deployment-resilience.md) state the limits precisely.
 
 Updated 5 October 2026. Platform name: **Saathi**. The online web workflow, durable offline PWA and browser nearby preview are operational on this development host with real PostgreSQL persistence. Checkmarks mean implemented and locally verified; they do not imply a live deployment, physical-phone compatibility or completed production certification.
 
@@ -39,7 +39,8 @@ Updated 5 October 2026. Platform name: **Saathi**. The online web workflow, dura
 - [x] ClamAV INSTREAM adapter and production refusal of disabled scanning
 - [ ] Actual operator S3/R2, ClamAV and Resend integration tests
 - [x] Separate media worker with durable job leases and publication visibility repair
-- [ ] Automatic face detection/blur, complete orphan inventory/retention and real-provider reconciliation checks
+- [x] Explicit orphan dry-run/prune command with 72-hour grace, reference/active-job protection and isolated PostgreSQL/filesystem verification
+- [ ] Automatic face detection/blur, operator retention policy, bucket versions/CDN invalidation and live-provider reconciliation checks
 
 ## Phase 3 — resilient connectivity foundation and browser preview
 
@@ -60,14 +61,14 @@ Updated 5 October 2026. Platform name: **Saathi**. The online web workflow, dura
 - [ ] Broader device compatibility, physical browser/hotspot/range/battery/background/screen-lock measurements, Direct/Aware data-path comparisons
 - [x] Native Android client, foreground Nearby discovery and original-author relay through a temporary carrier
 - [ ] iOS client, broader radio adapters and background hub policy
-- [ ] Browser-to-native and cross-platform transport proofs before selecting or advertising production native transports
+- [x] Physical Windows Chromium ↔ Android native messages/files/events/reconnect and two-hop receipt relay; Android-browser/iOS proofs remain unverified
 
 The browser nearby feature is a **phone-testing preview**. It requires a previously prepared secure origin, a reachable local Wi-Fi/hotspot path and foreground use. It cannot enable system radios or discover arbitrary nearby phones. Native Android Nearby now has product evidence above; direct BLE, Wi-Fi Direct/Aware and iOS remain unsupported. Neither product nor probe evidence establishes production range, battery or background reliability.
 
 ## Validation recorded
 
-- `pnpm test`: **15 unit tests passed**.
-- `pnpm test:integration`: **32 integration tests passed**, using a separate test schema on PostgreSQL 17.
+- `pnpm test`: **17 unit tests passed**, including S3 pagination-response and stalled-token fixtures; these are not live S3 verification.
+- `pnpm test:integration`: **33 integration tests passed**, using a separate test schema on PostgreSQL 17 and a dedicated temporary filesystem root for pruning.
 - Browser validation: **all 14 cases passed in a full GitHub Actions run**, across desktop and mobile-width projects, including the six original workflows and eight connectivity cases. Capability recovery is tested by deliberately dropping the initial capability frame; file sharing waits for actual remote support.
 - `pnpm lint`, `pnpm typecheck` and `pnpm build`: passed across all nine workspaces. The root TypeScript check also covers the test sources.
 - Image/video sanitization, publication/withdrawal, concurrent final-quantity allocation, twenty competing partial contributions, duplicate idempotent retries, CSRF, cross-organization access, session revocation, volunteer approval/suspension and audit constraints have automated coverage.
@@ -83,9 +84,9 @@ The browser nearby feature is a **phone-testing preview**. It requires a previou
 ## Later phases and release gates
 
 - [ ] iOS app, broader native transport/device verification and platform background policy; Android and OS-secured credentials are implemented above
-- [ ] Physical range, battery, reconnection, screen-lock and battery-saver tests; validate the second Android phone before compatibility claims
+- [ ] Physical range, sustained battery, degraded calls, screen-lock and battery-saver tests; foreground native reconnect is verified on S24/tablet only
 - [ ] MFA enrollment, encrypted secret provisioning, recovery codes, password reset and production operator bootstrap UI
-- [ ] Independent security/load review, least-privilege infrastructure, distributed rate limiting and media process isolation
+- [ ] Independent security/load review, least-privilege infrastructure, distributed rate limiting and deployed media-container containment verification
 - [ ] Cursor pagination and shared SSE polling for larger installations
 - [ ] Production backup/restore drill, retention policy, alerting, real provider integration and deployment-specific TLS/CSP verification
 

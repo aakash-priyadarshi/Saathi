@@ -2,6 +2,10 @@ plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.plugin.compose'
 def configRoot = providers.environmentVariable('SAATHI_CONFIG_ROOT_PUBLIC_JWK').orElse('{}').get()
 def bootstrap = providers.environmentVariable('SAATHI_CONFIG_BOOTSTRAP').orElse('').get()
 def quote = { value -> groovy.json.JsonOutput.toJson(value) }
+def qaFields = ['SAATHI_QA_KEYSTORE', 'SAATHI_QA_STORE_PASSWORD', 'SAATHI_QA_KEY_ALIAS', 'SAATHI_QA_KEY_PASSWORD']
+def hasQaSigner = qaFields.any { System.getenv(it) }
+if (hasQaSigner && !qaFields.every { System.getenv(it) })
+    throw new GradleException('Persistent QA signing requires all four SAATHI_QA signing variables.')
 android {
     namespace 'org.saathi.android'
     compileSdk { version = release(37) { minorApiLevel = 0 } }
@@ -17,6 +21,14 @@ android {
         buildConfigField 'String', 'BOOTSTRAP', quote(bootstrap)
     }
     signingConfigs {
+        qa {
+            if (hasQaSigner) {
+                storeFile file(System.getenv('SAATHI_QA_KEYSTORE'))
+                storePassword System.getenv('SAATHI_QA_STORE_PASSWORD')
+                keyAlias System.getenv('SAATHI_QA_KEY_ALIAS')
+                keyPassword System.getenv('SAATHI_QA_KEY_PASSWORD')
+            }
+        }
         release {
             if (System.getenv('SAATHI_RELEASE_KEYSTORE')) {
                 storeFile file(System.getenv('SAATHI_RELEASE_KEYSTORE'))
@@ -34,6 +46,7 @@ android {
         }
         staging {
             initWith debug
+            signingConfig hasQaSigner ? signingConfigs.qa : signingConfigs.debug
             applicationIdSuffix '.qa'
             versionNameSuffix '-qa'
             matchingFallbacks = ['debug']
@@ -52,6 +65,10 @@ android {
     packaging { resources.excludes += ['META-INF/versions/**', 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'] }
 }
 tasks.configureEach {
+    if (name in ['assembleStaging', 'bundleStaging']) doFirst {
+        if (configRoot == '{}' || !bootstrap.startsWith('https://'))
+            throw new GradleException('Staging requires its configuration trust anchor and HTTPS bootstrap.')
+    }
     if (name in ['assembleRelease', 'bundleRelease']) doFirst {
         if (!System.getenv('SAATHI_RELEASE_KEYSTORE') || configRoot == '{}' || !bootstrap.startsWith('https://'))
             throw new GradleException('Release requires an external keystore and production configuration trust anchor/bootstrap.')
