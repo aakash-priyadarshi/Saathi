@@ -1,6 +1,6 @@
 # Android transport probe
 
-This is an isolated, foreground architecture instrument, not the native Saathi client. It sends only synthetic benchmark bytes. It does not sign/publish relief events, bridge to browsers, record calls, collect GPS, or demonstrate background execution. The first physical target is Samsung S24 / Android 16. No device was connected when the project was prepared; do not fill compatibility cells from a successful build.
+This is an isolated, foreground architecture instrument, not the native Saathi client. It sends only synthetic benchmark bytes. It does not sign/publish relief events, bridge to browsers, record calls, collect GPS, or demonstrate background execution. It is installed on the owner's non-rooted Samsung S24 / Android 16. Native connection and performance measurements still require a second physical phone; do not fill those compatibility cells from an installation or emulator.
 
 ## Build and install
 
@@ -12,13 +12,13 @@ Local wrapper build, lint, debug signature verification, emulator installation/l
 
 ## Measure
 
-1. On both phones, Allow nearby access. Test denial first and record the outcome. Enable Wi-Fi and Bluetooth through the provided system settings actions; the app never silently toggles radios.
+1. On both phones, Allow nearby access. Test denial first and record the outcome. If repeated denial stops Android showing the prompt, use **Open app permission settings → Permissions → Nearby devices → Allow**, then return. Enable Wi-Fi and Bluetooth through the provided system settings actions; the app never silently toggles radios.
 2. Advertise on A and Find nearby test phones on B. Choose the temporary Saathi identifier, compare the authentication digits on both phones and accept only matching codes. Repeat at least 20 times. Setup time includes human confirmation and must be compared on that basis.
 3. Run 20 message round trips. The report contains raw samples, median and p95. A missing reply becomes an incomplete result after 30 seconds, not a success.
 4. Offer the generated 1 MiB transfer. B must explicitly accept. Chunks are 8 KiB with stop-and-wait acknowledgements; this measures bounded application throughput, not peak radio capacity. B verifies SHA-256 before recording checksum success. A timed-out transfer stays a failure. Repeat at measured distances and on the chosen network/radio conditions.
 5. Show device capabilities and run Wi-Fi Direct discovery separately from Nearby. Only feature/availability and peer counts are recorded for Direct/Aware; these are not connection/throughput proofs. No peer hardware addresses or personal device names are exported.
 6. Save measurement JSON through Android's document picker. Reports remain local until the tester explicitly shares them. Compare battery snapshots against a controlled idle baseline using Android Studio's profiler; the probe does not manufacture battery-impact estimates.
 
-The app stops the session when it leaves the foreground. This deliberately records a boundary, not support for locked/background operation. Native foreground-service/background policy, Direct/Aware/hotspot data paths and browser bridges remain separate spikes before selecting a production adapter. Use [the device worksheet](../../docs/nearby-connectivity-device-tests.md) for range, permissions, network changes and compatibility evidence.
+The app keeps its own foreground test screen awake and stops the session when it leaves the foreground. It does not change the phone's lock policy; a manually locked phone still needs its owner to unlock it. This deliberately records a boundary, not support for locked/background operation. Native foreground-service/background policy, Direct/Aware/hotspot data paths and browser bridges remain separate spikes before selecting a production adapter. Use [the device worksheet](../../docs/nearby-connectivity-device-tests.md) for range, permissions, network changes and compatibility evidence.
 
 Nearby Connections is supplied by Google Play services and may collect SDK usage analytics. This probe checks Play services availability and adds no analytics. Read [Google's overview](https://developers.google.com/nearby/connections/overview), [permissions](https://developers.google.com/nearby/connections/android/get-started), [authenticated connection guidance](https://developers.google.com/nearby/connections/android/manage-connections), [SDK versions](https://developers.google.com/android/guides/setup), [AGP compatibility](https://developer.android.com/build/releases/agp-9-2-0-release-notes) and [Gradle/JDK compatibility](https://docs.gradle.org/current/userguide/compatibility.html).

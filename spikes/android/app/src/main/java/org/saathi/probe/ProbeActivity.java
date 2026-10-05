@@ -20,6 +20,7 @@ import android.provider.Settings;
 import android.util.Base64;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -65,6 +66,7 @@ public class ProbeActivity extends Activity {
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         client = Nearby.getConnectionsClient(this);
         ScrollView scroll = new ScrollView(this);
         LinearLayout body = new LinearLayout(this);
@@ -86,6 +88,8 @@ public class ProbeActivity extends Activity {
         text(body, "Nearby SDK measurement; Wi-Fi Direct discovery and Wi-Fi Aware availability probes. Radio range, lock behavior and battery use must be measured on real phones.", 14);
         state = text(body, "Allow nearby access, then advertise on one phone and search on the other.", 16);
         button(body, "Allow nearby access", this::permissions);
+        button(body, "Open app permission settings", () -> startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.parse("package:" + getPackageName()))));
         button(body, "Open Wi-Fi settings", () -> startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS)));
         button(body, "Open Bluetooth settings", () -> startActivity(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS)));
         button(body, "Show device capabilities", this::capabilities);
@@ -126,7 +130,7 @@ public class ProbeActivity extends Activity {
     }
     private boolean ready() {
         for (String permission : PERMISSIONS) if (checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
-            note("not_ready", "Allow nearby access through the permission prompt. Denied access is a test result."); return false;
+            note("not_ready", "Allow nearby access. If the prompt no longer appears, use Open app permission settings. Denied access is a test result."); return false;
         }
         if (GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this) != ConnectionResult.SUCCESS) {
             note("not_ready", "Compatible Google Play services is unavailable; use the other transport probes."); return false;
@@ -316,6 +320,7 @@ public class ProbeActivity extends Activity {
         try (var out = getContentResolver().openOutputStream(data.getData())) {
             if (out == null) throw new IllegalStateException("No report destination");
             out.write(new JSONObject().put("format", "saathi-android-probe-v1").put("sdk", "Nearby 19.5.1")
+                .put("appVersion", getPackageManager().getPackageInfo(getPackageName(), PackageManager.PackageInfoFlags.of(0)).versionName)
                 .put("scope", "Foreground synthetic-data probe; not production compatibility")
                 .put("measurements", evidence).toString(2).getBytes(StandardCharsets.UTF_8));
             note("export", "Saved measurement report");
