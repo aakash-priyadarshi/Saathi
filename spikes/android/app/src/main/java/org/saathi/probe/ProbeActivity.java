@@ -57,6 +57,8 @@ public class ProbeActivity extends Activity {
     private WifiP2pManager.Channel directChannel;
     private LinearLayout peers;
     private TextView state;
+    private AlertDialog pairingDialog;
+    private String pendingPair;
     private String connected, incomingId, outgoingId, pingRun;
     private byte[] received;
     private int nextReceived, nextSent, pingIndex;
@@ -184,19 +186,24 @@ public class ProbeActivity extends Activity {
     }
     private final ConnectionLifecycleCallback lifecycle = new ConnectionLifecycleCallback() {
         @Override public void onConnectionInitiated(String id, ConnectionInfo info) {
-            new AlertDialog.Builder(ProbeActivity.this).setTitle("Compare both phone codes")
+            closePairingDialog(); pendingPair = id;
+            pairingDialog = new AlertDialog.Builder(ProbeActivity.this).setTitle("Compare both phone codes")
                 .setMessage(info.getEndpointName() + "\n" + info.getAuthenticationDigits() + "\nAccept only when both phones show the same code.")
                 .setPositiveButton("Codes match", (d, which) -> client.acceptConnection(id, payloads).addOnFailureListener(ProbeActivity.this::fail))
                 .setNegativeButton("Reject", (d, which) -> client.rejectConnection(id))
                 .setOnCancelListener(d -> client.rejectConnection(id)).show();
         }
         @Override public void onConnectionResult(String id, ConnectionResolution result) {
+            if (id.equals(pendingPair)) closePairingDialog();
             if (result.getStatus().isSuccess()) {
                 connected = id; client.stopDiscovery(); client.stopAdvertising(); available(true);
                 note("paired", new JSONObject(Map.of("setupMs", SystemClock.elapsedRealtime() - pairBegan, "includesHumanConfirmation", true)));
             } else note("pair_failed", result.getStatus().toString());
         }
-        @Override public void onDisconnected(String id) { if (id.equals(connected)) stop("Connection lost; repeat pairing to measure reconnection"); }
+        @Override public void onDisconnected(String id) {
+            if (id.equals(pendingPair)) closePairingDialog();
+            if (id.equals(connected)) stop("Connection lost; repeat pairing to measure reconnection");
+        }
     };
     private JSONObject frame(String type) throws Exception { return new JSONObject().put("v", 1).put("type", type); }
     private void send(JSONObject value) {
@@ -305,7 +312,12 @@ public class ProbeActivity extends Activity {
             @Override public void onFailure(int reason) { channel.close(); }
         }); } catch (SecurityException e) { channel.close(); fail(e); }
     }
+    private void closePairingDialog() {
+        if (pairingDialog != null) pairingDialog.dismiss();
+        pairingDialog = null; pendingPair = null;
+    }
     private void stop(String reason) {
+        closePairingDialog();
         stopDirect();
         connected = null; testing = false; receiving = false;
         received = null; incomingId = null; outgoingId = null; available(false);
