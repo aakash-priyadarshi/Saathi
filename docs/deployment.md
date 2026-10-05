@@ -2,6 +2,8 @@
 
 The source includes a Docker build and CI workflow. They are provided for operator deployment, not a claim that a live deployment has occurred. The Docker daemon on the development host was unavailable; the image build has not been executed here. PostgreSQL integration tests ran with the native local PostgreSQL fallback.
 
+The [public repository's CI](https://github.com/aakash-priyadarshi/Saathi/actions/runs/37272841824) passed lint, type checks, unit/database/browser tests, production workspace builds and Android probe build/lint for code commit `405c58c`. It runs on standard Ubuntu runners with PostgreSQL 17 and Redis 7 and retains the synthetic Android debug APK for seven days. Production image startup and actual S3/R2, Resend, ClamAV and physical-phone checks remain release gates.
+
 ## Required services
 
 Use managed PostgreSQL with backups and point-in-time recovery, Redis for maintenance scheduling, separate S3/R2 private and public buckets, a verified Resend sender, and a reachable ClamAV service. Serve the web app over TLS behind one canonical origin. Route `/api` through Next.js to the internal API. Do not expose the private API port, PostgreSQL, Redis or storage admin consoles to the internet. Provide a trusted ingress with per-client distributed throttling and upload/request-body limits.

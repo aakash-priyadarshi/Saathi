@@ -58,15 +58,15 @@ The browser nearby feature is a **phone-testing preview**. It requires a previou
 
 - `pnpm test`: **11 unit tests passed**.
 - `pnpm test:integration`: **29 integration tests passed**, using a separate `saathi_test` schema on PostgreSQL 17.
-- Browser validation: **14 cases passed** across desktop and mobile-width projects, including the six original workflows and eight connectivity cases. The final full run passed 13; a premature cold-load assertion was corrected to wait for the saved message row, and both cold-load cases then passed on rerun.
+- Browser validation: **all 14 cases passed in a full GitHub Actions run**, across desktop and mobile-width projects, including the six original workflows and eight connectivity cases. Capability recovery is tested by deliberately dropping the initial capability frame; file sharing waits for actual remote support.
 - `pnpm lint`, `pnpm typecheck` and `pnpm build`: passed across all nine workspaces. The root TypeScript check also covers the test sources.
 - Image/video sanitization, publication/withdrawal, concurrent final-quantity allocation, twenty competing partial contributions, duplicate idempotent retries, CSRF, cross-organization access, session revocation, volunteer approval/suspension and audit constraints have automated coverage.
 - Offline cold opening, storage persistence, private-cache exclusion, local message/file/call exchange, interrupted attachment resumption and A-to-B-to-C publication with reverse signed receipts have browser coverage. Calls use synthetic camera/microphone sources; mobile-width checks run on Windows Chromium and are not Android hardware tests.
 - The local peer proof ran three pairings between independent Chromium processes on one Windows host with HTTP blocked and no cloud signaling or STUN/TURN. Range and battery measurements are absent. See `benchmarks/chromium-nearby.json` and `nearby-connectivity-device-tests.md`.
 - Desktop/mobile screenshots were inspected in light and dark themes. Physical-device results remain **NOT RUN** in `android-field-test-guide.md`.
 - The pinned Android wrapper build, lint and debug signature verification passed. A single Android 17/API 37 emulator passed installation/launch, permission denial/retry, advertising, foreground-stop and local JSON-export smoke checks; unpaired measurement controls remained disabled. See `benchmarks/android-emulator-smoke.json`. The owner chose to connect the S24 later; native pairing, latency, throughput, range and battery are unmeasured.
-- Docker/CI definitions are included. The local Docker daemon was unavailable, so the Docker image and remote CI execution are **unverified**. Native local PostgreSQL was used instead.
-- Local Redis was unavailable; database maintenance and reservation fallback paths ran. Real Redis-backed worker execution remains a deployment check.
+- The [public repository](https://github.com/aakash-priyadarshi/Saathi) and [successful CI run](https://github.com/aakash-priyadarshi/Saathi/actions/runs/37272841824) verify code commit `405c58c`: lint, nine-workspace typecheck/build, 11 unit tests, 29 PostgreSQL integration tests, all 14 browser cases and Android debug build/lint. CI uses standard Ubuntu runners, PostgreSQL 17 and Redis 7. The Android APK artifact is retained for seven days; no private `.env`, signing key, local database or media directory is published.
+- The local Docker daemon was unavailable; the production Docker image remains **unverified**. Native local PostgreSQL was used for workstation testing. Local Redis was unavailable, so database maintenance and reservation fallback paths ran; CI has a Redis 7 service. External provider delivery and production worker behavior remain deployment checks.
 
 ## Later phases and release gates
 
