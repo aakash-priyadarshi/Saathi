@@ -27,6 +27,7 @@ import { MediaService } from './media/media.service';
 import { S3Storage } from './media/storage';
 import { SyncService } from './sync/sync.service';
 import { SyncController } from './sync/sync.controller';
+import { PublicReadModule } from './public/public.module';
 import {
   PublicController,
   AuthController,
@@ -118,8 +119,10 @@ class Errors implements ExceptionFilter {
   ],
 })
 export class AppModule {}
-export async function createApp() {
-  const app = await NestFactory.create(AppModule, { logger: ['error', 'warn', 'log'] });
+export async function createApp(plane: typeof env.API_PLANE = env.API_PLANE) {
+  const app = await NestFactory.create(plane === 'public' ? PublicReadModule : AppModule, {
+    logger: ['error', 'warn', 'log'],
+  });
   app.enableShutdownHooks();
   app.use(cookieParser());
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
@@ -134,6 +137,15 @@ export async function createApp() {
     res.setHeader('X-Request-ID', requestId);
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Referrer-Policy', 'no-referrer');
+    if (
+      plane === 'public' &&
+      (req.path === '/metrics' ||
+        req.path === '/api/docs' ||
+        !['GET', 'HEAD', 'OPTIONS'].includes(req.method))
+    ) {
+      res.status(404).json({ message: 'Not found.' });
+      return;
+    }
     res.on('finish', () =>
       new Logger('HTTP').log(
         JSON.stringify({
@@ -155,7 +167,7 @@ export async function createApp() {
   });
   app.useGlobalFilters(new Errors());
   const express = app.getHttpAdapter().getInstance();
-  if (env.STORAGE_PROVIDER === 'local') {
+  if (env.STORAGE_PROVIDER === 'local' && plane !== 'public') {
     express.get('/api/v1/public/media/:folder/:key', async (req: Request, res: Response) => {
       try {
         const key = `${req.params.folder}/${req.params.key}`;
@@ -199,33 +211,38 @@ export async function createApp() {
         return;
       }
       const db = app.get(Database);
-      const [active, completed, donations, expired, pending, mediaFailures] = await Promise.all([
-        db.reliefRequest.count({
-          where: { status: { notIn: ['DRAFT', 'COMPLETED', 'CANCELLED', 'EXPIRED'] } },
-        }),
-        db.reliefRequest.count({ where: { status: 'COMPLETED' } }),
-        db.donationCommitment.count(),
-        db.donationCommitment.count({ where: { status: 'EXPIRED' } }),
-        db.notification.count({ where: { status: 'PENDING' } }),
-        db.mediaAsset.count({ where: { processingState: 'FAILED' } }),
-      ]);
+      const [active, completed, donations, expired, pending, mediaFailures, offline, observations] =
+        await Promise.all([
+          db.reliefRequest.count({
+            where: { status: { notIn: ['DRAFT', 'COMPLETED', 'CANCELLED', 'EXPIRED'] } },
+          }),
+          db.reliefRequest.count({ where: { status: 'COMPLETED' } }),
+          db.donationCommitment.count(),
+          db.donationCommitment.count({ where: { status: 'EXPIRED' } }),
+          db.notification.count({ where: { status: 'PENDING' } }),
+          db.mediaAsset.count({ where: { processingState: 'FAILED' } }),
+          db.offlineEvent.groupBy({ by: ['status'], _count: true }),
+          db.syncReceipt.aggregate({ _count: true, _sum: { observations: true } }),
+        ]);
       res
         .type('text/plain')
         .send(
-          `active_requests ${active}\ncompleted_requests ${completed}\ndonations_created ${donations}\nreservations_expired ${expired}\nnotifications_pending ${pending}\nmedia_processing_failures ${mediaFailures}\n`,
+          `active_requests ${active}\ncompleted_requests ${completed}\ndonations_created ${donations}\nreservations_expired ${expired}\nnotifications_pending ${pending}\nmedia_processing_failures ${mediaFailures}\nrelay_paths_observed ${observations._count}\nrelay_delivery_attempts ${observations._sum.observations ?? 0}\n${offline.map((row) => `offline_events{status="${row.status}"} ${row._count}`).join('\n')}\n`,
         );
     } catch {
       res.sendStatus(401);
     }
   });
-  const doc = SwaggerModule.createDocument(
-    app,
-    new DocumentBuilder()
-      .setTitle(`${env.PLATFORM_NAME} API`)
-      .setVersion('1.0')
-      .addCookieAuth('saathi_session')
-      .build(),
-  );
-  SwaggerModule.setup('api/docs', app, doc);
+  if (plane !== 'public') {
+    const doc = SwaggerModule.createDocument(
+      app,
+      new DocumentBuilder()
+        .setTitle(`${env.PLATFORM_NAME} API`)
+        .setVersion('1.0')
+        .addCookieAuth('saathi_session')
+        .build(),
+    );
+    SwaggerModule.setup('api/docs', app, doc);
+  }
   return app;
 }

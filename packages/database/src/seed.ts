@@ -2,7 +2,11 @@ import { PrismaClient } from '@prisma/client';
 import { env } from '@saathi/config';
 import { hashPassword, digest, token } from '@saathi/auth';
 export async function seed(db: PrismaClient) {
-  if (env.NODE_ENV === 'production' || env.DEMO_MODE !== 'true')
+  if (
+    env.APP_ENV === 'production' ||
+    env.DEMO_MODE !== 'true' ||
+    (env.APP_ENV === 'staging' && process.env.STAGING_SEED_ALLOWED !== 'true')
+  )
     throw new Error('Demo seed only runs with DEMO_MODE=true outside production.');
   const password = process.env.SEED_PASSWORD;
   if (!password || password.length < 12)
@@ -34,6 +38,7 @@ export async function seed(db: PrismaClient) {
       org: medical,
     },
     { email: 'public@saathi.test', name: 'Public user', role: 'PUBLIC' as const, org: community },
+    { email: 'android-volunteer@saathi.test', name: 'Android QA Volunteer', role: 'VOLUNTEER' as const, org: community },
   ];
   const users = [];
   for (const account of accounts) {

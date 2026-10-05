@@ -6,6 +6,7 @@
     "dev": "tsx watch src/main.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/apps/api/src/main.js",
+    "start:media-worker": "node dist/apps/api/src/media/worker.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

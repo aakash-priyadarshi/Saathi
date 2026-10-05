@@ -78,6 +78,10 @@ export class NearbySession {
       this.onChange();
       return;
     }
+    if (frame.kind === 'NATIVE_CAPS') {
+      z.object({ largeFiles: z.boolean() }).strict().parse(frame.value);
+      return; // Browsers retain their 1 MiB policy regardless of a native peer's larger limit.
+    }
     if (!this.confirmed) return;
     if (frame.kind === 'MESSAGE') {
       const value = small.parse(frame.value);
@@ -238,6 +242,7 @@ export class NearbySession {
       if (raw.length === file.size && (await byteHash(raw)) === file.hash) {
         file.complete = true;
         await database.put('attachments', file, id);
+        await this.peer.send('ACK', { id });
         changed();
       } else
         throw new Error('The attachment is incomplete. Accept it again to resume missing parts.');
@@ -256,7 +261,9 @@ export class NearbySession {
         );
       const data = file.chunks[index];
       if (data) await this.peer.send('FILE_CHUNK', { id: file.id, index, data: base64(data) });
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      // Give constrained receivers time to persist encrypted parts, and yield
+      // the connection to messages/events instead of flooding their bounded queue.
+      await new Promise((resolve) => setTimeout(resolve, 20));
     }
     if (!this.transferCancelled.has(file.id)) await this.peer.send('FILE_DONE', { id: file.id });
   }

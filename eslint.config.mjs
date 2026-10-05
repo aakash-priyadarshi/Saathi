@@ -5,6 +5,7 @@ export default ts.config(
     ignores: [
       '**/node_modules/**',
       '**/dist/**',
+      '**/build/**',
       '**/.next/**',
       '**/next-env.d.ts',
       '**/coverage/**',

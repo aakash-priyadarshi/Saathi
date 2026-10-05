@@ -62,14 +62,11 @@ async function runFfmpeg(args: string[]) {
       args,
       { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] },
     );
-    let stderr = '';
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
       reject(new Error('Video processing timed out'));
     }, 120000);
-    child.stderr.on('data', (d) => {
-      stderr = (stderr + d.toString()).slice(-2000);
-    });
+    child.stderr.resume(); // Decoder diagnostics can contain private media metadata.
     child.on('error', (e) => {
       clearTimeout(timer);
       reject(e);
@@ -77,7 +74,8 @@ async function runFfmpeg(args: string[]) {
     child.on('exit', (code) => {
       clearTimeout(timer);
       if (code === 0) resolve();
-      else reject(new BadRequestException(`Video could not be processed: ${stderr.slice(-150)}`));
+      else
+        reject(new BadRequestException('Video could not be processed. Try a shorter MP4 or WebM.'));
     });
   });
 }
@@ -109,23 +107,30 @@ export class MediaService {
     const id = randomUUID(),
       originalKey = `original/${id}`;
     await this.storage.putPrivate(originalKey, file.buffer, 'application/octet-stream');
-    const asset = await this.db.atomic(async (tx) => {
-      const a = await tx.mediaAsset.create({
-        data: {
-          id,
-          ownerId: actor.id,
-          organizationId,
-          originalKey,
+    const asset = await this.db
+      .atomic(async (tx) => {
+        const a = await tx.mediaAsset.create({
+          data: {
+            id,
+            ownerId: actor.id,
+            organizationId,
+            originalKey,
+            size: file.size,
+            mimeType: video ? 'video/mp4' : 'image/jpeg',
+          },
+        });
+        await audit(tx, 'MEDIA_UPLOADED', 'MediaAsset', id, actor.id, undefined, {
           size: file.size,
-          mimeType: video ? 'video/mp4' : 'image/jpeg',
-        },
+          mimeType: a.mimeType,
+        });
+        return a;
+      })
+      .catch(async (error: unknown) => {
+        await this.storage.deletePrivate(originalKey);
+        throw error;
       });
-      await audit(tx, 'MEDIA_UPLOADED', 'MediaAsset', id, actor.id, undefined, {
-        size: file.size,
-        mimeType: a.mimeType,
-      });
-      return a;
-    });
+    if (env.MEDIA_PROCESSING_MODE === 'worker')
+      return { id, processingState: asset.processingState, moderation: 'PENDING' };
     try {
       await this.process(asset.id);
     } catch (e) {
@@ -134,11 +139,12 @@ export class MediaService {
     }
     return { id, processingState: 'READY', moderation: 'PENDING' };
   }
-  async process(id: string) {
+  async process(id: string, lease?: string) {
     const asset = await this.db.mediaAsset.findUniqueOrThrow({ where: { id } }),
       bytes = await this.storage.readPrivate(asset.originalKey);
     await scan(bytes);
-    const base = `sanitized/${id}`,
+    if (lease && asset.processingLease !== lease) throw new Error('Media lease changed.');
+    const base = `sanitized/${id}${lease ? '-' + lease : ''}`,
       publicKey = asset.mimeType === 'video/mp4' ? `${base}.mp4` : `${base}.jpg`,
       thumbnailKey = `${base}-thumb.jpg`;
     if (asset.mimeType === 'image/jpeg') {
@@ -153,6 +159,13 @@ export class MediaService {
           thumb = join(dir, 'thumb.jpg');
         await writeFile(input, bytes);
         await runFfmpeg([
+          '-nostdin',
+          '-max_alloc',
+          '67108864',
+          '-protocol_whitelist',
+          'file,pipe',
+          '-filter_threads',
+          '2',
           '-y',
           '-i',
           input,
@@ -162,6 +175,8 @@ export class MediaService {
           '0:a:0?',
           '-t',
           '120',
+          '-fs',
+          '26214400',
           '-vf',
           'scale=1280:1280:force_original_aspect_ratio=decrease:force_divisible_by=2',
           '-c:v',
@@ -185,6 +200,15 @@ export class MediaService {
           output,
         ]);
         await runFfmpeg([
+          '-nostdin',
+          '-max_alloc',
+          '67108864',
+          '-protocol_whitelist',
+          'file,pipe',
+          '-threads',
+          '2',
+          '-filter_threads',
+          '2',
           '-y',
           '-i',
           output,
@@ -203,10 +227,21 @@ export class MediaService {
         await rm(dir, { recursive: true, force: true });
       }
     }
-    await this.db.mediaAsset.update({
-      where: { id },
-      data: { publicKey, thumbnailKey, processingState: 'READY' },
+    const finished = await this.db.mediaAsset.updateMany({
+      where: { id, ...(lease ? { processingLease: lease } : {}) },
+      data: {
+        publicKey,
+        thumbnailKey,
+        processingState: 'READY',
+        processingLease: null,
+        processingStartedAt: null,
+      },
     });
+    if (finished.count !== 1) {
+      await this.storage.deletePrivate(publicKey);
+      await this.storage.deletePrivate(thumbnailKey);
+      throw new Error('Media lease changed.');
+    }
   }
   async original(actor: Actor, id: string) {
     const a = await this.db.mediaAsset.findUnique({ where: { id } });
@@ -218,6 +253,19 @@ export class MediaService {
     const a = await this.db.mediaAsset.findUnique({ where: { id } });
     if (!a) throw new NotFoundException();
     this.auth.requireOrg(actor, a.organizationId);
+    if (env.MEDIA_PROCESSING_MODE === 'worker') {
+      if (a.processingState === 'PROCESSING') return { ok: true, processingState: 'PROCESSING' };
+      await this.db.mediaAsset.update({
+        where: { id },
+        data: {
+          processingState: 'PENDING',
+          processingAttempts: 0,
+          processingLease: null,
+          processingStartedAt: null,
+        },
+      });
+      return { ok: true, processingState: 'PENDING' };
+    }
     await this.process(id);
     return { ok: true };
   }

@@ -4,6 +4,14 @@ const config: NextConfig = {
   async rewrites() {
     return [
       {
+        source: '/api/v1/public/reports',
+        destination: `${process.env.API_INTERNAL_URL ?? 'http://localhost:4000'}/api/v1/public/reports`,
+      },
+      {
+        source: '/api/v1/public/:path*',
+        destination: `${process.env.PUBLIC_API_INTERNAL_URL ?? process.env.API_INTERNAL_URL ?? 'http://localhost:4000'}/api/v1/public/:path*`,
+      },
+      {
         source: '/api/:path*',
         destination: `${process.env.API_INTERNAL_URL ?? 'http://localhost:4000'}/api/:path*`,
       },

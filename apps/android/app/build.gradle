@@ -1,0 +1,82 @@
+plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.plugin.compose' }
+def configRoot = providers.environmentVariable('SAATHI_CONFIG_ROOT_PUBLIC_JWK').orElse('{}').get()
+def bootstrap = providers.environmentVariable('SAATHI_CONFIG_BOOTSTRAP').orElse('').get()
+def quote = { value -> groovy.json.JsonOutput.toJson(value) }
+android {
+    namespace 'org.saathi.android'
+    compileSdk { version = release(37) { minorApiLevel = 0 } }
+    buildToolsVersion '36.0.0'
+    defaultConfig {
+        applicationId 'org.saathi.android'
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName '1.0.0'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        buildConfigField 'String', 'CONFIG_ROOT', quote(configRoot)
+        buildConfigField 'String', 'BOOTSTRAP', quote(bootstrap)
+    }
+    signingConfigs {
+        release {
+            if (System.getenv('SAATHI_RELEASE_KEYSTORE')) {
+                storeFile file(System.getenv('SAATHI_RELEASE_KEYSTORE'))
+                storePassword System.getenv('SAATHI_RELEASE_STORE_PASSWORD')
+                keyAlias System.getenv('SAATHI_RELEASE_KEY_ALIAS')
+                keyPassword System.getenv('SAATHI_RELEASE_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        debug {
+            applicationIdSuffix '.dev'
+            versionNameSuffix '-dev'
+            buildConfigField 'String', 'ENVIRONMENT', '"development"'
+        }
+        staging {
+            initWith debug
+            applicationIdSuffix '.qa'
+            versionNameSuffix '-qa'
+            matchingFallbacks = ['debug']
+            buildConfigField 'String', 'ENVIRONMENT', '"staging"'
+        }
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            buildConfigField 'String', 'ENVIRONMENT', '"production"'
+        }
+    }
+    buildFeatures { compose true; buildConfig true }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    packaging { resources.excludes += ['META-INF/versions/**', 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'] }
+}
+tasks.configureEach {
+    if (name in ['assembleRelease', 'bundleRelease']) doFirst {
+        if (!System.getenv('SAATHI_RELEASE_KEYSTORE') || configRoot == '{}' || !bootstrap.startsWith('https://'))
+            throw new GradleException('Release requires an external keystore and production configuration trust anchor/bootstrap.')
+    }
+}
+dependencies {
+    implementation platform('androidx.compose:compose-bom:2026.08.00')
+    implementation 'androidx.activity:activity-compose:1.13.0'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.material:material-icons-extended'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.11.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'io.github.erdtman:java-json-canonicalization:1.1'
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.86'
+    implementation 'com.google.android.gms:play-services-nearby:19.5.1'
+    implementation 'io.github.webrtc-sdk:android:150.7871.01'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20250517'
+    androidTestImplementation 'androidx.test:runner:1.7.0'
+    androidTestImplementation 'androidx.test.ext:junit:1.3.0'
+    androidTestImplementation platform('androidx.compose:compose-bom:2026.08.00')
+    androidTestImplementation 'androidx.compose.ui:ui-test-junit4'
+    debugImplementation 'androidx.compose.ui:ui-tooling'
+    debugImplementation 'androidx.compose.ui:ui-test-manifest'
+}

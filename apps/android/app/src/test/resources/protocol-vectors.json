@@ -1,0 +1,95 @@
+{
+  "now": "2026-10-05T10:00:00.000Z",
+  "root": {
+    "kty": "EC",
+    "crv": "P-256",
+    "x": "u3_nwtYk7E2Ybw2bH280-FftBqO2guIHjDPWEb-C7E8",
+    "y": "Hd5qkw0SDyscRYzX-fcZgy8EQX2z-WLp3H4zSI4ZC8s"
+  },
+  "configuration": {
+    "body": {
+      "format": "saathi-service-config-v1",
+      "environment": "staging",
+      "version": 7,
+      "issuedAt": "2026-10-05T10:00:00.000Z",
+      "expiresAt": "2026-11-01T00:00:00.000Z",
+      "protocolVersions": [
+        1
+      ],
+      "minimumAndroidVersionCode": 1,
+      "apiEndpoints": [
+        "https://stage.example.org"
+      ],
+      "publicUrl": "https://www.example.org",
+      "webOrigin": "https://www.example.org",
+      "receiptKeys": [
+        {
+          "keyId": "fb8a9770d9e3392b6f77ba2878a2c73f0dafb0166067980c1c150b95fd1d3e58",
+          "publicKey": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "cZJfr7a1I_4Cb_RS-8NmbOenDvkweKvp5E-wmdwX0Fk",
+            "y": "nNlzhawNiHSIg8xJQFSjmH5vdpvbm7_efRCJfKuqOvk"
+          },
+          "status": "ACTIVE",
+          "signingFrom": "2026-10-01T00:00:00.000Z",
+          "signingUntil": "2026-12-01T00:00:00.000Z",
+          "verifyUntil": "2027-10-01T00:00:00.000Z"
+        }
+      ],
+      "features": {
+        "nearby": true,
+        "localCalls": true,
+        "largeFiles": true
+      }
+    },
+    "rootKeyId": "67a0f75cb2ee12adc470a046facf477feba1fbfcfefabaf76955ffa1a10bb923",
+    "signature": "SqrjEk-cE5o4dRHv8aDkg4WLCIoimOiWD6m5-uFcxqfPe_1PTGV9bWRmpNmNm1hi0WL0KM-4xDTY3kRr1-vsTg"
+  },
+  "envelope": {
+    "body": {
+      "id": "2b5e8696-b98e-428f-b780-f874fd65adf0",
+      "protocolVersion": 1,
+      "authorId": "4850300f-c4b4-4448-9435-fe17fbdc64ae",
+      "organizationId": "47a77fb3-5820-481d-9e5d-71e0aa702bbd",
+      "deviceId": "a4909330-2d12-4262-af28-9dff7dccb4a1",
+      "createdAt": "2026-10-05T10:00:00.000Z",
+      "expiresAt": "2026-10-06T10:00:00.000Z",
+      "intent": "PUBLIC_RELIEF",
+      "maxHops": 6,
+      "type": "REQUEST_CREATED",
+      "payload": {
+        "reliefPointId": "46dc2dcb-c8cb-435e-89c2-54a8cabdc2e8",
+        "category": "WATER",
+        "title": "Public interoperability fixture",
+        "description": "Fictional signed need, no personal data.",
+        "requestedQuantity": 15,
+        "unit": "bottles",
+        "priority": "URGENT",
+        "deadline": "2026-10-06T10:00:00.000Z"
+      },
+      "payloadHash": "adb4e0e46c1da2f1a9efc4f085bf907067dd8a188fed88ceddcdb2aad0533a71"
+    },
+    "publicKey": {
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "L-71TgbmyfM4WX53YkRswQcuH-a2F7mHOL9_jpn-Dlg",
+      "y": "4IsgewGkkRJKfTfNyvwIRZ1Vw0yc6gtb_7hdbYgjc_0"
+    },
+    "signature": "vg2A_yAFooxxCakwTAyAtCeQrH00n12Fcn6O4GaYK5piJQqOhKnvNd2Uwjot5l22X5tXEv5bBts4Pd6DryXI8w"
+  },
+  "receipt": {
+    "body": {
+      "eventId": "2b5e8696-b98e-428f-b780-f874fd65adf0",
+      "payloadHash": "adb4e0e46c1da2f1a9efc4f085bf907067dd8a188fed88ceddcdb2aad0533a71",
+      "signatureHash": "e92a766e07e610907d272d5233627f80d3a1511e3c89bfb742cdb12f96111c27",
+      "keyId": "fb8a9770d9e3392b6f77ba2878a2c73f0dafb0166067980c1c150b95fd1d3e58",
+      "status": "PUBLISHED",
+      "recordedAt": "2026-10-05T10:00:01.000Z",
+      "message": "Fixture published",
+      "publicId": "SAA-TEST1234"
+    },
+    "signature": "M-0toO4a9cHcFc0dn28DY2PWJh1SsubVN8Mea3Hlk-hne8g5HCFdnL1GqJZZZ1VYfS73D6aWMs4eFrfyR2l6_w"
+  },
+  "stringHash": "0218dee827633f029daa471510ad2e18c1ded23970d5febf64b0c9fb31798eb9"
+}

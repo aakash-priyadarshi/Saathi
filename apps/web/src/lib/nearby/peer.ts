@@ -16,6 +16,7 @@ const frameSchema = z
     v: z.literal(1),
     kind: z.enum([
       'HELLO',
+      'NATIVE_CAPS',
       'MESSAGE',
       'ACK',
       'INVENTORY',

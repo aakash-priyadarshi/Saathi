@@ -1,0 +1,59 @@
+name: Saathi Android product
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: saathi-android-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: android-actions/setup-android@v4
+        with:
+          log-accepted-android-sdk-licenses: false
+      - run: sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0'
+      - name: Product build, lint and cross-language protocol tests
+        working-directory: apps/android
+        run: ./gradlew :app:assembleDebug :app:lintDebug :app:testDebugUnitTest --no-daemon
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Keystore and encrypted-storage instrumentation
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          working-directory: apps/android
+          script: ./gradlew :app:connectedDebugAndroidTest --no-daemon
+      - name: Provisioned staging APK
+        if: vars.SAATHI_STAGING_CONFIG_ROOT_PUBLIC_JWK != '' && vars.SAATHI_STAGING_CONFIG_BOOTSTRAP != ''
+        working-directory: apps/android
+        env:
+          SAATHI_CONFIG_ROOT_PUBLIC_JWK: ${{ vars.SAATHI_STAGING_CONFIG_ROOT_PUBLIC_JWK }}
+          SAATHI_CONFIG_BOOTSTRAP: ${{ vars.SAATHI_STAGING_CONFIG_BOOTSTRAP }}
+        run: ./gradlew :app:assembleStaging :app:lintStaging :app:testStagingUnitTest --no-daemon
+      - uses: actions/upload-artifact@v4
+        if: vars.SAATHI_STAGING_CONFIG_ROOT_PUBLIC_JWK != '' && vars.SAATHI_STAGING_CONFIG_BOOTSTRAP != ''
+        with:
+          name: saathi-android-qa
+          path: apps/android/app/build/outputs/apk/staging/app-staging.apk
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: android-verification-reports
+          path: apps/android/app/build/reports/
+          retention-days: 7

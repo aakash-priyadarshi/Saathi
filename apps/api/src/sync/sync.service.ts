@@ -14,9 +14,14 @@ import {
   validEnvelope,
   hash,
   sign,
+  verify,
   type Envelope,
   type Receipt,
   type PublicKey,
+  receiptKeyringSchema,
+  verifyServiceConfig,
+  type ReceiptKeyPolicy,
+  type SignedServiceConfig,
 } from '@saathi/protocol';
 import { Database, audit, json } from '../database';
 import { AuthService, actorInclude, type Actor } from '../auth/auth.service';
@@ -28,16 +33,26 @@ export class SyncService {
   private signingKey!: CryptoKey;
   private publicKey!: PublicKey;
   private keyId!: string;
+  private receiptKeys: ReceiptKeyPolicy[] = [];
+  private configuration?: SignedServiceConfig;
   constructor(
     private readonly db: Database,
     private readonly auth: AuthService,
     private readonly requests: RequestsService,
     private readonly media: MediaService,
+    private readonly receiptConfig: Pick<
+      typeof env,
+      'SYNC_SIGNING_PRIVATE_JWK' | 'SYNC_RECEIPT_KEYRING_JSON'
+    > = env,
   ) {}
   async onModuleInit() {
     const location = resolve(dirname(env.LOCAL_MEDIA_DIR), 'sync-receipt-key.json');
-    let stored = env.SYNC_SIGNING_PRIVATE_JWK;
+    let stored = this.receiptConfig.SYNC_SIGNING_PRIVATE_JWK;
     if (!stored) {
+      if (env.APP_ENV !== 'development' || env.NODE_ENV === 'production')
+        throw new Error(
+          'A durable operator receipt-signing key is required; regeneration is disabled.',
+        );
       try {
         stored = await readFile(location, 'utf8');
       } catch (error) {
@@ -57,19 +72,71 @@ export class SyncService {
         }
       }
     }
-    const jwk: JsonWebKey = JSON.parse(stored);
-    this.publicKey = publicKeySchema.parse({ kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y });
-    this.signingKey = await crypto.subtle.importKey(
-      'jwk',
-      jwk,
-      { name: 'ECDSA', namedCurve: 'P-256' },
-      false,
-      ['sign'],
-    );
+    try {
+      const jwk: JsonWebKey = JSON.parse(stored);
+      this.publicKey = publicKeySchema.parse({ kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y });
+      this.signingKey = await crypto.subtle.importKey(
+        'jwk',
+        jwk,
+        { name: 'ECDSA', namedCurve: 'P-256' },
+        false,
+        ['sign'],
+      );
+      const challenge = { startup: crypto.randomUUID() };
+      if (!(await verify(challenge, await sign(challenge, this.signingKey), this.publicKey)))
+        throw new Error();
+    } catch {
+      throw new Error('Invalid operator receipt-signing key; startup refused.');
+    }
     this.keyId = await hash(this.publicKey);
+    this.receiptKeys = this.receiptConfig.SYNC_RECEIPT_KEYRING_JSON
+      ? receiptKeyringSchema.parse(JSON.parse(this.receiptConfig.SYNC_RECEIPT_KEYRING_JSON))
+      : [
+          {
+            keyId: this.keyId,
+            publicKey: this.publicKey,
+            status: 'ACTIVE',
+            signingFrom: new Date(Date.now() - 7 * 86400000).toISOString(),
+            signingUntil: new Date(Date.now() + 90 * 86400000).toISOString(),
+            verifyUntil: new Date(Date.now() + 365 * 86400000).toISOString(),
+          },
+        ];
+    for (const key of this.receiptKeys)
+      if (key.keyId !== (await hash(key.publicKey)))
+        throw new Error('Receipt keyring has an invalid key identifier.');
+    const active = this.receiptKeys.find((key) => key.status === 'ACTIVE')!;
+    if (
+      active.keyId !== this.keyId ||
+      Date.parse(active.signingFrom) > Date.now() ||
+      Date.parse(active.signingUntil) <= Date.now()
+    )
+      throw new Error(
+        'The configured active receipt key does not match the signer or is outside its signing window.',
+      );
+    if (env.SERVICE_CONFIG_JSON) {
+      if (!env.SERVICE_CONFIG_ROOT_PUBLIC_JWK)
+        throw new Error('Signed service configuration requires its verification root.');
+      this.configuration = await verifyServiceConfig(
+        JSON.parse(env.SERVICE_CONFIG_JSON),
+        publicKeySchema.parse(JSON.parse(env.SERVICE_CONFIG_ROOT_PUBLIC_JWK)),
+        {
+          environment: env.APP_ENV,
+          minimumVersion: 1,
+          androidVersionCode: Number.MAX_SAFE_INTEGER,
+          allowLoopbackHttp: env.APP_ENV === 'development',
+        },
+      );
+      if ((await hash(this.configuration.body.receiptKeys)) !== (await hash(this.receiptKeys)))
+        throw new Error('Signed configuration and operational receipt keyring disagree.');
+    }
   }
   receiptKey() {
-    return { keyId: this.keyId, publicKey: this.publicKey };
+    return { keyId: this.keyId, publicKey: this.publicKey, keys: this.receiptKeys };
+  }
+  serviceConfig() {
+    if (!this.configuration)
+      throw new HttpException('Service configuration has not been provisioned.', 503);
+    return this.configuration;
   }
   devices(actor: Actor) {
     return this.db.device.findMany({
@@ -144,6 +211,15 @@ export class SyncService {
     publicId?: string,
     fieldId?: string,
   ): Promise<Receipt> {
+    const active = this.receiptKeys.find(
+      (key) => key.keyId === this.keyId && key.status === 'ACTIVE',
+    );
+    if (
+      !active ||
+      Date.parse(active.signingFrom) > Date.now() ||
+      Date.parse(active.signingUntil) <= Date.now()
+    )
+      throw new Error('Receipt signing lifetime has ended; operator rotation is required.');
     const body: Receipt['body'] = {
       eventId: envelope.body.id,
       payloadHash: envelope.body.payloadHash,
@@ -166,7 +242,9 @@ export class SyncService {
     if (existing) {
       if ((await hash(existing.envelope)) !== (await hash(envelope)))
         throw new ConflictException('This update ID already contains different information.');
-      return this.refreshReceipt(existing.id);
+      const receipt = await this.refreshReceipt(existing.id);
+      await this.observeCarrier(body.id, carrierId, receipt.body.status);
+      return receipt;
     }
     const device = await this.db.device.findUnique({ where: { id: body.deviceId } });
     if (
@@ -259,9 +337,6 @@ export class SyncService {
             createdAt: new Date(body.createdAt),
           },
         });
-        await tx.syncReceipt.create({
-          data: { eventId: body.id, transportDeviceId: carrierId, status: accepted.body.status },
-        });
         await audit(tx, 'OFFLINE_EVENT_ACCEPTED', 'OfflineEvent', body.id, author.id, undefined, {
           deviceId: body.deviceId,
           type: body.type,
@@ -314,13 +389,46 @@ export class SyncService {
         );
       });
     }
+    await this.observeCarrier(body.id, carrierId, receipt.body.status);
     return receipt;
+  }
+  private async observeCarrier(eventId: string, carrierId: string, status: string) {
+    // Event-scoped pseudonyms cannot correlate a carrier across distinct events.
+    const transportDeviceId = await hash({ eventId, carrierId });
+    await this.db.atomic(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${eventId}))`;
+      const where = { eventId_transportDeviceId: { eventId, transportDeviceId } };
+      const previous = await tx.syncReceipt.findUnique({ where });
+      if (!previous && (await tx.syncReceipt.count({ where: { eventId } })) >= 50) return;
+      await tx.syncReceipt.upsert({
+        where,
+        create: { eventId, transportDeviceId, status },
+        update: {
+          status,
+          lastSeenAt: new Date(),
+          observations: { increment: previous && previous.observations >= 10000 ? 0 : 1 },
+        },
+      });
+    });
   }
   private async refreshReceipt(id: string): Promise<Receipt> {
     return this.db.atomic(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${id}))`;
       const record = await tx.offlineEvent.findUniqueOrThrow({ where: { id } });
       const previous = record.receipt as unknown as Receipt;
+      if (previous.body.keyId !== this.keyId) {
+        const renewed = await this.receipt(
+          record.envelope as unknown as Envelope,
+          previous.body.status,
+          previous.body.message,
+          previous.body.publicId,
+          previous.body.fieldId,
+        );
+        await tx.offlineEvent.update({ where: { id }, data: { receipt: json(renewed) } });
+        // Recheck field visibility below before returning a renewed status.
+        previous.body = renewed.body;
+        previous.signature = renewed.signature;
+      }
       if (
         !['ACCEPTED', 'PUBLISHED'].includes(previous.body.status) ||
         !previous.body.fieldId ||

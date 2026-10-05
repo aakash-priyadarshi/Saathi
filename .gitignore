@@ -19,3 +19,5 @@ local.properties
 *.aab
 .idea/
 *.tsbuildinfo
+*.private.json
+*.pending

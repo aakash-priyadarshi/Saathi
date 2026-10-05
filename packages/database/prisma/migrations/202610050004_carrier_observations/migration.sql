@@ -1,0 +1,3 @@
+ALTER TABLE "SyncReceipt" ADD COLUMN "lastSeenAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "SyncReceipt" ADD COLUMN "observations" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "SyncReceipt" ADD CONSTRAINT "SyncReceipt_observations_bounds" CHECK ("observations" BETWEEN 1 AND 10000);

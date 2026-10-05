@@ -227,8 +227,12 @@ model MediaAsset {
   size Int
   moderation ModerationState @default(PENDING)
   processingState String @default("PENDING")
+  processingLease String?
+  processingStartedAt DateTime?
+  processingAttempts Int @default(0)
   createdAt DateTime @default(now())
   @@index([organizationId, moderation])
+  @@index([processingState, processingStartedAt])
 }
 model Notification {
   id String @id @default(uuid())
@@ -290,6 +294,8 @@ model SyncReceipt {
   transportDeviceId String
   status String
   createdAt DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  observations Int @default(1)
   @@unique([eventId, transportDeviceId])
 }
 model ModerationReport {

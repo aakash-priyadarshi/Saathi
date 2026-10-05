@@ -21,7 +21,9 @@ for (const path of paths) {
   if (
     (/(^|\/)\.env(?:\.|$)/.test(path) && !path.endsWith('.env.example')) ||
     /(^|\/)(\.data|node_modules|test-results|playwright-report|\.gradle)(\/|$)/.test(path) ||
-    /\.(?:jks|keystore|pem|apk|aab)$/.test(path)
+    /\.(?:jks|keystore|pem|apk|aab|private\.json)$/.test(path) ||
+    /(^|\/)(?:local\.properties|.*(?:device-dump|uiautomator).*\.xml)$/.test(path) ||
+    /(^|\/)build\//.test(path)
   )
     failures.push(`${path}: private/generated file`);
   const bytes = readFileSync(path);
@@ -29,6 +31,8 @@ for (const path of paths) {
     failures.push(`${path}: local credential detected`);
   if (/github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{30,}/.test(bytes.toString('utf8')))
     failures.push(`${path}: GitHub credential pattern detected`);
+  if (/-----BEGIN (?:EC |RSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----|"d"\s*:\s*"[A-Za-z0-9_-]{40,}"/.test(bytes.toString('utf8')))
+    failures.push(`${path}: private signing material pattern detected`);
 }
 if (failures.length) {
   console.error(failures.join('\n'));

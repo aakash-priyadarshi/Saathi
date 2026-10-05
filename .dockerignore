@@ -5,6 +5,14 @@ node_modules
 .data
 .env
 .env.local
+**/.env*
+!**/.env.example
+**/*.private.json
+**/*.jks
+**/*.keystore
+**/build
+**/.gradle
+.idea
 .git
 .turbo
 .impeccable

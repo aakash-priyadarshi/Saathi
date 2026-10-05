@@ -1,5 +1,11 @@
 # Implementation status
 
+## Android production milestone — in progress, 5 October 2026
+
+`apps/android` is a native Kotlin/Compose product, separate from the research probe. Receipt rotation, signed endpoint configuration, fail-closed hosted signing, encrypted native work/Keystore identity, durable ordinary-write retry keys, public-read isolation, carrier observations and a leased media worker are implemented. Five native protocol tests, 15 shared unit tests, 32 PostgreSQL integration tests and all 14 browser cases pass. Both physical Samsung devices passed three secure-storage tests plus native signed API and lost-response/idempotent-retry tests; an emulator draft survived actual process death.
+
+The physical S24/tablet product passed offline native Nearby pairing, bidirectional durable messages, interrupted 4 MiB file resume/hash verification, urgent original-event priority, author-absent carrier publication and signed receipt return. The physical local-Wi-Fi fixture also passed both hardware audio/video receipt checks and the data/relay scenarios. Tablet-to-Windows-browser pairing, bidirectional 1 MiB files/messages, original event and reconnect passed. Hosted QA, provider/TLS/restore proof, broader lifecycle/range/battery tests, native finish review and final CI/publication remain incomplete. [Detailed evidence](android-testing.md), [architecture](android-architecture.md), [trust ADR](adr/0003-signed-service-configuration.md) and [release gates](deployment-resilience.md) state the limits precisely.
+
 Updated 5 October 2026. Platform name: **Saathi**. The online web workflow, durable offline PWA and browser nearby preview are operational on this development host with real PostgreSQL persistence. Checkmarks mean implemented and locally verified; they do not imply a live deployment, physical-phone compatibility or completed production certification.
 
 ## Phase 1 — core web milestone
@@ -32,7 +38,8 @@ Updated 5 October 2026. Platform name: **Saathi**. The online web workflow, dura
 - [x] S3/R2-compatible storage adapter and development filesystem fallback
 - [x] ClamAV INSTREAM adapter and production refusal of disabled scanning
 - [ ] Actual operator S3/R2, ClamAV and Resend integration tests
-- [ ] Automatic face detection/blur, isolated media workers and durable storage/database reconciliation
+- [x] Separate media worker with durable job leases and publication visibility repair
+- [ ] Automatic face detection/blur, complete orphan inventory/retention and real-provider reconciliation checks
 
 ## Phase 3 — resilient connectivity foundation and browser preview
 
@@ -51,15 +58,16 @@ Updated 5 October 2026. Platform name: **Saathi**. The online web workflow, dura
 - [x] Private field originals stay on the author's device; direct authenticated upload attaches to the same published text update and restores moderation
 - [x] Current-connection guards for donor reservations and contribution changes; private donor/auth responses excluded from the offline cache
 - [ ] Broader device compatibility, physical browser/hotspot/range/battery/background/screen-lock measurements, Direct/Aware data-path comparisons
-- [ ] Native Android and iOS clients, automatic nearby discovery, native radio adapters and temporary native hub
+- [x] Native Android client, foreground Nearby discovery and original-author relay through a temporary carrier
+- [ ] iOS client, broader radio adapters and background hub policy
 - [ ] Browser-to-native and cross-platform transport proofs before selecting or advertising production native transports
 
-The browser nearby feature is a **phone-testing preview**. It requires a previously prepared secure origin, a reachable local Wi-Fi/hotspot path and foreground use. It cannot enable system radios or discover arbitrary nearby phones. Native transport selection remains gated on physical proofs; no production BLE, Wi-Fi Direct, native Nearby or iOS adapter is claimed. The synthetic Android probe is separate from the production domain client.
+The browser nearby feature is a **phone-testing preview**. It requires a previously prepared secure origin, a reachable local Wi-Fi/hotspot path and foreground use. It cannot enable system radios or discover arbitrary nearby phones. Native Android Nearby now has product evidence above; direct BLE, Wi-Fi Direct/Aware and iOS remain unsupported. Neither product nor probe evidence establishes production range, battery or background reliability.
 
 ## Validation recorded
 
-- `pnpm test`: **11 unit tests passed**.
-- `pnpm test:integration`: **29 integration tests passed**, using a separate `saathi_test` schema on PostgreSQL 17.
+- `pnpm test`: **15 unit tests passed**.
+- `pnpm test:integration`: **32 integration tests passed**, using a separate test schema on PostgreSQL 17.
 - Browser validation: **all 14 cases passed in a full GitHub Actions run**, across desktop and mobile-width projects, including the six original workflows and eight connectivity cases. Capability recovery is tested by deliberately dropping the initial capability frame; file sharing waits for actual remote support.
 - `pnpm lint`, `pnpm typecheck` and `pnpm build`: passed across all nine workspaces. The root TypeScript check also covers the test sources.
 - Image/video sanitization, publication/withdrawal, concurrent final-quantity allocation, twenty competing partial contributions, duplicate idempotent retries, CSRF, cross-organization access, session revocation, volunteer approval/suspension and audit constraints have automated coverage.
@@ -74,7 +82,7 @@ The browser nearby feature is a **phone-testing preview**. It requires a previou
 
 ## Later phases and release gates
 
-- [ ] Native Android/iOS app, OS-secured credentials, native transport proofs and platform background policy
+- [ ] iOS app, broader native transport/device verification and platform background policy; Android and OS-secured credentials are implemented above
 - [ ] Physical range, battery, reconnection, screen-lock and battery-saver tests; validate the second Android phone before compatibility claims
 - [ ] MFA enrollment, encrypted secret provisioning, recovery codes, password reset and production operator bootstrap UI
 - [ ] Independent security/load review, least-privilege infrastructure, distributed rate limiting and media process isolation

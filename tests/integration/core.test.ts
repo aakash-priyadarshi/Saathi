@@ -13,6 +13,7 @@ import sharp from 'sharp';
 import { MediaService, sanitizeImage } from '../../apps/api/src/media/media.service';
 import { ManagementService } from '../../apps/api/src/management/management.service';
 import { S3Storage } from '../../apps/api/src/media/storage';
+import { MediaWorker } from '../../apps/api/src/media/media-worker.service';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -26,6 +27,7 @@ import {
   exportPublic,
   sign,
   validReceipt,
+  hash,
 } from '../../packages/protocol/src';
 let app: Awaited<ReturnType<typeof createApp>>,
   db: Database,
@@ -70,7 +72,7 @@ beforeAll(async () => {
   requests = app.get(RequestsService);
   auth = app.get(AuthService);
   await db.$executeRawUnsafe(
-    'TRUNCATE TABLE "User", "Organization", "AuditEvent", "Notification", "IdempotencyRecord", "ModerationReport", "LoginAttempt", "OfflineEvent" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "User", "Organization", "FieldUpdate", "MediaAsset", "AuditEvent", "Notification", "IdempotencyRecord", "ModerationReport", "LoginAttempt", "OfflineEvent" RESTART IDENTITY CASCADE',
   );
   await seed(db);
   volunteer = await db.user.findUniqueOrThrow({
@@ -87,6 +89,104 @@ afterAll(async () => {
   await app?.close();
 });
 describe('Real PostgreSQL core workflow', () => {
+  it('claims isolated media work once and repairs interrupted leases and public visibility', async () => {
+    const storage = app.get(S3Storage),
+      media = app.get(MediaService);
+    const worker = new MediaWorker(db, media);
+    const id = randomUUID(),
+      originalKey = `original/${id}`;
+    const bytes = await sharp({
+      create: { width: 24, height: 24, channels: 3, background: '#315a41' },
+    })
+      .jpeg()
+      .toBuffer();
+    await storage.putPrivate(originalKey, bytes, 'image/jpeg');
+    await db.mediaAsset.create({
+      data: {
+        id,
+        ownerId: volunteer.id,
+        organizationId: volunteer.memberships[0]!.organizationId,
+        originalKey,
+        size: bytes.length,
+        mimeType: 'image/jpeg',
+      },
+    });
+    const pending = await db.mediaAsset.count({ where: { processingState: 'PENDING' } });
+    const claimed = (
+      await Promise.all(Array.from({ length: pending + 1 }, () => worker.claim()))
+    ).filter((item) => item !== null);
+    expect(claimed).toHaveLength(pending);
+    expect(new Set(claimed.map((item) => item.id)).size).toBe(pending);
+    expect(claimed.filter((item) => item.id === id)).toHaveLength(1);
+    const lease = claimed.find((item) => item.id === id)!;
+    for (const other of claimed.filter((item) => item.id !== id))
+      await db.mediaAsset.update({
+        where: { id: other.id },
+        data: {
+          processingState: 'PENDING',
+          processingLease: null,
+          processingStartedAt: null,
+          processingAttempts: 0,
+        },
+      });
+    await media.process(id, lease.processingLease!);
+    const ready = await db.mediaAsset.findUniqueOrThrow({ where: { id } });
+    expect(ready.processingState).toBe('READY');
+    expect(ready.processingLease).toBeNull();
+    expect((await storage.readPrivate(ready.publicKey!)).length).toBeGreaterThan(0);
+    await storage.publish(ready.publicKey!, ready.mimeType);
+    await worker.reconcilePublic(storage);
+    if (env.STORAGE_PROVIDER === 'local')
+      await expect(
+        readFile(resolve(env.LOCAL_MEDIA_DIR, 'public', ready.publicKey!)),
+      ).rejects.toThrow();
+    await db.mediaAsset.update({
+      where: { id },
+      data: {
+        processingState: 'PROCESSING',
+        processingAttempts: 3,
+        processingStartedAt: new Date(Date.now() - 11 * 60 * 1000),
+        processingLease: randomUUID(),
+      },
+    });
+    expect((await worker.reconcile()).count).toBe(1);
+    expect((await db.mediaAsset.findUniqueOrThrow({ where: { id } })).processingState).toBe(
+      'FAILED',
+    );
+  });
+  it('serves only sanitized reads in the public deployment without auth, signing or write routes', async () => {
+    const publicApp = await createApp('public');
+    try {
+      await publicApp.init();
+      expect(() => publicApp.get(AuthService)).toThrow();
+      expect(() => publicApp.get(SyncService)).toThrow();
+      const response = await request(publicApp.getHttpServer()).get('/api/v1/public/requests');
+      expect(response.status).toBe(200);
+      expect(response.body.length).toBeGreaterThan(0);
+      expect(response.body[0]).not.toHaveProperty('creatorId');
+      expect(response.body[0]).not.toHaveProperty('organizationId');
+      expect(response.body[0].creator).not.toHaveProperty('email');
+      for (const path of [
+        '/api/v1/auth/me',
+        '/api/v1/sync/receipt-key',
+        '/api/v1/volunteer/dashboard',
+        '/api/v1/admin/audits',
+        '/api/docs',
+        '/metrics',
+      ])
+        expect((await request(publicApp.getHttpServer()).get(path)).status).toBe(404);
+      expect(
+        (
+          await request(publicApp.getHttpServer())
+            .post('/api/v1/public/reports')
+            .set('Origin', origin)
+            .send({})
+        ).status,
+      ).toBe(404);
+    } finally {
+      await publicApp.close();
+    }
+  });
   async function signedNeed() {
     const keys = await generateKeys(),
       sync = app.get(SyncService);
@@ -112,6 +212,46 @@ describe('Real PostgreSQL core workflow', () => {
     );
     return { keys, sync, envelope, device };
   }
+  it('reissues trusted stored receipts after rotating the durable signer while preserving the event action', async () => {
+    const { sync, envelope } = await signedNeed();
+    const old = await sync.ingest(envelope, randomUUID());
+    const pair = (await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
+      'sign',
+      'verify',
+    ])) as CryptoKeyPair;
+    const publicKey = await exportPublic(pair.publicKey);
+    const now = Date.now();
+    const privateJwk = JSON.stringify(await crypto.subtle.exportKey('jwk', pair.privateKey));
+    const keyring = JSON.stringify([
+      {
+        ...sync.receiptKey().keys[0],
+        status: 'RETIRED',
+        signingUntil: new Date(now + 1000).toISOString(),
+      },
+      {
+        keyId: await hash(publicKey),
+        publicKey,
+        status: 'ACTIVE',
+        signingFrom: new Date(now - 1000).toISOString(),
+        signingUntil: new Date(now + 86400000).toISOString(),
+        verifyUntil: new Date(now + 2 * 86400000).toISOString(),
+      },
+    ]);
+    const rotated = new SyncService(db, auth, requests, app.get(MediaService), {
+      SYNC_SIGNING_PRIVATE_JWK: privateJwk,
+      SYNC_RECEIPT_KEYRING_JSON: keyring,
+    });
+    await rotated.onModuleInit();
+    const receipt = await rotated.ingest(envelope, randomUUID());
+    expect(receipt.body.keyId).not.toBe(old.body.keyId);
+    expect(receipt.body.publicId).toBe(old.body.publicId);
+    expect(await validReceipt(receipt, publicKey, envelope)).toBe(true);
+    expect(
+      await db.auditEvent.count({
+        where: { event: 'OFFLINE_EVENT_ACCEPTED', entityId: envelope.body.id },
+      }),
+    ).toBe(1);
+  });
   it('publishes a relayed original-author request exactly once under concurrent carriers and signs its receipt', async () => {
     const { sync, envelope } = await signedNeed();
     const results = await Promise.all(
@@ -131,6 +271,13 @@ describe('Real PostgreSQL core workflow', () => {
         where: { event: 'OFFLINE_EVENT_ACCEPTED', entityId: envelope.body.id },
       }),
     ).toBe(1);
+    expect(await db.syncReceipt.count({ where: { eventId: envelope.body.id } })).toBe(5);
+    expect(
+      await db.syncReceipt.aggregate({
+        where: { eventId: envelope.body.id },
+        _sum: { observations: true },
+      }),
+    ).toMatchObject({ _sum: { observations: 5 } });
   });
   it('rejects altered signatures without changing canonical quantities', async () => {
     const { sync, envelope } = await signedNeed();

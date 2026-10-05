@@ -2,11 +2,13 @@
 
 **Here for each other.** Saathi coordinates verified humanitarian supply needs, guest contributions, incoming deliveries, and public field updates. A permanent request page tells people whether a shared request still needs help.
 
-The web milestone and browser offline/nearby foundation are implemented with real PostgreSQL persistence. This is a local demonstration installation, not a live relief operation. Nearby browser communication is a phone-testing preview; native radio transports remain a measured-device gate. See [implementation status](docs/IMPLEMENTATION_STATUS.md) for the tested scope and remaining work.
+The web/API, browser offline foundation and native Android product use real PostgreSQL persistence. This is a demonstration installation, not a live relief operation. The native product has passed offline Nearby messages, interrupted file transfer and original-author event/receipt relay on a Samsung S24 and tablet. Browser communication remains a phone-testing preview. See [implementation status](docs/IMPLEMENTATION_STATUS.md) for the tested scope and remaining gates.
 
-Source: [public GitHub repository](https://github.com/aakash-priyadarshi/Saathi). [GitHub Actions](https://github.com/aakash-priyadarshi/Saathi/actions/workflows/ci.yml) runs web/database/browser checks and builds/lints the Android probe on standard Ubuntu runners. Successful Android jobs provide a debug APK artifact retained for seven days. The isolated [Android transport probe](spikes/android/README.md) now has [physical S24 / Samsung tablet foreground Nearby measurements](docs/benchmarks/samsung-s24-tablet-nearby.json); it is not a production native client.
+Source: [public GitHub repository](https://github.com/aakash-priyadarshi/Saathi). [Web/API CI](https://github.com/aakash-priyadarshi/Saathi/actions/workflows/ci.yml) runs database/browser checks and the isolated probe build. [Android product CI](https://github.com/aakash-priyadarshi/Saathi/actions/workflows/android-product.yml) builds/lints/tests the native product and publishes a seven-day staging artifact when its public trust/bootstrap variables are provisioned. The [transport probe](spikes/android/README.md) and its earlier [physical measurements](docs/benchmarks/samsung-s24-tablet-nearby.json) remain separate from product evidence.
 
 ## Local setup
+
+The native Android product lives in [`apps/android`](apps/android), using Kotlin/Compose, Android Keystore, encrypted work and signed service discovery. See [architecture](docs/android-architecture.md), [setup/signing](docs/android-release.md), [physical and automated evidence](docs/android-testing.md) and [deployment gates](docs/deployment-resilience.md). Hosted QA and broader connectivity/lifecycle verification remain in progress. The public `/download` page gains a direct APK action only when an approved HTTPS artifact is configured.
 
 Requires Node.js 22+, pnpm 10, and Docker Desktop with its daemon running.
 
@@ -52,7 +54,8 @@ packages/types            Public response contracts
 packages/validation       Strict shared Zod schemas
 packages/protocol         Signed durable public relief envelopes and receipts
 packages/ui               Accessible common UI feedback and verification
-spikes/android            Synthetic native transport measurement instrument
+apps/android              Native Kotlin/Compose Saathi product
+spikes/android            Separate synthetic transport measurement instrument
 tests/unit                Domain and authentication tests
 tests/integration         Real PostgreSQL workflow, authorization, media tests
 tests/e2e                 Desktop/mobile browser workflows and captures

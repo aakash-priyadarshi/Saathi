@@ -11,7 +11,16 @@ const schema = z.object({
   WEB_ORIGIN: z.string().url().default('http://localhost:3000'),
   PUBLIC_URL: z.string().url().default('http://localhost:3000'),
   PLATFORM_NAME: z.string().default('Saathi'),
+  APP_ENV: z
+    .enum(['development', 'staging', 'production'])
+    .default(process.env.NODE_ENV === 'production' ? 'production' : 'development'),
+  API_PLANE: z.enum(['combined', 'public', 'operational']).default('combined'),
+  SERVICE_ROLE: z.enum(['api', 'media-worker']).default('api'),
+  MEDIA_PROCESSING_MODE: z.enum(['inline', 'worker']).default('inline'),
   SYNC_SIGNING_PRIVATE_JWK: z.string().optional(),
+  SYNC_RECEIPT_KEYRING_JSON: z.string().optional(),
+  SERVICE_CONFIG_JSON: z.string().optional(),
+  SERVICE_CONFIG_ROOT_PUBLIC_JWK: z.string().optional(),
   REQUEST_ID_PREFIX: z
     .string()
     .regex(/^[A-Z]{2,6}$/)
@@ -40,18 +49,34 @@ const schema = z.object({
     .transform((directory) => resolve(workspaceRoot, directory)),
 });
 export const env = schema.parse(process.env);
-if (env.NODE_ENV === 'production') {
+if (env.APP_ENV === 'production' && env.API_PLANE !== 'public') {
   if (
     env.DEMO_MODE === 'true' ||
     env.MEDIA_SCAN_PROVIDER === 'disabled' ||
-    env.EMAIL_PROVIDER !== 'resend' ||
-    !env.RESEND_API_KEY ||
+    (env.SERVICE_ROLE === 'api' && (env.EMAIL_PROVIDER !== 'resend' || !env.RESEND_API_KEY)) ||
     !env.WEB_ORIGIN.startsWith('https://') ||
     env.S3_SECRET_KEY === 'saathi_local_storage' ||
     env.STORAGE_PROVIDER === 'local' ||
-    !env.SYNC_SIGNING_PRIVATE_JWK
+    env.MEDIA_PROCESSING_MODE !== 'worker'
   )
     throw new Error(
       'Production requires HTTPS, real email, malware scanning, non-demo data and private S3 storage credentials.',
     );
 }
+if (
+  env.APP_ENV !== 'development' &&
+  (!env.WEB_ORIGIN.startsWith('https://') || !env.PUBLIC_URL.startsWith('https://'))
+)
+  throw new Error('Hosted staging and production require HTTPS public and browser origins.');
+if (
+  env.APP_ENV !== 'development' &&
+  env.SERVICE_ROLE === 'api' &&
+  env.API_PLANE !== 'public' &&
+  (!env.SYNC_SIGNING_PRIVATE_JWK ||
+    !env.SYNC_RECEIPT_KEYRING_JSON ||
+    !env.SERVICE_CONFIG_JSON ||
+    !env.SERVICE_CONFIG_ROOT_PUBLIC_JWK)
+)
+  throw new Error(
+    'Staging/production operations require durable signing secrets, a receipt keyring and signed service configuration.',
+  );

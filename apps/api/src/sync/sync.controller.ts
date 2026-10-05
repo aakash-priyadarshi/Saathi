@@ -13,6 +13,9 @@ export class SyncController {
   @Get('receipt-key') key() {
     return this.sync.receiptKey();
   }
+  @Get('service-config') configuration() {
+    return this.sync.serviceConfig();
+  }
   @Get('preparation') async preparation(@Req() req: Request) {
     return this.sync.prepare(await this.auth.actor(req));
   }

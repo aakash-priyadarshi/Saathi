@@ -16,6 +16,7 @@ import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
 export interface MediaStorageProvider {
   putPrivate(key: string, bytes: Buffer, mime: string): Promise<void>;
   readPrivate(key: string): Promise<Buffer>;
+  deletePrivate(key: string): Promise<void>;
   publish(key: string, mime: string): Promise<void>;
   hide(key: string): Promise<void>;
   signedOriginal(key: string): Promise<string>;
@@ -64,6 +65,14 @@ export class S3Storage implements MediaStorageProvider {
     if (!/^[a-z]+\/[a-f0-9-]+(?:-thumb)?(?:\.[a-z0-9]+)?$/.test(key))
       throw new Error('Invalid object key');
     return resolve(this.localRoot, area, key);
+  }
+  async deletePrivate(key: string) {
+    if (env.STORAGE_PROVIDER === 'local') {
+      await unlink(this.path('private', key)).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw error;
+      });
+    } else
+      await this.client.send(new DeleteObjectCommand({ Bucket: env.S3_PRIVATE_BUCKET, Key: key }));
   }
   async putPrivate(key: string, bytes: Buffer, mime: string) {
     if (env.STORAGE_PROVIDER === 'local') {

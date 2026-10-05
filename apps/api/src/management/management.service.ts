@@ -186,13 +186,15 @@ export class ManagementService {
     const post = await this.db.fieldUpdate.findUnique({ where: { id }, include: { media: true } });
     if (!post) throw new NotFoundException();
     this.auth.requireOrg(actor, post.organizationId, true);
-    await this.media.publication(post.media, action === 'APPROVED');
     return this.db.atomic(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "FieldUpdate" WHERE id=${id} FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM "MediaAsset" WHERE "fieldUpdateId"=${id} ORDER BY id FOR UPDATE`;
       const p = await tx.fieldUpdate.findUnique({ where: { id }, include: { media: true } });
       if (!p) throw new NotFoundException();
       this.auth.requireOrg(actor, p.organizationId, true);
       if (action === 'APPROVED' && p.media.some((m) => m.processingState !== 'READY'))
         throw new ForbiddenException('Media is not ready for publication.');
+      await this.media.publication(p.media, action === 'APPROVED');
       await tx.fieldUpdate.update({ where: { id }, data: { moderation: action } });
       await tx.mediaAsset.updateMany({
         where: { fieldUpdateId: id },

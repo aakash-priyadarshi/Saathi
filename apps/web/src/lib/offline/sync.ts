@@ -6,6 +6,11 @@ import {
   receiptSchema,
   validEnvelope,
   validReceipt,
+  validReceiptWithKeyring,
+  receiptKeyringSchema,
+  publicKeySchema,
+  hash,
+  type ReceiptKeyPolicy,
   type EventInput,
   type PublicKey,
   type Receipt,
@@ -14,7 +19,13 @@ import { api, write, ApiError } from '../api';
 import { setting, setSetting, events, saveEvent, type Preparation, type SavedEvent } from './store';
 let syncing = false;
 export async function pinReceiptKey() {
-  const key = await api<{ publicKey: PublicKey }>('/sync/receipt-key');
+  const key = await api<{ publicKey: PublicKey; keys: ReceiptKeyPolicy[] }>('/sync/receipt-key');
+  publicKeySchema.parse(key.publicKey);
+  const keys = receiptKeyringSchema.parse(key.keys);
+  for (const entry of keys)
+    if (entry.keyId !== (await hash(entry.publicKey)))
+      throw new Error('Saathi’s receipt key could not be checked.');
+  await setSetting('receipt-keyring', keys);
   await setSetting('receipt-key', key.publicKey);
   return key.publicKey;
 }
@@ -107,9 +118,15 @@ export async function receiveEvent(value: unknown, hops: number) {
 }
 export async function acceptReceipt(value: unknown) {
   const receipt = receiptSchema.parse(value),
-    key = await setting<PublicKey>('receipt-key');
+    key = await setting<PublicKey>('receipt-key'),
+    keys = await setting<ReceiptKeyPolicy[]>('receipt-keyring');
   const record = (await events()).find((e) => e.id === receipt.body.eventId);
-  if (!record || !key || !(await validReceipt(receipt, key, record.envelope)))
+  if (
+    !record ||
+    !(keys
+      ? await validReceiptWithKeyring(receipt, keys, record.envelope)
+      : key && (await validReceipt(receipt, key, record.envelope)))
+  )
     throw new Error('Reconnect to Saathi before trusting this publication confirmation.');
   // Do not let an older acceptance overwrite a later withdrawal.
   if (record.receipt && record.receipt.body.recordedAt > receipt.body.recordedAt) return;
@@ -119,7 +136,8 @@ export async function syncEvents() {
   if (syncing) return;
   syncing = true;
   try {
-    const key = await pinReceiptKey();
+    await pinReceiptKey();
+    const keys = (await setting<ReceiptKeyPolicy[]>('receipt-keyring'))!;
     let carrier = await setting<string>('carrier-id');
     if (!carrier) {
       carrier = crypto.randomUUID();
@@ -146,7 +164,7 @@ export async function syncEvents() {
           envelope: record.envelope,
           carrierId: carrier,
         });
-        if (!(await validReceipt(receipt, key, record.envelope)))
+        if (!(await validReceiptWithKeyring(receipt, keys, record.envelope)))
           throw new Error('Saathi’s confirmation could not be checked.');
         await saveEvent({ ...record, receipt, error: undefined });
       } catch (error) {

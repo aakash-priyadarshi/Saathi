@@ -96,6 +96,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <Link href="/offline">Saved work</Link>
           <span> · </span>
           <Link href="/nearby">Nearby</Link>
+          <span> · </span>
+          <Link href="/download">Android app</Link>
         </p>
       </footer>
       <nav className="mobile-nav" aria-label="Mobile navigation">
