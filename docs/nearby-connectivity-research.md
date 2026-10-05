@@ -33,16 +33,18 @@ The 20 July 2026 Nearby announcement schedules removal of automatic radio enable
 
 ## Pair compatibility and honest release gates
 
-| Pair                              | Candidate path                                                            | Verification here                                              |
-| --------------------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| Android native ↔ Android native   | Nearby; compare Aware/Direct/local hotspot; BLE small-event fallback      | Not tested: physical Android/compiled app needed               |
-| Android browser ↔ Android browser | Secure cached PWA + local WebRTC + manual two-way pairing                 | Chromium desktop software proof only; Android hardware pending |
-| Android browser ↔ Android native  | Shared local IP network + WebRTC; native bootstrap exchanges descriptions | Not tested                                                     |
-| Android native ↔ iPhone native    | Nearby; Aware on mutually capable devices; shared LAN                     | Not tested; iPhone unavailable                                 |
-| Android browser ↔ iPhone browser  | Shared LAN + WebRTC, manual description exchange                          | Not tested; iPhone unavailable                                 |
-| iPhone browser ↔ iPhone native    | Shared LAN + WebRTC; explicit native pairing bridge                       | Not tested; iPhone unavailable                                 |
+| Pair                              | Candidate path                                                            | Verification here                                                                                                                       |
+| --------------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Android native ↔ Android native   | Nearby; compare Aware/Direct/local hotspot; BLE small-event fallback      | Physical S24 / SM-X510 foreground Nearby synthetic pairing/RTT/checksum proof; broader compatibility and alternative data paths pending |
+| Android browser ↔ Android browser | Secure cached PWA + local WebRTC + manual two-way pairing                 | Chromium desktop software proof only; Android hardware pending                                                                          |
+| Android browser ↔ Android native  | Shared local IP network + WebRTC; native bootstrap exchanges descriptions | Not tested                                                                                                                              |
+| Android native ↔ iPhone native    | Nearby; Aware on mutually capable devices; shared LAN                     | Not tested; iPhone unavailable                                                                                                          |
+| Android browser ↔ iPhone browser  | Shared LAN + WebRTC, manual description exchange                          | Not tested; iPhone unavailable                                                                                                          |
+| iPhone browser ↔ iPhone native    | Shared LAN + WebRTC; explicit native pairing bridge                       | Not tested; iPhone unavailable                                                                                                          |
 
 ## Candidate comparison
+
+The [physical S24/tablet record](benchmarks/samsung-s24-tablet-nearby.json) now supplements the research matrix. It covers the isolated Nearby probe, not native domain integration or any browser/native bridge. The probe uses `ConnectionType.BALANCED`; Google documents that this policy may adjust existing Wi-Fi/Bluetooth connections as needed. The probe requires both radios already enabled and does not call silent radio-toggle APIs. Future production policy must account for preserving the user's existing network. The SDK's selected radio was not recorded. [Connection type reference](https://developers.google.com/android/reference/com/google/android/gms/nearby/connection/ConnectionType).
 
 | Design                                            | Strength                                                                      | Material problem                                                         | Decision                                          |
 | ------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------- |

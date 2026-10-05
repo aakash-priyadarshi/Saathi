@@ -1,6 +1,6 @@
 # Android transport probe
 
-This is an isolated, foreground architecture instrument, not the native Saathi client. It sends only synthetic benchmark bytes. It does not sign/publish relief events, bridge to browsers, record calls, collect GPS, or demonstrate background execution. It is installed on the owner's non-rooted Samsung S24 / Android 16. Native connection and performance measurements still require a second physical phone; do not fill those compatibility cells from an installation or emulator.
+This is an isolated, foreground architecture instrument, not the native Saathi client. It sends only synthetic benchmark bytes. It does not sign/publish relief events, bridge to browsers, record calls, collect GPS, or demonstrate background execution. It is installed on the owner's Samsung S24 (SM-S921B) and Samsung tablet (SM-X510), both Android 16, without root. See [their measured Nearby record](../../docs/benchmarks/samsung-s24-tablet-nearby.json); broader compatibility and range/battery/lifecycle results remain gates.
 
 ## Build and install
 
@@ -8,7 +8,9 @@ Open this directory as a project in Android Studio, or run `./gradlew :app:assem
 
 With a phone connected and USB debugging authorized, use `adb install -r app/build/outputs/apk/debug/app-debug.apk`, then launch **Saathi transport test**. Installing onto two phones is necessary for native pairing/throughput measurements. No Android Studio MCP is required for Gradle/ADB. Android Studio can be used for logcat/profiling; agent integration is optional.
 
-Local wrapper build, lint, debug signature verification, emulator installation/launch, permission denial/retry, advertising, foreground stop and local JSON export were checked on 5 October 2026. The emulator runs Android 17/API 37; it does not validate the owner's S24/Android 16. The [smoke record](../../docs/benchmarks/android-emulator-smoke.json) keeps all physical latency, throughput, range and battery results empty. The owner chose to connect the physical phone later.
+Local wrapper build, lint and debug signature verification passed on 5 October 2026. `0.2-probe` passed [single-device S24 checks](../../docs/benchmarks/samsung-s24-smoke.json): permission denial/settings recovery, Nearby advertising/discovery, Direct discovery, unpaired foreground stop and parseable local JSON export. The physical S24/tablet pair also completed 20/20 offline pairing requests, generated round trips and checksum-verified 1 MiB transfers with no active default network. The currently installed `0.3-probe` fixes a stale tablet pairing prompt after rejection; physical rejection, accepted-pair, round-trip and transfer regression checks passed separately. Both had Direct/Aware features and Aware availability at the sample; those data paths remain untested. The [earlier Android 17/API 37 emulator record](../../docs/benchmarks/android-emulator-smoke.json) remains separate. Range, connected screen-lock behavior and battery impact are still unmeasured.
+
+The baseline uses `ConnectionType.BALANCED`, which can adjust existing Wi-Fi/Bluetooth connections as needed; the SDK's selected radio is not recorded. Both radios must already be on, and this app does not call silent radio-toggle APIs. Measurement records are an in-memory instrument buffer and can reset on Activity recreation/process death; export them before leaving a testing session. The probe is not a native durable relief client.
 
 ## Measure
 

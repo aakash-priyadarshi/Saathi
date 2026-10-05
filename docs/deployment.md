@@ -2,7 +2,7 @@
 
 The source includes a Docker build and CI workflow. They are provided for operator deployment, not a claim that a live deployment has occurred. The Docker daemon on the development host was unavailable; the image build has not been executed here. PostgreSQL integration tests ran with the native local PostgreSQL fallback.
 
-The [public repository's CI](https://github.com/aakash-priyadarshi/Saathi/actions/runs/37272841824) passed lint, type checks, unit/database/browser tests, production workspace builds and Android probe build/lint for code commit `405c58c`. It runs on standard Ubuntu runners with PostgreSQL 17 and Redis 7 and retains the synthetic Android debug APK for seven days. Production image startup and actual S3/R2, Resend, ClamAV and physical-phone checks remain release gates.
+The [public repository's CI](https://github.com/aakash-priyadarshi/Saathi/actions/runs/37285049029) passed lint, type checks, unit/database/browser tests, production workspace builds and Android probe build/lint for code commit `fce9ff3`, including probe `0.3-probe` and the browser pairing timing regression. It runs on standard Ubuntu runners with PostgreSQL 17 and Redis 7 and retains the synthetic Android debug APK for seven days. Production image startup, actual S3/R2, Resend and ClamAV integration, broader device compatibility and physical browser/range/battery/lifecycle checks remain release gates. The [S24/tablet Nearby probe](benchmarks/samsung-s24-tablet-nearby.json) supplies scoped foreground physical evidence.
 
 ## Required services
 

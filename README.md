@@ -4,7 +4,7 @@
 
 The web milestone and browser offline/nearby foundation are implemented with real PostgreSQL persistence. This is a local demonstration installation, not a live relief operation. Nearby browser communication is a phone-testing preview; native radio transports remain a measured-device gate. See [implementation status](docs/IMPLEMENTATION_STATUS.md) for the tested scope and remaining work.
 
-Source: [public GitHub repository](https://github.com/aakash-priyadarshi/Saathi). [GitHub Actions](https://github.com/aakash-priyadarshi/Saathi/actions/workflows/ci.yml) runs web/database/browser checks and builds/lints the Android probe on standard Ubuntu runners. Successful Android jobs provide a debug APK artifact retained for seven days. The isolated [Android transport probe](spikes/android/README.md) is ready for the owner's Samsung S24 / Android 16 field tests; it is not a production native client.
+Source: [public GitHub repository](https://github.com/aakash-priyadarshi/Saathi). [GitHub Actions](https://github.com/aakash-priyadarshi/Saathi/actions/workflows/ci.yml) runs web/database/browser checks and builds/lints the Android probe on standard Ubuntu runners. Successful Android jobs provide a debug APK artifact retained for seven days. The isolated [Android transport probe](spikes/android/README.md) now has [physical S24 / Samsung tablet foreground Nearby measurements](docs/benchmarks/samsung-s24-tablet-nearby.json); it is not a production native client.
 
 ## Local setup
 
@@ -119,9 +119,9 @@ Reproduce the independent desktop proof with `pnpm spike:nearby`. It uses two Ch
 
 ## Deployment and boundaries
 
-The [Android transport instrument](spikes/android/README.md) opens directly in Android Studio. Its signed debug APK build and lint pass with the installed SDK/JBR. It measures authenticated native Nearby pairing, message round trips and a consented checksum transfer using generated data; Direct discovery and Aware availability are probes, not validated production adapters. No MCP is needed for Gradle or ADB. Physical S24/second-phone measurements remain required.
+The [Android transport instrument](spikes/android/README.md) opens directly in Android Studio. Its signed debug APK build and lint pass with the installed SDK/JBR. The owner's S24 (SM-S921B) and tablet (SM-X510), both Android 16, completed 20/20 offline pairing requests and exchanged generated messages and checksum-verified bytes without an active default network. Installed `0.3-probe` also passes rejection-prompt and later accepted-pair regression checks. Direct discovery and Aware availability are probes, not validated production data paths. No MCP is needed for Gradle or ADB. Physical browser/bridge, range, battery and lifecycle measurements remain required; see [the measured record](docs/benchmarks/samsung-s24-tablet-nearby.json).
 
-GitHub Actions runs web/database/browser verification and a separate Android probe build/lint job on standard Ubuntu runners. The repository stays public, workflow permissions are read-only, runs are bounded and APK artifacts expire after seven days. Local credentials, device reports, signing keys and build caches are excluded from Git; `node scripts/check-publish.mjs` checks tracked files before publication.
+GitHub Actions runs web/database/browser verification and a separate Android probe build/lint job on standard Ubuntu runners. The repository stays public, workflow permissions are read-only, runs are bounded and APK artifacts expire after seven days. Local credentials, raw device reports, signing keys and build caches are excluded from Git; public benchmarks contain selected measurements with personal identifiers omitted. `node scripts/check-publish.mjs` checks tracked files before publication.
 
 See [deployment](docs/deployment.md), [architecture](docs/architecture.md), [security](docs/security.md), [privacy](docs/privacy.md), [threat model](docs/threat-model.md), and [offline protocol](docs/offline-protocol.md).
 

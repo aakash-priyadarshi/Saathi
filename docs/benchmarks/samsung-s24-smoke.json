@@ -1,0 +1,68 @@
+{
+  "recordedAt": "2026-10-05",
+  "scope": "Single physical Samsung S24; foreground native probe checks only, not production compatibility or two-device communication",
+  "followUp": "Later physical pairing results are recorded separately in samsung-s24-tablet-nearby.json; null values here describe this earlier single-device session",
+  "device": {
+    "manufacturer": "samsung",
+    "model": "SM-S921B",
+    "android": "16",
+    "sdk": 36,
+    "securityPatch": "2026-08-05",
+    "googlePlayServices": "26.36.35 (260400-991383798)",
+    "chromePackageVersion": "154.0.8037.92",
+    "rootRequired": false,
+    "usbTetheringEnabledDuringTest": true
+  },
+  "app": {
+    "id": "org.saathi.probe",
+    "version": "0.2-probe",
+    "targetSdk": 36,
+    "nearbySdk": "19.5.1",
+    "codeCommit": "a3c2293d16ccd22ade615e5784d04250cb6e72b0"
+  },
+  "checks": {
+    "buildAndLint": "PASS: local pinned Gradle build/lint and public GitHub Actions Android job",
+    "debugSignature": "PASS: APK Signature Scheme v2, one signer",
+    "installAndLaunch": "PASS: debug APK installed with USB debugging, no root",
+    "permissionDenial": "PASS: controlled denial returned four denied permissions and prevented advertising",
+    "permissionRecovery": "PASS: repeated denial stopped the system prompt; added app settings action, granted Nearby devices through normal Android settings and retried successfully in 0.2-probe",
+    "advertising": "PASS: Nearby SDK success callback, no native peer paired",
+    "discovery": "PASS: Nearby SDK discovery success callback, no Saathi peer connection established",
+    "directDiscovery": "PASS: discovery started; one Wi-Fi Direct peer counted after ten seconds, with no peer identities exported or connection attempted",
+    "backgroundBoundary": "PASS: unpaired probe recorded stop when leaving foreground; connected/background operation remains untested",
+    "unpairedMeasurementControls": "PASS: RTT and generated-transfer controls disabled without a connected peer",
+    "measurementExport": "PASS: Android document picker saved parseable local JSON containing appVersion 0.2-probe and measurements",
+    "runtimeCrash": "NONE observed in AndroidRuntime log filtered to the current probe process",
+    "physicalBrowserChecks": "NOT RUN: automatic approval review blocked Chrome remote-debugging setup without a detailed reason"
+  },
+  "capabilities": {
+    "wifiDirectFeature": true,
+    "wifiAwareFeature": true,
+    "wifiAwareAvailableAtProbe": true,
+    "directPeerCountAtSample": 1,
+    "awareConnectionTest": "NOT RUN",
+    "directConnectionTest": "NOT RUN"
+  },
+  "evidence": {
+    "source": "Locally exported saathi-android-probe-v1 report plus controlled permission checks and app-filtered ADB observations",
+    "exportMeasurementKinds": [
+      "capabilities",
+      "not_ready",
+      "disconnected",
+      "advertising",
+      "discovery",
+      "direct_discovery",
+      "direct_peer_count"
+    ],
+    "ci": "https://github.com/aakash-priyadarshi/Saathi/actions/runs/37275393679",
+    "identifiers": "No device serial, MAC address, personal device name, account or file listing included"
+  },
+  "physicalPairingSuccess": null,
+  "physicalRangeMetres": null,
+  "nativeRoundTripMs": null,
+  "nativeThroughputMiBPerSecond": null,
+  "batteryImpact": null,
+  "connectedScreenLockBehavior": null,
+  "browserToNative": "NOT RUN",
+  "secondDeviceCompatibility": "NOT RUN"
+}

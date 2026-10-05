@@ -19,3 +19,5 @@ The PWA is useful with no internet and no nearby peers. Browser pairing can requ
 ## Evidence
 
 See `nearby-connectivity-research.md`, `nearby-connectivity-architecture.md` and the reproducible `pnpm spike:nearby` JSON. 3/3 desktop Chromium-process sessions, checksum-verified transfer and synthetic media negotiation passed. This is a software proof with no measured phone range/battery result.
+
+Physical follow-up: the S24 (SM-S921B) and Samsung tablet (SM-X510), both Android 16, paired with the isolated Nearby SDK probe and exchanged generated messages and checksum-verified bytes with no active default network. See `benchmarks/samsung-s24-tablet-nearby.json` for counts, raw samples and test boundaries. This establishes a candidate path for these devices; it does not select a production native adapter before Direct/Aware/hotspot comparison and range/battery/lifecycle tests.

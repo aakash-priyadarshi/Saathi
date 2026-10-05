@@ -1,0 +1,1723 @@
+{
+  "recordedAt": "2026-10-05",
+  "scope": "Physical foreground synthetic-data Android Nearby Connections probe, Samsung S24 to Samsung SM-X510 tablet; not production Saathi clients, browser communication, media calls or relief-event relay",
+  "devices": [
+    {
+      "role": "phone",
+      "manufacturer": "samsung",
+      "model": "SM-S921B",
+      "android": "16",
+      "sdk": 36,
+      "securityPatch": "2026-08-05",
+      "googlePlayServices": "26.36.35 (260400-991383798)",
+      "chromePackageVersion": "154.0.8037.92"
+    },
+    {
+      "role": "tablet",
+      "manufacturer": "samsung",
+      "model": "SM-X510",
+      "android": "16",
+      "sdk": 36,
+      "securityPatch": "2026-08-05",
+      "googlePlayServices": "26.34.36 (260400-981326859)",
+      "chromePackageVersion": "154.0.8037.57"
+    }
+  ],
+  "probe": {
+    "id": "org.saathi.probe",
+    "version": "0.2-probe",
+    "codeCommit": "a3c2293d16ccd22ade615e5784d04250cb6e72b0",
+    "nearbySdk": "19.5.1",
+    "targetSdk": 36,
+    "strategy": "P2P_POINT_TO_POINT",
+    "connectionType": "BALANCED",
+    "selectedRadio": "Not recorded; SDK chooses the data path",
+    "payloadBytes": 1048576,
+    "chunkBytes": 8192,
+    "chunkAckPolicy": "stop-and-wait",
+    "usbPoweredDuringTests": true
+  },
+  "network": {
+    "ownerReportedMobileDataAndTetheringOff": true,
+    "ownerReportedDisconnectedFromWifiNetworksWithWifiAndBluetoothOn": true,
+    "observation": "Android reported no active default network before, during and after the offline tests",
+    "samples": [
+      {
+        "at": "2026-10-05T07:46:49.7308517+00:00",
+        "ownerReportsInternetDisconnected": true,
+        "devices": {
+          "tablet": {
+            "defaultNetworkLineFound": true,
+            "activeDefaultNetworkPresent": false
+          },
+          "phone": {
+            "defaultNetworkLineFound": true,
+            "activeDefaultNetworkPresent": false
+          }
+        }
+      },
+      {
+        "at": "2026-10-05T07:57:28.7824584+00:00",
+        "devices": {
+          "tablet": {
+            "defaultNetworkLineFound": true,
+            "activeDefaultNetworkPresent": false
+          },
+          "phone": {
+            "defaultNetworkLineFound": true,
+            "activeDefaultNetworkPresent": false
+          }
+        }
+      },
+      {
+        "at": "2026-10-05T08:09:39.7371281+00:00",
+        "ownerReportsInternetDisconnected": true,
+        "devices": {
+          "tablet": {
+            "defaultNetworkLineFound": true,
+            "activeDefaultNetworkPresent": false
+          },
+          "phone": {
+            "defaultNetworkLineFound": true,
+            "activeDefaultNetworkPresent": false
+          }
+        }
+      }
+    ]
+  },
+  "offline": {
+    "pairing": {
+      "attempts": 20,
+      "successes": 20,
+      "initiator": "tablet",
+      "initiatorSetupSamplesMs": [
+        131819, 14760, 14959, 14817, 14967, 14711, 14733, 15016, 14787, 11196, 39115, 11222, 15206,
+        14723, 17914, 16356, 15645, 14983, 10980, 15700
+      ],
+      "medianSetupMs": 14963,
+      "p95SetupMs": 39115,
+      "confirmation": "Matching digits read and compared in both physical-device app UIs before acceptance by ADB test automation",
+      "timingBoundary": "From tablet requestConnection action to successful connection callback; includes UI observation and confirmation delays, not radio-only handshake latency. Summaries use successful requests; failures remain in the attempt log.",
+      "calibrationOutlier": "First offline sample includes a 131.819-second wait after the initial UI check preceded the phone callback. This sample is retained in the raw data and summary."
+    },
+    "rtt": {
+      "phoneToTablet": {
+        "samplesMs": [
+          78.147773, 58.708047, 37.254063, 38.281679, 27.057344, 38.07625, 33.849493, 33.718437,
+          26.137617, 35.90543, 37.376328, 30.753906, 31.327696, 33.277383, 27.485586, 34.04332,
+          31.948711, 32.12875, 27.103867, 34.568945
+        ],
+        "medianMs": 33.783965,
+        "p95Ms": 58.708047
+      },
+      "tabletToPhone": {
+        "samplesMs": [
+          38.522961, 32.000384, 20.407692, 16.2885, 24.15, 24.586385, 60.324538, 24.705424,
+          23.375769, 22.39673, 43.324538, 22.491692, 21.741731, 24.749693, 55.338654, 23.119616,
+          20.172269, 23.338885, 52.034231, 35.429615
+        ],
+        "medianMs": 24.3681925,
+        "p95Ms": 55.338654
+      }
+    },
+    "transfer": {
+      "phoneToTablet": {
+        "bytes": 1048576,
+        "seconds": 7.881908764,
+        "mibPerSecond": 0.1268728210312991,
+        "checksumVerified": true
+      },
+      "tabletToPhone": {
+        "bytes": 1048576,
+        "seconds": 7.185634687,
+        "mibPerSecond": 0.13916655153777371,
+        "checksumVerified": true
+      }
+    }
+  },
+  "baselineWithInternetNetworks": {
+    "pairingsObserved": 2,
+    "rtt": {
+      "phoneToTablet": {
+        "samplesMs": [
+          156.996328, 24.080469, 25.59336, 28.276757, 31.406093, 28.569804, 40.24707, 33.332969,
+          32.88789, 37.145195, 47.042226, 33.056093, 40.605352, 35.326406, 51.484258, 48.786328,
+          32.489765, 35.018515, 35.40625, 32.929101
+        ],
+        "medianMs": 34.175742,
+        "p95Ms": 51.484258
+      },
+      "tabletToPhone": {
+        "samplesMs": [
+          38.079539, 25.581077, 20.580692, 23.053462, 21.556039, 29.413499, 25.844269, 26.378308,
+          22.841846, 24.6825, 27.773115, 22.026923, 26.036308, 24.095885, 30.796846, 19.611693,
+          27.602115, 18.820462, 29.828, 22.829539
+        ],
+        "medianMs": 25.1317885,
+        "p95Ms": 30.796846
+      }
+    },
+    "transfer": {
+      "phoneToTablet": {
+        "bytes": 1048576,
+        "seconds": 7.585618379,
+        "mibPerSecond": 0.13182840871199067,
+        "checksumVerified": true
+      },
+      "tabletToPhone": {
+        "bytes": 1048576,
+        "seconds": 4.643478593,
+        "mibPerSecond": 0.21535578983986067,
+        "checksumVerified": true
+      }
+    }
+  },
+  "checks": {
+    "permissionDenialAndSettingsRecovery": "PASS on S24; see samsung-s24-smoke.json",
+    "transferDecline": "PASS",
+    "foregroundDisconnect": "PASS: opening S24 report picker stopped its endpoint and tablet reported connection lost; later manual pairing succeeded",
+    "localJsonExport": "PASS: both devices saved parseable measurement reports",
+    "pairingRejection": "PASS in 0.3-probe: one phone rejection automatically dismissed the tablet prompt; both devices reported rejection and disabled measurement controls",
+    "physicalBrowser": "NOT RUN: automatic approval review blocked Chrome remote-debugging setup without a detailed reason"
+  },
+  "dialogFixFollowUp": {
+    "version": "0.3-probe",
+    "codeCommit": "b940b393b1d619db49fba2c2196c739d7ab3c51f",
+    "scope": "Separate physical regression checks after the twenty-request 0.2-probe dataset; these samples are not added to its performance summary",
+    "issue": "0.2-probe left the tablet authentication prompt visible after the S24 rejected the connection; 0.3 dismisses the prompt when the SDK resolves or ends its session",
+    "earlierControl": {
+      "tabletDialogNeededManualRejection": true
+    },
+    "rejection": {
+      "at": "2026-10-05T08:17:31.6801159+00:00",
+      "scope": "Separate deliberate rejection control, excluded from twenty acceptance attempts",
+      "matchingCodesObserved": true,
+      "phoneRejected": true,
+      "tabletDialogNeededManualRejection": false,
+      "automaticDismissalVerified": true,
+      "statuses": {
+        "phone": "pair_failed: Status{statusCode=STATUS_CONNECTION_REJECTED, resolution=null}",
+        "tablet": "pair_failed: Status{statusCode=STATUS_CONNECTION_REJECTED, resolution=null}"
+      },
+      "measurementControls": {
+        "phone": {
+          "anyEnabled": false,
+          "controlsFound": 2
+        },
+        "tablet": {
+          "anyEnabled": false,
+          "controlsFound": 2
+        }
+      }
+    },
+    "acceptedPairing": {
+      "round": 1,
+      "at": "2026-10-05T08:18:52.5226827+00:00",
+      "confirmation": "Matching codes compared in both app UIs by test automation",
+      "requestStarted": true,
+      "success": true,
+      "phoneSetupMs": 22938,
+      "initiatorSetupMs": 14704
+    },
+    "rtt": {
+      "phoneToTablet": {
+        "samplesMs": [
+          90.145195, 83.979922, 22.008242, 25.066836, 35.049883, 32.96375, 32.865508, 30.125976,
+          30.331758, 34.730352, 32.819414, 29.082071, 33.127109, 30.351015, 31.369024, 30.561094,
+          30.503555, 28.945899, 37.058555, 58.03125
+        ],
+        "medianMs": 32.094219,
+        "p95Ms": 83.979922
+      }
+    },
+    "transfer": {
+      "phoneToTablet": {
+        "bytes": 1048576,
+        "seconds": 7.410295648,
+        "mibPerSecond": 0.13494738233148562,
+        "checksumVerified": true
+      }
+    },
+    "localJsonExport": "PASS on both devices; sessions closed after export",
+    "nativeTrace": {
+      "phone": [
+        {
+          "at": 1791188193110,
+          "kind": "capabilities",
+          "value": {
+            "model": "samsung SM-S921B",
+            "android": "16",
+            "sdk": 36,
+            "securityPatch": "2026-08-05",
+            "nearbySdk": "19.5.1",
+            "targetSdk": 36,
+            "wifiDirectFeature": true,
+            "wifiAwareFeature": true,
+            "wifiAwareAvailable": true,
+            "batteryPercent": 52,
+            "physicalRange": null,
+            "batteryImpact": null
+          }
+        },
+        {
+          "at": 1791188213434,
+          "kind": "disconnected",
+          "value": "New advertising attempt"
+        },
+        {
+          "at": 1791188213973,
+          "kind": "advertising",
+          "value": "SDK advertising success; temporary identifier omitted"
+        },
+        {
+          "at": 1791188234182,
+          "kind": "pair_failed",
+          "value": "Status{statusCode=STATUS_CONNECTION_REJECTED, resolution=null}"
+        },
+        {
+          "at": 1791188338567,
+          "kind": "disconnected",
+          "value": "New advertising attempt"
+        },
+        {
+          "at": 1791188339169,
+          "kind": "advertising",
+          "value": "SDK advertising success; temporary identifier omitted"
+        },
+        {
+          "at": 1791188361506,
+          "kind": "paired",
+          "value": {
+            "setupMs": 22938,
+            "includesHumanConfirmation": true
+          }
+        },
+        {
+          "at": 1791188466518,
+          "kind": "rtt_ms",
+          "value": {
+            "samples": [
+              90.145195, 83.979922, 22.008242, 25.066836, 35.049883, 32.96375, 32.865508, 30.125976,
+              30.331758, 34.730352, 32.819414, 29.082071, 33.127109, 30.351015, 31.369024,
+              30.561094, 30.503555, 28.945899, 37.058555, 58.03125
+            ],
+            "median": 32.094219,
+            "p95": 83.979922
+          }
+        },
+        {
+          "at": 1791188481239,
+          "kind": "sent_1mib_ms",
+          "value": 7459.973711
+        },
+        {
+          "at": 1791188751828,
+          "kind": "disconnected",
+          "value": "App left foreground; background transport intentionally unimplemented"
+        }
+      ],
+      "tablet": [
+        {
+          "at": 1791188207560,
+          "kind": "capabilities",
+          "value": {
+            "model": "samsung SM-X510",
+            "android": "16",
+            "sdk": 36,
+            "securityPatch": "2026-08-05",
+            "nearbySdk": "19.5.1",
+            "targetSdk": 36,
+            "wifiDirectFeature": true,
+            "wifiAwareFeature": true,
+            "wifiAwareAvailable": true,
+            "batteryPercent": 81,
+            "physicalRange": null,
+            "batteryImpact": null
+          }
+        },
+        {
+          "at": 1791188218958,
+          "kind": "disconnected",
+          "value": "New discovery attempt"
+        },
+        {
+          "at": 1791188219089,
+          "kind": "discovery",
+          "value": "Searching for test phones"
+        },
+        {
+          "at": 1791188234251,
+          "kind": "pair_failed",
+          "value": "Status{statusCode=STATUS_CONNECTION_REJECTED, resolution=null}"
+        },
+        {
+          "at": 1791188343876,
+          "kind": "disconnected",
+          "value": "New discovery attempt"
+        },
+        {
+          "at": 1791188344078,
+          "kind": "discovery",
+          "value": "Searching for test phones"
+        },
+        {
+          "at": 1791188361484,
+          "kind": "paired",
+          "value": {
+            "setupMs": 14704,
+            "includesHumanConfirmation": true
+          }
+        },
+        {
+          "at": 1791188481231,
+          "kind": "received_1mib",
+          "value": {
+            "seconds": 7.410295648,
+            "mibPerSecond": 0.13494738233148562,
+            "checksumVerified": true,
+            "chunkAckPolicy": "stop-and-wait"
+          }
+        },
+        {
+          "at": 1791188752539,
+          "kind": "disconnected",
+          "value": "Connection lost; repeat pairing to measure reconnection"
+        },
+        {
+          "at": 1791188764397,
+          "kind": "disconnected",
+          "value": "App left foreground; background transport intentionally unimplemented"
+        }
+      ]
+    }
+  },
+  "diagnostics": {
+    "advertisingWait": "A calibration restart exceeded the initial twelve-second UI polling window; no pairing request was sent during that wait. Advertising success was observed later. Subsequent polling allowed sixty seconds.",
+    "attemptLog": [
+      {
+        "round": 1,
+        "at": "2026-10-05T13:07:46.5620228+05:30",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": true,
+        "success": true,
+        "phoneSetupMs": 20411,
+        "initiatorSetupMs": 10324
+      },
+      {
+        "round": 2,
+        "at": "2026-10-05T13:08:17.730832+05:30",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": false,
+        "success": false,
+        "error": "Advertising success was not observed."
+      },
+      {
+        "round": 3,
+        "at": "2026-10-05T13:16:50.6260471+05:30",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": true,
+        "success": true,
+        "error": "Expected pairing confirmation is not visible.",
+        "diagnostic": "Initial UI check preceded the phone callback; confirmation dialog appeared later and pairing completed after matching-code comparison.",
+        "phoneSetupMs": 140757,
+        "initiatorSetupMs": 131819
+      },
+      {
+        "round": 4,
+        "at": "2026-10-05T13:23:31.5403253+05:30",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": true,
+        "success": true,
+        "phoneSetupMs": 23793,
+        "initiatorSetupMs": 14760
+      },
+      {
+        "round": 5,
+        "at": "2026-10-05T13:24:05.8728944+05:30",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": true,
+        "success": true,
+        "phoneSetupMs": 23272,
+        "initiatorSetupMs": 14959
+      },
+      {
+        "round": 6,
+        "at": "2026-10-05T13:24:39.4736976+05:30",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": true,
+        "success": true,
+        "phoneSetupMs": 22896,
+        "initiatorSetupMs": 14817
+      },
+      {
+        "round": 7,
+        "at": "2026-10-05T13:25:12.6307605+05:30",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": true,
+        "success": true,
+        "phoneSetupMs": 23193,
+        "initiatorSetupMs": 14967
+      },
+      {
+        "round": 8,
+        "at": "2026-10-05T13:25:45.9960982+05:30",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": true,
+        "success": true,
+        "phoneSetupMs": 23239,
+        "initiatorSetupMs": 14711
+      },
+      {
+        "round": 9,
+        "at": "2026-10-05T13:26:19.5592032+05:30",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": true,
+        "success": true,
+        "phoneSetupMs": 23108,
+        "initiatorSetupMs": 14733
+      },
+      {
+        "round": 10,
+        "at": "2026-10-05T13:26:52.9559801+05:30",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": true,
+        "success": true,
+        "phoneSetupMs": 23755,
+        "initiatorSetupMs": 15016
+      },
+      {
+        "round": 11,
+        "at": "2026-10-05T13:27:26.9456169+05:30",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": true,
+        "success": true,
+        "phoneSetupMs": 22954,
+        "initiatorSetupMs": 14787
+      },
+      {
+        "round": 12,
+        "at": "2026-10-05T13:28:00.1095646+05:30",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": true,
+        "success": true,
+        "phoneSetupMs": 19312,
+        "initiatorSetupMs": 11196
+      },
+      {
+        "round": 13,
+        "at": "2026-10-05T13:28:30.0795294+05:30",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": false,
+        "success": false,
+        "error": "Expected enabled phone test control is not visible."
+      },
+      {
+        "round": 14,
+        "at": "2026-10-05T08:00:50.4770903+00:00",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": true,
+        "success": true,
+        "phoneSetupMs": 47834,
+        "initiatorSetupMs": 39115
+      },
+      {
+        "round": 15,
+        "at": "2026-10-05T08:01:51.4286514+00:00",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": true,
+        "success": true,
+        "phoneSetupMs": 19990,
+        "initiatorSetupMs": 11222
+      },
+      {
+        "round": 16,
+        "at": "2026-10-05T08:02:22.3122182+00:00",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": true,
+        "success": true,
+        "phoneSetupMs": 23423,
+        "initiatorSetupMs": 15206
+      },
+      {
+        "round": 17,
+        "at": "2026-10-05T08:02:56.3002908+00:00",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": true,
+        "success": true,
+        "phoneSetupMs": 22766,
+        "initiatorSetupMs": 14723
+      },
+      {
+        "round": 18,
+        "at": "2026-10-05T08:03:29.8779401+00:00",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": true,
+        "success": true,
+        "phoneSetupMs": 26999,
+        "initiatorSetupMs": 17914
+      },
+      {
+        "round": 19,
+        "at": "2026-10-05T08:04:07.9340018+00:00",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": true,
+        "success": true,
+        "phoneSetupMs": 24506,
+        "initiatorSetupMs": 16356
+      },
+      {
+        "round": 20,
+        "at": "2026-10-05T08:04:42.9289104+00:00",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": true,
+        "success": true,
+        "phoneSetupMs": 24840,
+        "initiatorSetupMs": 15645
+      },
+      {
+        "round": 21,
+        "at": "2026-10-05T08:05:18.1883049+00:00",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": true,
+        "success": true,
+        "phoneSetupMs": 23088,
+        "initiatorSetupMs": 14983
+      },
+      {
+        "round": 22,
+        "at": "2026-10-05T08:05:51.6525355+00:00",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": true,
+        "success": true,
+        "phoneSetupMs": 19402,
+        "initiatorSetupMs": 10980
+      },
+      {
+        "round": 23,
+        "at": "2026-10-05T08:06:21.3081614+00:00",
+        "confirmation": "Matching codes compared in both app UIs by test automation",
+        "requestStarted": true,
+        "success": true,
+        "phoneSetupMs": 24712,
+        "initiatorSetupMs": 15700
+      }
+    ]
+  },
+  "nativeTrace": {
+    "phone": [
+      {
+        "at": 1791183655697,
+        "kind": "capabilities",
+        "value": {
+          "model": "samsung SM-S921B",
+          "android": "16",
+          "sdk": 36,
+          "securityPatch": "2026-08-05",
+          "nearbySdk": "19.5.1",
+          "targetSdk": 36,
+          "wifiDirectFeature": true,
+          "wifiAwareFeature": true,
+          "wifiAwareAvailable": true,
+          "batteryPercent": 27,
+          "physicalRange": null,
+          "batteryImpact": null
+        }
+      },
+      {
+        "at": 1791183680935,
+        "kind": "not_ready",
+        "value": "Allow nearby access. If the prompt no longer appears, use Open app permission settings. Denied access is a test result."
+      },
+      {
+        "at": 1791183687417,
+        "kind": "disconnected",
+        "value": "App left foreground; background transport intentionally unimplemented"
+      },
+      {
+        "at": 1791184080024,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791184081549,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791184102548,
+        "kind": "disconnected",
+        "value": "New discovery attempt"
+      },
+      {
+        "at": 1791184102873,
+        "kind": "discovery",
+        "value": "Searching for test phones"
+      },
+      {
+        "at": 1791184161762,
+        "kind": "disconnected",
+        "value": "App left foreground; background transport intentionally unimplemented"
+      },
+      {
+        "at": 1791184175134,
+        "kind": "disconnected",
+        "value": "Switching to separate Wi-Fi Direct discovery probe"
+      },
+      {
+        "at": 1791184175384,
+        "kind": "direct_discovery",
+        "value": "Started; sampling peer count in 10 seconds (no identities exported)"
+      },
+      {
+        "at": 1791184185409,
+        "kind": "direct_peer_count",
+        "value": 1
+      },
+      {
+        "at": 1791184217313,
+        "kind": "disconnected",
+        "value": "Stopped by tester"
+      },
+      {
+        "at": 1791184220715,
+        "kind": "disconnected",
+        "value": "App left foreground; background transport intentionally unimplemented"
+      },
+      {
+        "at": 1791184250197,
+        "kind": "export",
+        "value": "Saved measurement report"
+      },
+      {
+        "at": 1791184731616,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791184733463,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791184784502,
+        "kind": "paired",
+        "value": {
+          "setupMs": 52883,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791184868062,
+        "kind": "rtt_ms",
+        "value": {
+          "samples": [
+            156.996328, 24.080469, 25.59336, 28.276757, 31.406093, 28.569804, 40.24707, 33.332969,
+            32.88789, 37.145195, 47.042226, 33.056093, 40.605352, 35.326406, 51.484258, 48.786328,
+            32.489765, 35.018515, 35.40625, 32.929101
+          ],
+          "median": 34.175742,
+          "p95": 51.484258
+        }
+      },
+      {
+        "at": 1791184928253,
+        "kind": "sent_1mib_ms",
+        "value": 7612.690547
+      },
+      {
+        "at": 1791185033829,
+        "kind": "received_1mib",
+        "value": {
+          "seconds": 4.643478593,
+          "mibPerSecond": 0.21535578983986067,
+          "checksumVerified": true,
+          "chunkAckPolicy": "stop-and-wait"
+        }
+      },
+      {
+        "at": 1791185400595,
+        "kind": "disconnected",
+        "value": "App left foreground; background transport intentionally unimplemented"
+      },
+      {
+        "at": 1791185522649,
+        "kind": "export",
+        "value": "Saved measurement report"
+      },
+      {
+        "at": 1791185872320,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791185873871,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791185892732,
+        "kind": "paired",
+        "value": {
+          "setupMs": 20411,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791185903045,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791185934508,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791186130709,
+        "kind": "disconnected",
+        "value": "App left foreground; background transport intentionally unimplemented"
+      },
+      {
+        "at": 1791186416720,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791186417338,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791186557479,
+        "kind": "paired",
+        "value": {
+          "setupMs": 140757,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791186648199,
+        "kind": "rtt_ms",
+        "value": {
+          "samples": [
+            78.147773, 58.708047, 37.254063, 38.281679, 27.057344, 38.07625, 33.849493, 33.718437,
+            26.137617, 35.90543, 37.376328, 30.753906, 31.327696, 33.277383, 27.485586, 34.04332,
+            31.948711, 32.12875, 27.103867, 34.568945
+          ],
+          "median": 33.783965,
+          "p95": 58.708047
+        }
+      },
+      {
+        "at": 1791186691266,
+        "kind": "sent_1mib_ms",
+        "value": 7864.697227
+      },
+      {
+        "at": 1791186750866,
+        "kind": "received_1mib",
+        "value": {
+          "seconds": 7.185634687,
+          "mibPerSecond": 0.13916655153777371,
+          "checksumVerified": true,
+          "chunkAckPolicy": "stop-and-wait"
+        }
+      },
+      {
+        "at": 1791186788653,
+        "kind": "disconnected",
+        "value": "App left foreground; background transport intentionally unimplemented"
+      },
+      {
+        "at": 1791186794789,
+        "kind": "export",
+        "value": "Saved measurement report"
+      },
+      {
+        "at": 1791186817131,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791186817678,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791186840926,
+        "kind": "paired",
+        "value": {
+          "setupMs": 23793,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791186851278,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791186852035,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791186874551,
+        "kind": "paired",
+        "value": {
+          "setupMs": 23272,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791186884902,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791186885672,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791186907798,
+        "kind": "paired",
+        "value": {
+          "setupMs": 22896,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791186917903,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791186918645,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791186941097,
+        "kind": "paired",
+        "value": {
+          "setupMs": 23193,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791186951400,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791186952103,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791186974641,
+        "kind": "paired",
+        "value": {
+          "setupMs": 23239,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791186984896,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791186985636,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791187008006,
+        "kind": "paired",
+        "value": {
+          "setupMs": 23108,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187018299,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791187019063,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791187042054,
+        "kind": "paired",
+        "value": {
+          "setupMs": 23755,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187052292,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791187053026,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791187075247,
+        "kind": "paired",
+        "value": {
+          "setupMs": 22954,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187085455,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791187086225,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791187104768,
+        "kind": "paired",
+        "value": {
+          "setupMs": 19312,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187256422,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791187257297,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791187304259,
+        "kind": "paired",
+        "value": {
+          "setupMs": 47834,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187317138,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791187317869,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791187337128,
+        "kind": "paired",
+        "value": {
+          "setupMs": 19990,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187348017,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791187348801,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791187371442,
+        "kind": "paired",
+        "value": {
+          "setupMs": 23423,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187381601,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791187382324,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791187404368,
+        "kind": "paired",
+        "value": {
+          "setupMs": 22766,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187415344,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791187416129,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791187442344,
+        "kind": "paired",
+        "value": {
+          "setupMs": 26999,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187453328,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791187454168,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791187477836,
+        "kind": "paired",
+        "value": {
+          "setupMs": 24506,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187488397,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791187489198,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791187513238,
+        "kind": "paired",
+        "value": {
+          "setupMs": 24840,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187523605,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791187524370,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791187546694,
+        "kind": "paired",
+        "value": {
+          "setupMs": 23088,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187557038,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791187557726,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791187576441,
+        "kind": "paired",
+        "value": {
+          "setupMs": 19402,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187586753,
+        "kind": "disconnected",
+        "value": "New advertising attempt"
+      },
+      {
+        "at": 1791187587515,
+        "kind": "advertising",
+        "value": "SDK advertising success; temporary identifier omitted"
+      },
+      {
+        "at": 1791187611465,
+        "kind": "paired",
+        "value": {
+          "setupMs": 24712,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187758439,
+        "kind": "disconnected",
+        "value": "App left foreground; background transport intentionally unimplemented"
+      }
+    ],
+    "tablet": [
+      {
+        "at": 1791186124563,
+        "kind": "capabilities",
+        "value": {
+          "model": "samsung SM-X510",
+          "android": "16",
+          "sdk": 36,
+          "securityPatch": "2026-08-05",
+          "nearbySdk": "19.5.1",
+          "targetSdk": 36,
+          "wifiDirectFeature": true,
+          "wifiAwareFeature": true,
+          "wifiAwareAvailable": true,
+          "batteryPercent": 81,
+          "physicalRange": null,
+          "batteryImpact": null
+        }
+      },
+      {
+        "at": 1791186422937,
+        "kind": "disconnected",
+        "value": "New discovery attempt"
+      },
+      {
+        "at": 1791186423069,
+        "kind": "discovery",
+        "value": "Searching for test phones"
+      },
+      {
+        "at": 1791186557420,
+        "kind": "paired",
+        "value": {
+          "setupMs": 131819,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791186653308,
+        "kind": "rtt_ms",
+        "value": {
+          "samples": [
+            38.522961, 32.000384, 20.407692, 16.2885, 24.15, 24.586385, 60.324538, 24.705424,
+            23.375769, 22.39673, 43.324538, 22.491692, 21.741731, 24.749693, 55.338654, 23.119616,
+            20.172269, 23.338885, 52.034231, 35.429615
+          ],
+          "median": 24.3681925,
+          "p95": 55.338654
+        }
+      },
+      {
+        "at": 1791186691287,
+        "kind": "received_1mib",
+        "value": {
+          "seconds": 7.881908764,
+          "mibPerSecond": 0.1268728210312991,
+          "checksumVerified": true,
+          "chunkAckPolicy": "stop-and-wait"
+        }
+      },
+      {
+        "at": 1791186750892,
+        "kind": "sent_1mib_ms",
+        "value": 7180.509148
+      },
+      {
+        "at": 1791186789340,
+        "kind": "disconnected",
+        "value": "Connection lost; repeat pairing to measure reconnection"
+      },
+      {
+        "at": 1791186801108,
+        "kind": "disconnected",
+        "value": "App left foreground; background transport intentionally unimplemented"
+      },
+      {
+        "at": 1791186808383,
+        "kind": "export",
+        "value": "Saved measurement report"
+      },
+      {
+        "at": 1791186822426,
+        "kind": "disconnected",
+        "value": "New discovery attempt"
+      },
+      {
+        "at": 1791186822604,
+        "kind": "discovery",
+        "value": "Searching for test phones"
+      },
+      {
+        "at": 1791186840918,
+        "kind": "paired",
+        "value": {
+          "setupMs": 14760,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791186852016,
+        "kind": "disconnected",
+        "value": "Connection lost; repeat pairing to measure reconnection"
+      },
+      {
+        "at": 1791186856700,
+        "kind": "disconnected",
+        "value": "New discovery attempt"
+      },
+      {
+        "at": 1791186856862,
+        "kind": "discovery",
+        "value": "Searching for test phones"
+      },
+      {
+        "at": 1791186874538,
+        "kind": "paired",
+        "value": {
+          "setupMs": 14959,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791186885619,
+        "kind": "disconnected",
+        "value": "Connection lost; repeat pairing to measure reconnection"
+      },
+      {
+        "at": 1791186890331,
+        "kind": "disconnected",
+        "value": "New discovery attempt"
+      },
+      {
+        "at": 1791186890499,
+        "kind": "discovery",
+        "value": "Searching for test phones"
+      },
+      {
+        "at": 1791186907814,
+        "kind": "paired",
+        "value": {
+          "setupMs": 14817,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791186918618,
+        "kind": "disconnected",
+        "value": "Connection lost; repeat pairing to measure reconnection"
+      },
+      {
+        "at": 1791186923304,
+        "kind": "disconnected",
+        "value": "New discovery attempt"
+      },
+      {
+        "at": 1791186923499,
+        "kind": "discovery",
+        "value": "Searching for test phones"
+      },
+      {
+        "at": 1791186941109,
+        "kind": "paired",
+        "value": {
+          "setupMs": 14967,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791186952116,
+        "kind": "disconnected",
+        "value": "Connection lost; repeat pairing to measure reconnection"
+      },
+      {
+        "at": 1791186956814,
+        "kind": "disconnected",
+        "value": "New discovery attempt"
+      },
+      {
+        "at": 1791186957030,
+        "kind": "discovery",
+        "value": "Searching for test phones"
+      },
+      {
+        "at": 1791186974610,
+        "kind": "paired",
+        "value": {
+          "setupMs": 14711,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791186985602,
+        "kind": "disconnected",
+        "value": "Connection lost; repeat pairing to measure reconnection"
+      },
+      {
+        "at": 1791186990323,
+        "kind": "disconnected",
+        "value": "New discovery attempt"
+      },
+      {
+        "at": 1791186990503,
+        "kind": "discovery",
+        "value": "Searching for test phones"
+      },
+      {
+        "at": 1791187008003,
+        "kind": "paired",
+        "value": {
+          "setupMs": 14733,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187019040,
+        "kind": "disconnected",
+        "value": "Connection lost; repeat pairing to measure reconnection"
+      },
+      {
+        "at": 1791187023727,
+        "kind": "disconnected",
+        "value": "New discovery attempt"
+      },
+      {
+        "at": 1791187023881,
+        "kind": "discovery",
+        "value": "Searching for test phones"
+      },
+      {
+        "at": 1791187042063,
+        "kind": "paired",
+        "value": {
+          "setupMs": 15016,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187053006,
+        "kind": "disconnected",
+        "value": "Connection lost; repeat pairing to measure reconnection"
+      },
+      {
+        "at": 1791187057667,
+        "kind": "disconnected",
+        "value": "New discovery attempt"
+      },
+      {
+        "at": 1791187057818,
+        "kind": "discovery",
+        "value": "Searching for test phones"
+      },
+      {
+        "at": 1791187075256,
+        "kind": "paired",
+        "value": {
+          "setupMs": 14787,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187086181,
+        "kind": "disconnected",
+        "value": "Connection lost; repeat pairing to measure reconnection"
+      },
+      {
+        "at": 1791187090888,
+        "kind": "disconnected",
+        "value": "New discovery attempt"
+      },
+      {
+        "at": 1791187091030,
+        "kind": "discovery",
+        "value": "Searching for test phones"
+      },
+      {
+        "at": 1791187104770,
+        "kind": "paired",
+        "value": {
+          "setupMs": 11196,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187257139,
+        "kind": "disconnected",
+        "value": "Connection lost; repeat pairing to measure reconnection"
+      },
+      {
+        "at": 1791187262021,
+        "kind": "disconnected",
+        "value": "New discovery attempt"
+      },
+      {
+        "at": 1791187262132,
+        "kind": "discovery",
+        "value": "Searching for test phones"
+      },
+      {
+        "at": 1791187304284,
+        "kind": "paired",
+        "value": {
+          "setupMs": 39115,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187317838,
+        "kind": "disconnected",
+        "value": "Connection lost; repeat pairing to measure reconnection"
+      },
+      {
+        "at": 1791187322447,
+        "kind": "disconnected",
+        "value": "New discovery attempt"
+      },
+      {
+        "at": 1791187322630,
+        "kind": "discovery",
+        "value": "Searching for test phones"
+      },
+      {
+        "at": 1791187337138,
+        "kind": "paired",
+        "value": {
+          "setupMs": 11222,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187348735,
+        "kind": "disconnected",
+        "value": "Connection lost; repeat pairing to measure reconnection"
+      },
+      {
+        "at": 1791187353477,
+        "kind": "disconnected",
+        "value": "New discovery attempt"
+      },
+      {
+        "at": 1791187353630,
+        "kind": "discovery",
+        "value": "Searching for test phones"
+      },
+      {
+        "at": 1791187371450,
+        "kind": "paired",
+        "value": {
+          "setupMs": 15206,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187382303,
+        "kind": "disconnected",
+        "value": "Connection lost; repeat pairing to measure reconnection"
+      },
+      {
+        "at": 1791187387039,
+        "kind": "disconnected",
+        "value": "New discovery attempt"
+      },
+      {
+        "at": 1791187387179,
+        "kind": "discovery",
+        "value": "Searching for test phones"
+      },
+      {
+        "at": 1791187404392,
+        "kind": "paired",
+        "value": {
+          "setupMs": 14723,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187416061,
+        "kind": "disconnected",
+        "value": "Connection lost; repeat pairing to measure reconnection"
+      },
+      {
+        "at": 1791187420724,
+        "kind": "disconnected",
+        "value": "New discovery attempt"
+      },
+      {
+        "at": 1791187420902,
+        "kind": "discovery",
+        "value": "Searching for test phones"
+      },
+      {
+        "at": 1791187442258,
+        "kind": "paired",
+        "value": {
+          "setupMs": 17914,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187453742,
+        "kind": "disconnected",
+        "value": "Connection lost; repeat pairing to measure reconnection"
+      },
+      {
+        "at": 1791187458827,
+        "kind": "disconnected",
+        "value": "New discovery attempt"
+      },
+      {
+        "at": 1791187458985,
+        "kind": "discovery",
+        "value": "Searching for test phones"
+      },
+      {
+        "at": 1791187477839,
+        "kind": "paired",
+        "value": {
+          "setupMs": 16356,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187489082,
+        "kind": "disconnected",
+        "value": "Connection lost; repeat pairing to measure reconnection"
+      },
+      {
+        "at": 1791187493899,
+        "kind": "disconnected",
+        "value": "New discovery attempt"
+      },
+      {
+        "at": 1791187494051,
+        "kind": "discovery",
+        "value": "Searching for test phones"
+      },
+      {
+        "at": 1791187513247,
+        "kind": "paired",
+        "value": {
+          "setupMs": 15645,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187524318,
+        "kind": "disconnected",
+        "value": "Connection lost; repeat pairing to measure reconnection"
+      },
+      {
+        "at": 1791187529068,
+        "kind": "disconnected",
+        "value": "New discovery attempt"
+      },
+      {
+        "at": 1791187529221,
+        "kind": "discovery",
+        "value": "Searching for test phones"
+      },
+      {
+        "at": 1791187546703,
+        "kind": "paired",
+        "value": {
+          "setupMs": 14983,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187557748,
+        "kind": "disconnected",
+        "value": "Connection lost; repeat pairing to measure reconnection"
+      },
+      {
+        "at": 1791187562379,
+        "kind": "disconnected",
+        "value": "New discovery attempt"
+      },
+      {
+        "at": 1791187562516,
+        "kind": "discovery",
+        "value": "Searching for test phones"
+      },
+      {
+        "at": 1791187576389,
+        "kind": "paired",
+        "value": {
+          "setupMs": 10980,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187587483,
+        "kind": "disconnected",
+        "value": "Connection lost; repeat pairing to measure reconnection"
+      },
+      {
+        "at": 1791187592228,
+        "kind": "disconnected",
+        "value": "New discovery attempt"
+      },
+      {
+        "at": 1791187592372,
+        "kind": "discovery",
+        "value": "Searching for test phones"
+      },
+      {
+        "at": 1791187611462,
+        "kind": "paired",
+        "value": {
+          "setupMs": 15700,
+          "includesHumanConfirmation": true
+        }
+      },
+      {
+        "at": 1791187759138,
+        "kind": "disconnected",
+        "value": "Connection lost; repeat pairing to measure reconnection"
+      },
+      {
+        "at": 1791187770460,
+        "kind": "disconnected",
+        "value": "App left foreground; background transport intentionally unimplemented"
+      }
+    ]
+  },
+  "remaining": {
+    "rangeMetres": null,
+    "batteryImpact": null,
+    "radioPeakThroughput": null,
+    "awareOrDirectDataPath": "NOT RUN",
+    "localOnlyHotspot": "NOT RUN",
+    "connectedScreenLock": "NOT RUN",
+    "batterySaver": "NOT RUN",
+    "interruptedNativeTransferResume": "Not implemented in probe; NOT RUN",
+    "nativeAudioVideo": "Not implemented in probe; NOT RUN",
+    "browserToNative": "NOT RUN",
+    "nativeReliefEventsAndStoreForward": "Not implemented in probe; NOT RUN",
+    "iphoneAndNonGms": "NOT RUN",
+    "probePersistence": "Measurement buffer is in memory and can reset on Activity recreation or process death; explicit exports preserve reports"
+  }
+}
