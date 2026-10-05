@@ -1,0 +1,13 @@
+packages:
+  - apps/*
+  - packages/*
+onlyBuiltDependencies:
+  - '@nestjs/core'
+  - '@prisma/client'
+  - '@prisma/engines'
+  - prisma
+  - sharp
+  - esbuild
+  - embedded-postgres
+  - '@embedded-postgres/windows-x64'
+  - ffmpeg-static

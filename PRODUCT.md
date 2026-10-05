@@ -1,0 +1,46 @@
+# Saathi
+
+<!-- impeccable:product-schema 1 -->
+
+## Platform
+
+web
+
+## Stack
+
+User-specified: TypeScript, pnpm, Turborepo, Next.js, NestJS, PostgreSQL/Prisma, Redis/BullMQ; React Native in a later phase.
+
+## Users
+
+Public donors find verified needs without signing up. Verified volunteers request supplies and report deliveries. Coordinators approve volunteers and moderate their organization; admins manage organizations.
+
+## Product Purpose
+
+Coordinate lawful humanitarian relief during emergencies and connectivity outages. A canonical request page is always authoritative about current quantities and status.
+
+## Operating Context
+
+Mobile browsing, shared screenshots and links, time-sensitive deliveries, volunteers at designated relief points. Local development data is explicitly demonstration data.
+
+## Capabilities and Constraints
+
+Partial reservations, anonymous private donor tracking, verified field updates, append-only audit history, metadata-safe media. Public locations are approximate unless explicitly approved. Build and test the web milestone before mobile and nearby relay.
+
+## Brand Commitments
+
+The name is Saathi. Calm, credible, humane, accessible, politically neutral. Light and dark themes. No flashy startup presentation or gamification.
+
+## Evidence on Hand
+
+The attached implementation brief; no real organizations, emergencies, or media supplied. Seed records must be labeled as demo content.
+
+## Product Principles
+
+1. Remaining quantities and verification lead the donor experience.
+2. Database state is primary; notifications can retry independently.
+3. Private information stays private.
+4. Server authorization and concurrency rules protect every write.
+
+## Accessibility & Inclusion
+
+Responsive mobile-first design, keyboard operation, visible focus, meaningful labels, reduced-motion support, WCAG-conscious contrast.

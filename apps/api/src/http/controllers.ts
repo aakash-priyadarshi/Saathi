@@ -1,0 +1,361 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Param,
+  Query,
+  Req,
+  Res,
+  Headers,
+  Inject,
+  UseInterceptors,
+  UploadedFile,
+  Sse,
+  MessageEvent,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiHeader, ApiBody } from '@nestjs/swagger';
+import { Observable, interval, map, concatMap, startWith, distinctUntilChanged } from 'rxjs';
+import { z } from 'zod';
+import type { Request, Response } from 'express';
+import { env } from '@saathi/config';
+import {
+  loginSchema,
+  requestSchema,
+  reservationSchema,
+  orderSchema,
+  deliverySchema,
+  fieldSchema,
+  editSchema,
+} from '@saathi/validation';
+import { Database } from '../database';
+import { AuthService } from '../auth/auth.service';
+import { RequestsService } from '../requests/requests.service';
+import { DonationsService } from '../donations/donations.service';
+import { ManagementService } from '../management/management.service';
+import { MediaService, UploadFile } from '../media/media.service';
+const uuid = z.string().uuid();
+@ApiTags('Public relief')
+@Controller('api/v1/public')
+export class PublicController {
+  constructor(
+    @Inject(RequestsService) private readonly requests: RequestsService,
+    @Inject(Database) private readonly db: Database,
+    @Inject(ManagementService) private readonly management: ManagementService,
+  ) {}
+  @Get('config') config() {
+    return {
+      platformName: env.PLATFORM_NAME,
+      demo: env.DEMO_MODE === 'true',
+      reservationMinutes: env.RESERVATION_MINUTES,
+    };
+  }
+  @Get('requests')
+  @ApiOperation({ summary: 'Browse active verified needs or completed requests' })
+  list(@Query('completed') completed?: string, @Query('category') category?: string) {
+    return this.requests.list(completed === 'true', category);
+  }
+  @Get('requests/:id') get(@Param('id') id: string) {
+    return this.requests.get(id.toUpperCase());
+  }
+  @Get('verify/:id') verify(@Param('id') id: string) {
+    return this.requests.get(id.toUpperCase());
+  }
+  @Get('feed') feed() {
+    return this.requests.feed();
+  }
+  @Post('reports') report(@Body() body: unknown) {
+    const b = z
+      .object({
+        entityType: z.enum(['ReliefRequest', 'FieldUpdate']),
+        entityId: z.string().min(1).max(60),
+        reason: z.string().trim().min(10).max(1000),
+      })
+      .strict()
+      .parse(body);
+    return this.management.report(b.entityType, b.entityId, b.reason);
+  }
+  @Sse('events') events(): Observable<MessageEvent> {
+    return interval(5000).pipe(
+      startWith(0),
+      concatMap(async () => {
+        const [r, p] = await Promise.all([
+          this.db.reliefRequest.aggregate({ _sum: { version: true }, _max: { updatedAt: true } }),
+          this.db.fieldUpdate.aggregate({ _count: true, _max: { createdAt: true } }),
+        ]);
+        return JSON.stringify({
+          requests: r._sum.version,
+          updatedAt: r._max.updatedAt,
+          posts: p._count,
+          lastPost: p._max.createdAt,
+        });
+      }),
+      distinctUntilChanged(),
+      map((data) => ({ data, type: 'change' })),
+    );
+  }
+}
+@ApiTags('Authentication')
+@Controller('api/v1/auth')
+export class AuthController {
+  constructor(
+    @Inject(AuthService) private readonly auth: AuthService,
+    @Inject(ManagementService) private readonly management: ManagementService,
+  ) {}
+  @Post('login')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['email', 'password'],
+      properties: {
+        email: { type: 'string', format: 'email' },
+        password: { type: 'string' },
+        totp: { type: 'string' },
+      },
+    },
+  })
+  login(@Body() body: unknown, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const b = loginSchema.parse(body);
+    return this.auth.login(b.email, b.password, b.totp, req, res);
+  }
+  @Get('me') async me(@Req() req: Request) {
+    const u = await this.auth.actor(req);
+    return {
+      id: u.id,
+      displayName: u.displayName,
+      email: u.email,
+      role: u.role,
+      memberships: u.memberships.map((m) => ({
+        organizationId: m.organizationId,
+        role: m.role,
+        approved: m.approved,
+        organization: { name: m.organization.name },
+      })),
+    };
+  }
+  @Post('logout') logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    return this.auth.logout(req, res);
+  }
+  @Get('sessions') async sessions(@Req() req: Request) {
+    return this.management.listSessions(await this.auth.actor(req));
+  }
+  @Post('sessions/:id/revoke') async revoke(@Req() req: Request, @Param('id') id: string) {
+    return this.management.revokeSession(await this.auth.actor(req, true), uuid.parse(id));
+  }
+}
+@ApiTags('Donations')
+@ApiHeader({
+  name: 'Idempotency-Key',
+  description: 'A new UUID for each distinct write; reuse it on retry',
+})
+@Controller('api/v1/donations')
+export class DonationsController {
+  constructor(@Inject(DonationsService) private readonly donations: DonationsService) {}
+  @Post() @ApiOperation({ summary: 'Reserve available quantity without a donor account' }) reserve(
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: string,
+  ) {
+    const b = reservationSchema.parse(body);
+    return this.donations.reserve(b.publicId, b.quantity, b.email, key ?? '');
+  }
+  @Get('tracking/:token') tracking(@Param('token') raw: string) {
+    return this.donations.tracking(z.string().min(40).max(100).parse(raw));
+  }
+  @Post('tracking/:token/order') order(
+    @Param('token') raw: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: string,
+  ) {
+    return this.donations.order(raw, orderSchema.parse(body), key ?? '');
+  }
+  @Post('tracking/:token/cancel') cancel(
+    @Param('token') raw: string,
+    @Headers('idempotency-key') key: string,
+  ) {
+    return this.donations.cancel(raw, key ?? '');
+  }
+}
+@ApiTags('Volunteer')
+@Controller('api/v1/volunteer')
+export class VolunteerController {
+  constructor(
+    @Inject(AuthService) private readonly auth: AuthService,
+    @Inject(RequestsService) private readonly requests: RequestsService,
+    @Inject(DonationsService) private readonly donations: DonationsService,
+    @Inject(ManagementService) private readonly management: ManagementService,
+    @Inject(MediaService) private readonly media: MediaService,
+  ) {}
+  @Get('dashboard') async dashboard(@Req() req: Request) {
+    return this.management.dashboard(await this.auth.actor(req));
+  }
+  @Post('requests') async create(@Req() req: Request, @Body() body: unknown) {
+    return this.requests.create(await this.auth.actor(req, true), requestSchema.parse(body));
+  }
+  @Patch('requests/:id') async edit(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.requests.edit(await this.auth.actor(req, true), id, editSchema.parse(body));
+  }
+  @Post('feed') async publish(@Req() req: Request, @Body() body: unknown) {
+    return this.requests.publish(await this.auth.actor(req, true), fieldSchema.parse(body));
+  }
+  @Post('deliveries/:id/confirm') async confirm(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Headers('idempotency-key') key: string,
+  ) {
+    return this.donations.confirm(await this.auth.actor(req, true), uuid.parse(id), key ?? '');
+  }
+  @Post('deliveries/:id/transit') async transit(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Headers('idempotency-key') key: string,
+  ) {
+    return this.donations.inTransit(await this.auth.actor(req, true), uuid.parse(id), key ?? '');
+  }
+  @Post('deliveries/:id/receive') async receive(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: string,
+  ) {
+    const b = deliverySchema.parse(body);
+    return this.donations.receive(
+      await this.auth.actor(req, true),
+      uuid.parse(id),
+      b.quantity,
+      b.version,
+      key ?? '',
+    );
+  }
+  @Post('media')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 25 * 1024 * 1024, files: 1, fields: 1 } }),
+  )
+  async upload(
+    @Req() req: Request,
+    @UploadedFile() file: UploadFile,
+    @Body('organizationId') org: string,
+  ) {
+    return this.media.upload(await this.auth.actor(req, true), uuid.parse(org), file);
+  }
+  @Post('media/:id/retry') async retry(@Req() req: Request, @Param('id') id: string) {
+    return this.media.retry(await this.auth.actor(req, true), uuid.parse(id));
+  }
+}
+@ApiTags('Coordinator and administration')
+@Controller('api/v1')
+export class ManagementController {
+  constructor(
+    @Inject(AuthService) private readonly auth: AuthService,
+    @Inject(ManagementService) private readonly management: ManagementService,
+    @Inject(RequestsService) private readonly requests: RequestsService,
+    @Inject(MediaService) private readonly media: MediaService,
+  ) {}
+  @Get('coordinator/volunteers') async volunteers(@Req() req: Request) {
+    return this.management.volunteers(await this.auth.actor(req));
+  }
+  @Post('coordinator/volunteers/:id/approve') async approve(
+    @Req() req: Request,
+    @Param('id') id: string,
+  ) {
+    return this.management.approve(await this.auth.actor(req, true), uuid.parse(id));
+  }
+  @Post('coordinator/volunteers/:id/suspend') async suspend(
+    @Req() req: Request,
+    @Param('id') id: string,
+  ) {
+    return this.management.approve(await this.auth.actor(req, true), uuid.parse(id), true);
+  }
+  @Post('coordinator/invite') async invite(@Req() req: Request, @Body() body: unknown) {
+    const b = z
+      .object({
+        email: z.string().email(),
+        displayName: z.string().min(2).max(60),
+        password: z.string().min(12).max(256),
+        organizationId: uuid,
+        role: z.enum(['VOLUNTEER', 'COORDINATOR']),
+      })
+      .strict()
+      .parse(body);
+    return this.auth.invite(
+      await this.auth.actor(req, true),
+      b.email,
+      b.displayName,
+      b.password,
+      b.organizationId,
+      b.role,
+    );
+  }
+  @Post('coordinator/points') async point(@Req() req: Request, @Body() body: unknown) {
+    const b = z
+      .object({
+        organizationId: uuid,
+        name: z.string().min(3).max(100),
+        description: z.string().min(3).max(1000),
+        publicLocation: z.string().min(3).max(200),
+        instructions: z.string().min(3).max(1000),
+        operatingHours: z.string().min(3).max(100),
+      })
+      .strict()
+      .parse(body);
+    return this.management.createPoint(await this.auth.actor(req, true), b);
+  }
+  @Post('coordinator/requests/:id/cancel') async cancel(
+    @Req() req: Request,
+    @Param('id') id: string,
+  ) {
+    return this.requests.cancel(await this.auth.actor(req, true), id);
+  }
+  @Get('coordinator/moderation') async moderation(@Req() req: Request) {
+    return this.management.moderation(await this.auth.actor(req));
+  }
+  @Post('coordinator/moderation/:id') async moderate(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const b = z
+      .object({ action: z.enum(['APPROVED', 'REJECTED', 'HIDDEN']) })
+      .strict()
+      .parse(body);
+    return this.management.moderate(await this.auth.actor(req, true), uuid.parse(id), b.action);
+  }
+  @Get('coordinator/media/:id/original') async original(
+    @Req() req: Request,
+    @Param('id') id: string,
+  ) {
+    return this.media.original(await this.auth.actor(req), uuid.parse(id));
+  }
+  @Get('admin/organizations') async orgs(@Req() req: Request) {
+    return this.management.organizations(await this.auth.actor(req));
+  }
+  @Post('admin/organizations') async createOrg(@Req() req: Request, @Body() body: unknown) {
+    const b = z
+      .object({ name: z.string().trim().min(3).max(100) })
+      .strict()
+      .parse(body);
+    return this.management.createOrg(await this.auth.actor(req, true), b.name);
+  }
+  @Post('admin/organizations/:id/status') async orgStatus(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const b = z.object({ active: z.boolean() }).strict().parse(body);
+    return this.management.setOrgActive(await this.auth.actor(req, true), uuid.parse(id), b.active);
+  }
+  @Get('admin/audits') async audits(@Req() req: Request) {
+    return this.management.audits(await this.auth.actor(req));
+  }
+  @Get('admin/reports') async reports(@Req() req: Request) {
+    return this.management.reports(await this.auth.actor(req));
+  }
+  @Post('admin/reports/:id/resolve') async resolve(@Req() req: Request, @Param('id') id: string) {
+    return this.management.resolveReport(await this.auth.actor(req, true), uuid.parse(id));
+  }
+}

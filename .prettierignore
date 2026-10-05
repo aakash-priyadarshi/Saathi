@@ -1,0 +1,9 @@
+node_modules
+dist
+.next
+.data
+.turbo
+.impeccable
+pnpm-lock.yaml
+playwright-report
+test-results

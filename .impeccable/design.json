@@ -1,0 +1,564 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-05T06:03:26.932Z",
+  "title": "Design System: Saathi",
+  "extensions": {
+    "colorMeta": {
+      "paper": {
+        "role": "neutral",
+        "displayName": "Warm Paper",
+        "tonalRamp": [
+          "oklch(15% 0.0067 97.35)",
+          "oklch(26.4% 0.0067 97.35)",
+          "oklch(37.9% 0.0067 97.35)",
+          "oklch(49.3% 0.0067 97.35)",
+          "oklch(60.7% 0.0067 97.35)",
+          "oklch(72.1% 0.0067 97.35)",
+          "oklch(83.6% 0.0067 97.35)",
+          "oklch(95% 0.0067 97.35)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Notice Surface",
+        "tonalRamp": [
+          "oklch(15% 0.0054 95.10)",
+          "oklch(26.4% 0.0054 95.10)",
+          "oklch(37.9% 0.0054 95.10)",
+          "oklch(49.3% 0.0054 95.10)",
+          "oklch(60.7% 0.0054 95.10)",
+          "oklch(72.1% 0.0054 95.10)",
+          "oklch(83.6% 0.0054 95.10)",
+          "oklch(95% 0.0054 95.10)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Forest Ink",
+        "tonalRamp": [
+          "oklch(15% 0.0343 171.94)",
+          "oklch(26.4% 0.0343 171.94)",
+          "oklch(37.9% 0.0343 171.94)",
+          "oklch(49.3% 0.0343 171.94)",
+          "oklch(60.7% 0.0343 171.94)",
+          "oklch(72.1% 0.0343 171.94)",
+          "oklch(83.6% 0.0343 171.94)",
+          "oklch(95% 0.0343 171.94)"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Quiet Ink",
+        "tonalRamp": [
+          "oklch(15% 0.0212 150.25)",
+          "oklch(26.4% 0.0212 150.25)",
+          "oklch(37.9% 0.0212 150.25)",
+          "oklch(49.3% 0.0212 150.25)",
+          "oklch(60.7% 0.0212 150.25)",
+          "oklch(72.1% 0.0212 150.25)",
+          "oklch(83.6% 0.0212 150.25)",
+          "oklch(95% 0.0212 150.25)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Paper Rule",
+        "tonalRamp": [
+          "oklch(15% 0.0135 111.29)",
+          "oklch(26.4% 0.0135 111.29)",
+          "oklch(37.9% 0.0135 111.29)",
+          "oklch(49.3% 0.0135 111.29)",
+          "oklch(60.7% 0.0135 111.29)",
+          "oklch(72.1% 0.0135 111.29)",
+          "oklch(83.6% 0.0135 111.29)",
+          "oklch(95% 0.0135 111.29)"
+        ]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Community Teal",
+        "tonalRamp": [
+          "oklch(15% 0.0722 172.80)",
+          "oklch(26.4% 0.0722 172.80)",
+          "oklch(37.9% 0.0722 172.80)",
+          "oklch(49.3% 0.0722 172.80)",
+          "oklch(60.7% 0.0722 172.80)",
+          "oklch(72.1% 0.0722 172.80)",
+          "oklch(83.6% 0.0722 172.80)",
+          "oklch(95% 0.0722 172.80)"
+        ]
+      },
+      "accent-hover": {
+        "role": "primary",
+        "displayName": "Deep Community Teal",
+        "tonalRamp": [
+          "oklch(15% 0.0608 172.24)",
+          "oklch(26.4% 0.0608 172.24)",
+          "oklch(37.9% 0.0608 172.24)",
+          "oklch(49.3% 0.0608 172.24)",
+          "oklch(60.7% 0.0608 172.24)",
+          "oklch(72.1% 0.0608 172.24)",
+          "oklch(83.6% 0.0608 172.24)",
+          "oklch(95% 0.0608 172.24)"
+        ]
+      },
+      "soft": {
+        "role": "neutral",
+        "displayName": "Sage Wash",
+        "tonalRamp": [
+          "oklch(15% 0.0135 134.90)",
+          "oklch(26.4% 0.0135 134.90)",
+          "oklch(37.9% 0.0135 134.90)",
+          "oklch(49.3% 0.0135 134.90)",
+          "oklch(60.7% 0.0135 134.90)",
+          "oklch(72.1% 0.0135 134.90)",
+          "oklch(83.6% 0.0135 134.90)",
+          "oklch(95% 0.0135 134.90)"
+        ]
+      },
+      "amber": {
+        "role": "secondary",
+        "displayName": "Notice Amber",
+        "tonalRamp": [
+          "oklch(15% 0.0926 71.74)",
+          "oklch(26.4% 0.0926 71.74)",
+          "oklch(37.9% 0.0926 71.74)",
+          "oklch(49.3% 0.0926 71.74)",
+          "oklch(60.7% 0.0926 71.74)",
+          "oklch(72.1% 0.0926 71.74)",
+          "oklch(83.6% 0.0926 71.74)",
+          "oklch(95% 0.0926 71.74)"
+        ]
+      },
+      "amber-bg": {
+        "role": "secondary",
+        "displayName": "Notice Paper",
+        "tonalRamp": [
+          "oklch(15% 0.0329 83.71)",
+          "oklch(26.4% 0.0329 83.71)",
+          "oklch(37.9% 0.0329 83.71)",
+          "oklch(49.3% 0.0329 83.71)",
+          "oklch(60.7% 0.0329 83.71)",
+          "oklch(72.1% 0.0329 83.71)",
+          "oklch(83.6% 0.0329 83.71)",
+          "oklch(95% 0.0329 83.71)"
+        ]
+      },
+      "red": {
+        "role": "tertiary",
+        "displayName": "Urgent Clay",
+        "tonalRamp": [
+          "oklch(15% 0.1177 30.18)",
+          "oklch(26.4% 0.1177 30.18)",
+          "oklch(37.9% 0.1177 30.18)",
+          "oklch(49.3% 0.1177 30.18)",
+          "oklch(60.7% 0.1177 30.18)",
+          "oklch(72.1% 0.1177 30.18)",
+          "oklch(83.6% 0.1177 30.18)",
+          "oklch(95% 0.1177 30.18)"
+        ]
+      },
+      "red-bg": {
+        "role": "tertiary",
+        "displayName": "Clay Paper",
+        "tonalRamp": [
+          "oklch(15% 0.0198 37.03)",
+          "oklch(26.4% 0.0198 37.03)",
+          "oklch(37.9% 0.0198 37.03)",
+          "oklch(49.3% 0.0198 37.03)",
+          "oklch(60.7% 0.0198 37.03)",
+          "oklch(72.1% 0.0198 37.03)",
+          "oklch(83.6% 0.0198 37.03)",
+          "oklch(95% 0.0198 37.03)"
+        ]
+      },
+      "dark-paper": {
+        "role": "neutral",
+        "displayName": "Night Paper",
+        "tonalRamp": [
+          "oklch(15% 0.0197 173.47)",
+          "oklch(26.4% 0.0197 173.47)",
+          "oklch(37.9% 0.0197 173.47)",
+          "oklch(49.3% 0.0197 173.47)",
+          "oklch(60.7% 0.0197 173.47)",
+          "oklch(72.1% 0.0197 173.47)",
+          "oklch(83.6% 0.0197 173.47)",
+          "oklch(95% 0.0197 173.47)"
+        ]
+      },
+      "dark-surface": {
+        "role": "neutral",
+        "displayName": "Night Surface",
+        "tonalRamp": [
+          "oklch(15% 0.0261 166.99)",
+          "oklch(26.4% 0.0261 166.99)",
+          "oklch(37.9% 0.0261 166.99)",
+          "oklch(49.3% 0.0261 166.99)",
+          "oklch(60.7% 0.0261 166.99)",
+          "oklch(72.1% 0.0261 166.99)",
+          "oklch(83.6% 0.0261 166.99)",
+          "oklch(95% 0.0261 166.99)"
+        ]
+      },
+      "dark-ink": {
+        "role": "neutral",
+        "displayName": "Night Ink",
+        "tonalRamp": [
+          "oklch(15% 0.0136 145.47)",
+          "oklch(26.4% 0.0136 145.47)",
+          "oklch(37.9% 0.0136 145.47)",
+          "oklch(49.3% 0.0136 145.47)",
+          "oklch(60.7% 0.0136 145.47)",
+          "oklch(72.1% 0.0136 145.47)",
+          "oklch(83.6% 0.0136 145.47)",
+          "oklch(95% 0.0136 145.47)"
+        ]
+      },
+      "dark-muted": {
+        "role": "neutral",
+        "displayName": "Quiet Night Ink",
+        "tonalRamp": [
+          "oklch(15% 0.0192 150.49)",
+          "oklch(26.4% 0.0192 150.49)",
+          "oklch(37.9% 0.0192 150.49)",
+          "oklch(49.3% 0.0192 150.49)",
+          "oklch(60.7% 0.0192 150.49)",
+          "oklch(72.1% 0.0192 150.49)",
+          "oklch(83.6% 0.0192 150.49)",
+          "oklch(95% 0.0192 150.49)"
+        ]
+      },
+      "dark-line": {
+        "role": "neutral",
+        "displayName": "Night Rule",
+        "tonalRamp": [
+          "oklch(15% 0.0303 155.62)",
+          "oklch(26.4% 0.0303 155.62)",
+          "oklch(37.9% 0.0303 155.62)",
+          "oklch(49.3% 0.0303 155.62)",
+          "oklch(60.7% 0.0303 155.62)",
+          "oklch(72.1% 0.0303 155.62)",
+          "oklch(83.6% 0.0303 155.62)",
+          "oklch(95% 0.0303 155.62)"
+        ]
+      },
+      "dark-accent": {
+        "role": "primary",
+        "displayName": "Night Mint",
+        "tonalRamp": [
+          "oklch(15% 0.0675 164.16)",
+          "oklch(26.4% 0.0675 164.16)",
+          "oklch(37.9% 0.0675 164.16)",
+          "oklch(49.3% 0.0675 164.16)",
+          "oklch(60.7% 0.0675 164.16)",
+          "oklch(72.1% 0.0675 164.16)",
+          "oklch(83.6% 0.0675 164.16)",
+          "oklch(95% 0.0675 164.16)"
+        ]
+      },
+      "dark-accent-hover": {
+        "role": "primary",
+        "displayName": "Light Night Mint",
+        "tonalRamp": [
+          "oklch(15% 0.0474 163.67)",
+          "oklch(26.4% 0.0474 163.67)",
+          "oklch(37.9% 0.0474 163.67)",
+          "oklch(49.3% 0.0474 163.67)",
+          "oklch(60.7% 0.0474 163.67)",
+          "oklch(72.1% 0.0474 163.67)",
+          "oklch(83.6% 0.0474 163.67)",
+          "oklch(95% 0.0474 163.67)"
+        ]
+      },
+      "dark-soft": {
+        "role": "neutral",
+        "displayName": "Night Sage Wash",
+        "tonalRamp": [
+          "oklch(15% 0.0312 162.36)",
+          "oklch(26.4% 0.0312 162.36)",
+          "oklch(37.9% 0.0312 162.36)",
+          "oklch(49.3% 0.0312 162.36)",
+          "oklch(60.7% 0.0312 162.36)",
+          "oklch(72.1% 0.0312 162.36)",
+          "oklch(83.6% 0.0312 162.36)",
+          "oklch(95% 0.0312 162.36)"
+        ]
+      },
+      "dark-amber": {
+        "role": "secondary",
+        "displayName": "Night Amber",
+        "tonalRamp": [
+          "oklch(15% 0.1010 82.93)",
+          "oklch(26.4% 0.1010 82.93)",
+          "oklch(37.9% 0.1010 82.93)",
+          "oklch(49.3% 0.1010 82.93)",
+          "oklch(60.7% 0.1010 82.93)",
+          "oklch(72.1% 0.1010 82.93)",
+          "oklch(83.6% 0.1010 82.93)",
+          "oklch(95% 0.1010 82.93)"
+        ]
+      },
+      "dark-amber-bg": {
+        "role": "secondary",
+        "displayName": "Night Notice",
+        "tonalRamp": [
+          "oklch(15% 0.0360 76.42)",
+          "oklch(26.4% 0.0360 76.42)",
+          "oklch(37.9% 0.0360 76.42)",
+          "oklch(49.3% 0.0360 76.42)",
+          "oklch(60.7% 0.0360 76.42)",
+          "oklch(72.1% 0.0360 76.42)",
+          "oklch(83.6% 0.0360 76.42)",
+          "oklch(95% 0.0360 76.42)"
+        ]
+      },
+      "dark-red": {
+        "role": "tertiary",
+        "displayName": "Night Clay",
+        "tonalRamp": [
+          "oklch(15% 0.0776 37.45)",
+          "oklch(26.4% 0.0776 37.45)",
+          "oklch(37.9% 0.0776 37.45)",
+          "oklch(49.3% 0.0776 37.45)",
+          "oklch(60.7% 0.0776 37.45)",
+          "oklch(72.1% 0.0776 37.45)",
+          "oklch(83.6% 0.0776 37.45)",
+          "oklch(95% 0.0776 37.45)"
+        ]
+      },
+      "dark-red-bg": {
+        "role": "tertiary",
+        "displayName": "Night Clay Paper",
+        "tonalRamp": [
+          "oklch(15% 0.0429 30.61)",
+          "oklch(26.4% 0.0429 30.61)",
+          "oklch(37.9% 0.0429 30.61)",
+          "oklch(49.3% 0.0429 30.61)",
+          "oklch(60.7% 0.0429 30.61)",
+          "oklch(72.1% 0.0429 30.61)",
+          "oklch(83.6% 0.0429 30.61)",
+          "oklch(95% 0.0429 30.61)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Humane Page Heading",
+        "purpose": "Short page-level headings; compact mobile overrides are documented in Layout and Typography."
+      },
+      "headline": {
+        "displayName": "Operational Headline",
+        "purpose": "General section headings and title-first request cards."
+      },
+      "section-headline": {
+        "displayName": "Need List Heading",
+        "purpose": "Main needs/completed section; 22px on mobile."
+      },
+      "title": {
+        "displayName": "Supporting Title",
+        "purpose": "Short supporting headings."
+      },
+      "body": {
+        "displayName": "Readable Body",
+        "purpose": "Page copy; longer field reports use 1.8 line height."
+      },
+      "label": {
+        "displayName": "Written Control Label",
+        "purpose": "Form labels and compact controls; buttons use weight 700."
+      },
+      "category": {
+        "displayName": "Category Label",
+        "purpose": "Uppercase category metadata below request headings."
+      },
+      "quantity": {
+        "displayName": "Remaining Quantity",
+        "purpose": "Tabular numbers, increased to 31px on mobile and 42px in the pledge panel."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "button-background",
+        "value": "background 0.15s",
+        "purpose": "Primary and secondary button background changes."
+      },
+      {
+        "name": "quantity-progress",
+        "value": "transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1)",
+        "purpose": "Live committed or received quantity-bar update from the left origin."
+      },
+      {
+        "name": "loading-spin",
+        "value": "spin 1s linear infinite",
+        "purpose": "Only the loading indicator; keyframe rotates to 360deg."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "@media (prefers-reduced-motion: reduce) { animation: none !important; transition: none !important; scroll-behavior: auto !important; }",
+        "purpose": "Disable animation and transitions throughout the UI."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "mobile",
+        "value": "760px",
+        "purpose": "max-width: one-column layout, fixed bottom public navigation, full-width search, compact needs introduction."
+      },
+      {
+        "name": "compact-desktop",
+        "value": "1100px",
+        "purpose": "max-width: one-column need cards with a narrower side feed and 25px gutters."
+      },
+      {
+        "name": "wide",
+        "value": "1500px",
+        "purpose": "min-width: outer container expands to 1360px; narrow surfaces retain their caps."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Labeled action for reservation, submission, and opening the canonical request.",
+      "html": "<button class=\"ds-button-primary\">I can help <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14\"/><path d=\"m12 5 7 7-7 7\"/></svg></button>",
+      "css": ".ds-button-primary { display: inline-flex; align-items: center; justify-content: center; gap: 9px; border: 1px solid var(--accent, #216352); border-radius: 7px; background: var(--accent, #216352); color: var(--paper, #f8f7f2); font-family: var(--font-sans, 'Manrope Variable', sans-serif); font-size: 12px; font-weight: 700; line-height: 1.65; padding: 11px 16px; min-height: 42px; white-space: nowrap; cursor: pointer; text-decoration: none; transition: background 0.15s; } .ds-button-primary:hover { background: var(--accent-hover, #174c3e); text-decoration: none; } .ds-button-primary:focus-visible { outline: 3px solid var(--accent, #216352); outline-offset: 4px; } .ds-button-primary:disabled { opacity: 0.6; cursor: wait; } .ds-button-primary svg { flex-shrink: 0; } @media (prefers-reduced-motion: reduce) { .ds-button-primary { transition: none; } }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Outlined action for verification, alternate routes, and completed requests.",
+      "html": "<button class=\"ds-button-secondary\">Verify a request <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14\"/><path d=\"m12 5 7 7-7 7\"/></svg></button>",
+      "css": ".ds-button-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 9px; border: 1px solid var(--accent, #216352); border-radius: 7px; background: var(--accent, #216352); color: var(--paper, #f8f7f2); font-family: var(--font-sans, 'Manrope Variable', sans-serif); font-size: 12px; font-weight: 700; line-height: 1.65; padding: 11px 16px; min-height: 42px; white-space: nowrap; cursor: pointer; text-decoration: none; transition: background 0.15s; } .ds-button-secondary:hover { background: var(--accent-hover, #174c3e); text-decoration: none; } .ds-button-secondary:focus-visible { outline: 3px solid var(--accent, #216352); outline-offset: 4px; } .ds-button-secondary:disabled { opacity: 0.6; cursor: wait; } .ds-button-secondary svg { flex-shrink: 0; } @media (prefers-reduced-motion: reduce) { .ds-button-secondary { transition: none; } } .ds-button-secondary { background: transparent; color: var(--accent, #216352); border-color: var(--line, #dedfd5); } .ds-button-secondary:hover { background: var(--soft, #eaf0e7); border-color: var(--accent, #216352); }"
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Destructive request-management action; inherits the current generic hover background.",
+      "html": "<button class=\"ds-button-danger\">Cancel request (coordinator only)</button>",
+      "css": ".ds-button-danger { display: inline-flex; align-items: center; justify-content: center; gap: 9px; border: 1px solid var(--accent, #216352); border-radius: 7px; background: var(--accent, #216352); color: var(--paper, #f8f7f2); font-family: var(--font-sans, 'Manrope Variable', sans-serif); font-size: 12px; font-weight: 700; line-height: 1.65; padding: 11px 16px; min-height: 42px; white-space: nowrap; cursor: pointer; text-decoration: none; transition: background 0.15s; } .ds-button-danger:hover { background: var(--accent-hover, #174c3e); text-decoration: none; } .ds-button-danger:focus-visible { outline: 3px solid var(--accent, #216352); outline-offset: 4px; } .ds-button-danger:disabled { opacity: 0.6; cursor: wait; } .ds-button-danger svg { flex-shrink: 0; } @media (prefers-reduced-motion: reduce) { .ds-button-danger { transition: none; } } .ds-button-danger { background: var(--red-bg, #fae9e4); color: var(--red, #923d31); border-color: var(--red, #923d31); }"
+    },
+    {
+      "name": "Theme Button",
+      "kind": "button",
+      "refersTo": "icon-button",
+      "description": "Circular header control with a label naming the next theme.",
+      "html": "<button class=\"ds-theme-button\" aria-label=\"Use dark theme\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"19\" height=\"19\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401\"/></svg></button>",
+      "css": ".ds-theme-button { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 1px solid var(--line, #dedfd5); border-radius: 50%; background: transparent; color: var(--ink, #243d35); cursor: pointer; } .ds-theme-button:hover { background: var(--soft, #eaf0e7); } .ds-theme-button:focus-visible { outline: 3px solid var(--accent, #216352); outline-offset: 4px; } @media (max-width: 760px) { .ds-theme-button { width: 36px; height: 36px; } }"
+    },
+    {
+      "name": "Labeled Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Surface field with a written label, optional note, and visible keyboard focus.",
+      "html": "<label class=\"ds-field\">Email <span class=\"ds-optional\">optional</span><input class=\"ds-input\" type=\"email\" placeholder=\"For updates when your help arrives\" autocomplete=\"email\"/></label>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 8px; font-family: var(--font-sans, 'Manrope Variable', sans-serif); font-size: 12px; font-weight: 650; line-height: 1.65; color: var(--ink, #243d35); } .ds-optional { display: inline; font-size: 10px; font-weight: 400; color: var(--muted, #626e64); } .ds-input { width: 100%; padding: 11px 12px; color: var(--ink, #243d35); background: var(--surface, #fffefa); border: 1px solid var(--line, #dedfd5); border-radius: 6px; min-height: 44px; font-family: var(--font-sans, 'Manrope Variable', sans-serif); font-size: 14px; font-weight: 400; line-height: 1.65; caret-color: var(--accent, #216352); } .ds-input::placeholder { color: var(--muted, #626e64); opacity: 1; } .ds-input:focus-visible { outline: 3px solid var(--accent, #216352); outline-offset: 4px; }"
+    },
+    {
+      "name": "Category Filters",
+      "kind": "chip",
+      "refersTo": "category-filter",
+      "description": "Pressable category pills with an inverted selected state and narrow-screen overflow.",
+      "html": "<div class=\"ds-filters\" aria-label=\"Filter needs by category\"><button aria-pressed=\"true\">All needs</button><button aria-pressed=\"false\">Food</button><button aria-pressed=\"false\">Water</button><button aria-pressed=\"false\">Medical</button></div>",
+      "css": ".ds-filters { display: flex; gap: 8px; overflow-x: auto; padding: 3px 2px 8px; scrollbar-width: none; } .ds-filters button { padding: 7px 16px; border: 1px solid var(--line, #dedfd5); background: transparent; border-radius: 24px; font-family: var(--font-sans, 'Manrope Variable', sans-serif); font-size: 12px; line-height: 1.65; white-space: nowrap; color: var(--muted, #626e64); min-height: 36px; cursor: pointer; } .ds-filters button[aria-pressed='true'] { background: var(--ink, #243d35); color: var(--paper, #f8f7f2); border-color: var(--ink, #243d35); } .ds-filters button:hover { border-color: var(--accent, #216352); } .ds-filters button:focus-visible { outline: 3px solid var(--accent, #216352); outline-offset: 4px; } @media (max-width: 760px) { .ds-filters { gap: 7px; padding-bottom: 4px; } .ds-filters button { padding: 8px 14px; } }"
+    },
+    {
+      "name": "Public Navigation",
+      "kind": "nav",
+      "refersTo": "mobile-nav-item-selected",
+      "description": "Four public destinations; active underline on desktop and icon-over-label wash on mobile. Specimen shows the bar in flow; the app fixes it to the screen bottom.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Main navigation\"><a href=\"#live\"><span class=\"ds-nav-icon\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"21\" height=\"21\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M16.247 7.761a6 6 0 0 1 0 8.478\"/><path d=\"M19.075 4.933a10 10 0 0 1 0 14.134\"/><path d=\"M4.925 19.067a10 10 0 0 1 0-14.134\"/><path d=\"M7.753 16.239a6 6 0 0 1 0-8.478\"/><circle cx=\"12\" cy=\"12\" r=\"2\"/></svg></span><span class=\"ds-live-dot\"></span>Live</a><a href=\"#needs\" aria-current=\"page\"><span class=\"ds-nav-icon\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"21\" height=\"21\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M11 14h2a2 2 0 0 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 16\"/><path d=\"m14.45 13.39 5.05-4.694C20.196 8 21 6.85 21 5.75a2.75 2.75 0 0 0-4.797-1.837.276.276 0 0 1-.406 0A2.75 2.75 0 0 0 11 5.75c0 1.2.802 2.248 1.5 2.946L16 11.95\"/><path d=\"m2 15 6 6\"/><path d=\"m7 20 1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a1 1 0 0 0-2.75-2.91\"/></svg></span>Needs</a><a href=\"#completed\"><span class=\"ds-nav-icon\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"21\" height=\"21\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M18 6 7 17l-5-5\"/><path d=\"m22 10-7.5 7.5L13 16\"/></svg></span>Completed</a><a href=\"#verify\"><span class=\"ds-nav-icon\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"21\" height=\"21\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3 7V5a2 2 0 0 1 2-2h2\"/><path d=\"M17 3h2a2 2 0 0 1 2 2v2\"/><path d=\"M21 17v2a2 2 0 0 1-2 2h-2\"/><path d=\"M7 21H5a2 2 0 0 1-2-2v-2\"/><path d=\"M7 12h10\"/></svg></span>Verify</a></nav>",
+      "css": ".ds-nav { display: flex; gap: 30px; align-items: center; font-family: var(--font-sans, 'Manrope Variable', sans-serif); } .ds-nav a { font-size: 13px; font-weight: 650; line-height: 1.65; color: var(--muted, #626e64); display: flex; align-items: center; gap: 7px; padding: 7px 0; border-bottom: 2px solid transparent; text-decoration: none; } .ds-nav a[aria-current='page'] { color: var(--accent, #216352); border-color: var(--accent, #216352); } .ds-nav a:hover { text-decoration: underline; text-underline-offset: 4px; } .ds-nav a:focus-visible { outline: 3px solid var(--accent, #216352); outline-offset: 4px; } .ds-nav-icon { display: none; } .ds-live-dot { width: 7px; height: 7px; display: inline-block; background: var(--accent, #216352); border-radius: 50%; flex-shrink: 0; } @media (max-width: 760px) { .ds-nav { gap: 0; justify-content: space-around; background: var(--surface, #fffefa); border-top: 1px solid var(--line, #dedfd5); padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); } .ds-nav a { flex-direction: column; gap: 4px; font-size: 9px; font-weight: 700; min-width: 60px; padding: 6px 8px; border-radius: 7px; border-bottom: 0; } .ds-nav a[aria-current='page'] { background: var(--soft, #eaf0e7); color: var(--accent, #216352); } .ds-nav-icon { display: flex; } .ds-live-dot { display: none; } }"
+    },
+    {
+      "name": "Need Card",
+      "kind": "card",
+      "refersTo": "need-card",
+      "description": "Title-first request card with remaining quantity, real progress, receiving metadata, and verified organization action. Specimen quantities are demonstration data.",
+      "html": "<article class=\"ds-need-card\"><h2><a href=\"#sample-request\">Sample drinking water need <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14\"/><path d=\"m12 5 7 7-7 7\"/></svg></a></h2><div class=\"ds-card-top\"><span class=\"ds-category\">Water</span><span class=\"ds-badge\">Urgent need</span></div><p class=\"ds-description\">Demonstration need at a public receiving point.</p><div class=\"ds-quantity\"><strong>250</strong><span>bottles still needed</span></div><div class=\"ds-progress\" role=\"progressbar\" aria-label=\"Supplies committed\" aria-valuenow=\"250\" aria-valuemin=\"0\" aria-valuemax=\"500\"><span style=\"transform:scaleX(0.5)\"></span></div><div class=\"ds-progress-caption\"><span>250 of 500 committed</span><span>50%</span></div><div class=\"ds-request-meta\"><span><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0\"/><circle cx=\"12\" cy=\"10\" r=\"3\"/></svg>Sample public receiving point</span><span><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M12 6v6l4 2\"/></svg>Demonstration deadline</span></div><div class=\"ds-card-bottom\"><div><span class=\"ds-verified\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z\"/><path d=\"m9 12 2 2 4-4\"/></svg>Verified organization</span><small>Demonstration organization</small></div><a class=\"ds-card-action\" href=\"#sample-request\">I can help <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14\"/><path d=\"m12 5 7 7-7 7\"/></svg></a></div></article>",
+      "css": ".ds-need-card { background: var(--surface, #fffefa); color: var(--ink, #243d35); border: 1px solid var(--line, #dedfd5); border-radius: var(--radius, 12px); padding: 22px; display: flex; flex-direction: column; min-width: 0; font-family: var(--font-sans, 'Manrope Variable', sans-serif); line-height: 1.65; } .ds-need-card h2 { margin: 0; font-size: 20px; font-weight: 700; line-height: 1.4; letter-spacing: -0.025em; } .ds-need-card h2 a { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: inherit; text-decoration: none; } .ds-need-card h2 svg { color: var(--muted, #626e64); } .ds-need-card h2 a:hover { text-decoration: underline; text-underline-offset: 4px; } .ds-need-card a:focus-visible { outline: 3px solid var(--accent, #216352); outline-offset: 4px; } .ds-card-top { display: flex; justify-content: space-between; align-items: center; margin: 10px 0 8px; gap: 8px; } .ds-category { font-size: 10px; font-weight: 750; text-transform: uppercase; letter-spacing: 0.11em; color: var(--muted, #626e64); } .ds-badge { font-size: 10px; line-height: 1.4; font-weight: 700; padding: 5px 8px; border-radius: 5px; background: var(--red-bg, #fae9e4); color: var(--red, #923d31); white-space: nowrap; } .ds-description { font-size: 11px; color: var(--muted, #626e64); margin: 8px 0 22px; min-height: 36px; line-height: 1.7; } .ds-quantity { display: flex; align-items: baseline; gap: 7px; margin-bottom: 12px; flex-wrap: wrap; } .ds-quantity strong { font-size: 29px; line-height: 1.2; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; font-weight: 750; } .ds-quantity span { font-size: 12px; color: var(--muted, #626e64); } .ds-progress { height: 6px; border-radius: 8px; background: var(--soft, #eaf0e7); overflow: hidden; position: relative; } .ds-progress > span { display: block; width: 100%; height: 100%; background: var(--accent, #216352); border-radius: 8px; transform-origin: left; transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); } .ds-progress-caption { display: flex; justify-content: space-between; margin-top: 7px; font-size: 10px; color: var(--muted, #626e64); font-variant-numeric: tabular-nums; } .ds-request-meta { display: flex; flex-direction: column; gap: 8px; font-size: 10px; color: var(--muted, #626e64); margin: 20px 0; } .ds-request-meta > span { display: flex; align-items: center; gap: 6px; } .ds-card-bottom { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: auto; padding-top: 15px; border-top: 1px solid var(--line, #dedfd5); } .ds-verified { display: inline-flex; align-items: center; gap: 5px; color: var(--accent, #216352); font-size: 10px; font-weight: 650; } .ds-card-bottom small { display: block; max-width: 140px; font-size: 9px; line-height: 1.5; color: var(--muted, #626e64); margin-top: 3px; } .ds-card-action { display: inline-flex; align-items: center; justify-content: center; gap: 9px; border: 1px solid var(--accent, #216352); border-radius: 7px; background: var(--accent, #216352); color: var(--paper, #f8f7f2); font-family: var(--font-sans, 'Manrope Variable', sans-serif); font-size: 12px; font-weight: 700; line-height: 1.65; padding: 11px 16px; min-height: 42px; white-space: nowrap; cursor: pointer; text-decoration: none; transition: background 0.15s; } .ds-card-action:hover { background: var(--accent-hover, #174c3e); text-decoration: none; } .ds-card-action:focus-visible { outline: 3px solid var(--accent, #216352); outline-offset: 4px; } .ds-card-action:disabled { opacity: 0.6; cursor: wait; } .ds-card-action svg { flex-shrink: 0; } @media (prefers-reduced-motion: reduce) { .ds-card-action { transition: none; } } @media (max-width: 760px) { .ds-need-card { padding: 18px; } .ds-card-top { margin: 8px 0 6px; } .ds-description { margin: 6px 0 15px; min-height: 0; } .ds-quantity strong { font-size: 31px; } .ds-quantity span { font-size: 13px; } .ds-request-meta { margin: 15px 0; gap: 6px; } .ds-card-bottom { padding-top: 12px; } .ds-verified { font-size: 11px; } .ds-card-bottom small { max-width: 170px; } } @media (prefers-reduced-motion: reduce) { .ds-progress > span { transition: none; } }"
+    },
+    {
+      "name": "Request Status Notice",
+      "kind": "custom",
+      "refersTo": "status-notice-closed",
+      "description": "A durable caution notice for closed or unavailable-verification requests. An open modifier restores the sage-wash state.",
+      "html": "<div class=\"ds-status-notice ds-status-closed\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\"/><path d=\"m9 12 2 2 4-4\"/></svg><div><strong>Organization verification unavailable</strong><p>Do not send supplies until the organization’s verification is restored.</p></div></div>",
+      "css": ".ds-status-notice { display: flex; gap: 14px; padding: 20px; background: var(--soft, #eaf0e7); border: 1px solid var(--line, #dedfd5); border-radius: 8px; margin: 25px 0; color: var(--ink, #243d35); font-family: var(--font-sans, 'Manrope Variable', sans-serif); line-height: 1.65; } .ds-status-notice > svg { color: var(--accent, #216352); margin-top: 2px; flex-shrink: 0; } .ds-status-notice strong { font-size: 13px; } .ds-status-notice p { margin: 4px 0 0; font-size: 12px; color: var(--muted, #626e64); } .ds-status-closed { background: var(--amber-bg, #fcf0d9); } .ds-status-closed > svg { color: var(--amber, #805619); }"
+    },
+    {
+      "name": "Field Report",
+      "kind": "custom",
+      "description": "Compact chronological report with time, receiving point, verified author, and a related-need link. Sample content is explicitly demonstration data.",
+      "html": "<article class=\"ds-field-post\"><div class=\"ds-post-time\"><span class=\"ds-post-dot\"></span><time datetime=\"2026-10-05T04:30:00+05:30\">4:30 am</time><span>Sample point</span></div><p>Demonstration field update. Check the related need for its current quantity.</p><div class=\"ds-post-author\"><span class=\"ds-post-verified\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z\"/><path d=\"m9 12 2 2 4-4\"/></svg>Verified volunteer</span><span>Demonstration volunteer · Sample organization</span></div><a class=\"ds-post-link\" href=\"#sample-request\">View the related need <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14\"/><path d=\"m12 5 7 7-7 7\"/></svg></a></article>",
+      "css": ".ds-field-post { padding: 20px 0; border-bottom: 1px solid var(--line, #dedfd5); font-family: var(--font-sans, 'Manrope Variable', sans-serif); color: var(--ink, #243d35); line-height: 1.65; } .ds-post-time { display: flex; align-items: center; gap: 8px; color: var(--muted, #626e64); font-size: 11px; } .ds-post-dot { width: 7px; height: 7px; display: inline-block; background: var(--accent, #216352); border-radius: 50%; flex-shrink: 0; } .ds-post-time time { color: var(--accent, #216352); font-weight: 750; font-variant-numeric: tabular-nums; } .ds-post-time > span:last-child { margin-left: auto; } .ds-field-post > p { white-space: pre-wrap; margin: 12px 0; font-size: 12px; line-height: 1.8; } .ds-post-author { display: flex; flex-direction: column; gap: 4px; } .ds-post-verified { display: inline-flex; align-items: center; gap: 5px; color: var(--accent, #216352); font-size: 10px; font-weight: 650; } .ds-post-author > span:last-child { font-size: 9px; color: var(--muted, #626e64); } .ds-post-link { display: inline-flex; align-items: center; gap: 7px; color: var(--accent, #216352); font-size: 12px; font-weight: 650; margin-top: 10px; text-decoration: none; } .ds-post-link:hover { text-decoration: underline; text-underline-offset: 4px; } .ds-post-link:focus-visible { outline: 3px solid var(--accent, #216352); outline-offset: 4px; } @media (max-width: 760px) { .ds-field-post > p { font-size: 13px; } .ds-post-verified { font-size: 11px; } .ds-post-author > span:last-child { font-size: 10px; } }"
+    },
+    {
+      "name": "Connection Strip",
+      "kind": "custom",
+      "description": "Persistent plain-language reachability and a route to current capabilities; caution modifier uses amber paper.",
+      "html": "<div class=\"ds-connection-strip ds-unavailable\"><span>No connection to Saathi. Read saved information or write a draft.</span><a href=\"#connection-details\">What works right now?</a></div>",
+      "css": ".ds-connection-strip { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 24px; background: var(--soft); border-bottom: 1px solid var(--line); color: var(--ink); font: 12px/1.65 var(--font-sans, \"Manrope Variable\", sans-serif); } .ds-unavailable { background: var(--amber-bg); } .ds-connection-strip a { color: var(--accent); white-space: nowrap; text-decoration: none; } .ds-connection-strip a:hover { text-decoration: underline; text-underline-offset: 4px; } .ds-connection-strip a:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; } @media (max-width: 760px) { .ds-connection-strip { display: block; padding: 10px 20px; } .ds-connection-strip a { display: inline-block; margin-top: 5px; } }"
+    },
+    {
+      "name": "Relief Delivery Status",
+      "kind": "custom",
+      "description": "Distinct written delivery stages; the sample shows only local saving, with later stages still awaiting evidence.",
+      "html": "<div class=\"ds-event-status\"><span><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m9 12 2 2 4-4\"/></svg>Saved on this phone</span><span><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M5 12h14\"/></svg>Reached another phone</span><span>Reached Saathi — waiting</span><span>Published — waiting</span></div>",
+      "css": ".ds-event-status { display: grid; gap: 6px; margin: 12px 0; color: var(--ink); font: 12px/1.65 var(--font-sans, \"Manrope Variable\", sans-serif); } .ds-event-status span { display: flex; align-items: center; gap: 6px; } .ds-event-status svg { flex-shrink: 0; } .ds-event-status strong { color: var(--red); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Community Noticeboard",
+    "overview": "Saathi is a calm, humane place to find a verified need, check its current quantities, and coordinate help. Warm paper surfaces, forest ink, short Lora headings, and precise Manrope controls make the interface approachable while keeping operational information legible. The noticeboard is the recorded direction: approachable need cards, chronological field reports, and durable request notices.\n\nThe built world is text-led and task-first. Thin rules separate evidence, actions, and field updates; icons clarify labels rather than replace them. There is no decorative hero imagery. User-supplied photos and videos belong inside field reports. Light and dark themes preserve the same semantic hierarchy. The product commitments remain calm, credible, accessible, politically neutral, and free of flashy startup presentation or gamification.",
+    "keyCharacteristics": [
+      "Warm paper and forest ink with restrained teal actions.",
+      "Humane serif page headings with compact, legible sans-serif data.",
+      "Flat, bordered surfaces and explicit quantities, deadlines, and verification.",
+      "Mobile task clarity with persistent public navigation.",
+      "Current status and permanent closed notices over stale shared screenshots."
+    ],
+    "rules": [
+      {
+        "name": "The Semantic Color Rule",
+        "body": "Use color with visible status text or a recognizable control. Urgency, verification, fulfillment, and failure must remain understandable without color.",
+        "section": "colors"
+      },
+      {
+        "name": "The Heading First Rule",
+        "body": "Lead a card or detail header with the human-readable title. Category, priority, request ID, and organization metadata follow it.",
+        "section": "typography"
+      },
+      {
+        "name": "The Task First Rule",
+        "body": "On the needs surface, keep the route to a usable request short: compact explanation, heading, search, filters, then need cards. Supporting trust copy must not push the first request action below mobile navigation.",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat Noticeboard Rule",
+        "body": "Use tonal surfaces and thin rules to group information. Do not add decorative shadows or hover lifts to the existing noticeboard.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** preserve the community noticeboard: warm paper, humane short headings, flat surfaces, and thin rules.",
+      "**Do** put human-readable headings before category, ID, and organization metadata.",
+      "**Do** keep remaining quantity, verification, and the next action clear on a narrow screen.",
+      "**Do** pair status color with explicit text and maintain the same semantics in both themes.",
+      "**Do** keep permanent request notices readable when a shared link outlives a need.",
+      "**Do** use visible keyboard focus, written control labels, and the existing reduced-motion behavior.",
+      "**Do** show genuine field media in its report context and label demonstration content."
+    ],
+    "donts": [
+      "**Don't** add flashy startup presentation, gamification, decorative shadows, or hover lifts.",
+      "**Don't** replace operational quantity bars with decorative progress or invented impact statistics.",
+      "**Don't** imply verification when the organization’s verification is unavailable.",
+      "**Don't** leave a donation form in a closed, unavailable-verification, or fully committed request state.",
+      "**Don't** let supporting trust copy hide the first usable need below fixed mobile navigation.",
+      "**Don't** invent real relief operations, partners, testimonials, or imagery from the demonstration records."
+    ]
+  }
+}

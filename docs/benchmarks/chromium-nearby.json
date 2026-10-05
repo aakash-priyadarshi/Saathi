@@ -1,0 +1,68 @@
+{
+  "measuredAt": "2026-10-05T02:18:16.765Z",
+  "scope": "Two independent desktop Chromium processes on one Windows host. Synthetic camera/microphone. Not phone/radio/range/battery verification.",
+  "iceServers": [],
+  "trials": [
+    {
+      "success": true,
+      "connectionMs": 1893,
+      "controlRttMedianMs": 2,
+      "controlRttP95Ms": 3,
+      "verifiedBytes": 1048576,
+      "bulkMiBPerSecond": 11.24,
+      "media": [
+        {
+          "kind": "audio",
+          "packetsSent": 7
+        },
+        {
+          "kind": "video",
+          "packetsSent": 12
+        }
+      ],
+      "remoteTracks": 2
+    },
+    {
+      "success": true,
+      "connectionMs": 180,
+      "controlRttMedianMs": 2,
+      "controlRttP95Ms": 2,
+      "verifiedBytes": 1048576,
+      "bulkMiBPerSecond": 11.25,
+      "media": [
+        {
+          "kind": "audio",
+          "packetsSent": 6
+        },
+        {
+          "kind": "video",
+          "packetsSent": 10
+        }
+      ],
+      "remoteTracks": 4
+    },
+    {
+      "success": true,
+      "connectionMs": 183,
+      "controlRttMedianMs": 1,
+      "controlRttP95Ms": 2,
+      "verifiedBytes": 1048576,
+      "bulkMiBPerSecond": 11.51,
+      "media": [
+        {
+          "kind": "audio",
+          "packetsSent": 6
+        },
+        {
+          "kind": "video",
+          "packetsSent": 12
+        }
+      ],
+      "remoteTracks": 6
+    }
+  ],
+  "range": null,
+  "battery": null,
+  "browser": "153.0.8010.12",
+  "reconnection": "Three complete close/re-pair trials succeeded; no radio loss or phone background claims."
+}

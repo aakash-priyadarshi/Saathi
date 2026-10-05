@@ -1,0 +1,11 @@
+{
+  "name": "@saathi/types",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "types": "src/index.ts"
+}

@@ -1,0 +1,22 @@
+# Android transport probe
+
+This is an isolated, foreground architecture instrument, not the native Saathi client. It sends only synthetic benchmark bytes. It does not sign/publish relief events, bridge to browsers, record calls, collect GPS, or demonstrate background execution. The first physical target is Samsung S24 / Android 16. No device was connected when the project was prepared; do not fill compatibility cells from a successful build.
+
+## Build and install
+
+Open this directory as a project in Android Studio, or run `./gradlew :app:assembleDebug :app:lintDebug` (Windows: `gradlew.bat`). The wrapper pins Gradle 9.4.1 with its official distribution checksum, Android Gradle Plugin 9.2.1 and Nearby SDK 19.5.1. JDK 17+ is required; the installed Studio JBR 25 is supported by this Gradle version. Compile SDK is 37.0; target SDK is 36 for the Android 16 test. Target 37 requires adding the Android 17 local-network permission flow before testing that target.
+
+With a phone connected and USB debugging authorized, use `adb install -r app/build/outputs/apk/debug/app-debug.apk`, then launch **Saathi transport test**. Installing onto two phones is necessary for native pairing/throughput measurements. No Android Studio MCP is required for Gradle/ADB. Android Studio can be used for logcat/profiling; agent integration is optional.
+
+## Measure
+
+1. On both phones, Allow nearby access. Test denial first and record the outcome. Enable Wi-Fi and Bluetooth through the provided system settings actions; the app never silently toggles radios.
+2. Advertise on A and Find nearby test phones on B. Choose the temporary Saathi identifier, compare the authentication digits on both phones and accept only matching codes. Repeat at least 20 times. Setup time includes human confirmation and must be compared on that basis.
+3. Run 20 message round trips. The report contains raw samples, median and p95. A missing reply becomes an incomplete result after 30 seconds, not a success.
+4. Offer the generated 1 MiB transfer. B must explicitly accept. Chunks are 8 KiB with stop-and-wait acknowledgements; this measures bounded application throughput, not peak radio capacity. B verifies SHA-256 before recording checksum success. A timed-out transfer stays a failure. Repeat at measured distances and on the chosen network/radio conditions.
+5. Show device capabilities and run Wi-Fi Direct discovery separately from Nearby. Only feature/availability and peer counts are recorded for Direct/Aware; these are not connection/throughput proofs. No peer hardware addresses or personal device names are exported.
+6. Save measurement JSON through Android's document picker. Reports remain local until the tester explicitly shares them. Compare battery snapshots against a controlled idle baseline using Android Studio's profiler; the probe does not manufacture battery-impact estimates.
+
+The app stops the session when it leaves the foreground. This deliberately records a boundary, not support for locked/background operation. Native foreground-service/background policy, Direct/Aware/hotspot data paths and browser bridges remain separate spikes before selecting a production adapter. Use [the device worksheet](../../docs/nearby-connectivity-device-tests.md) for range, permissions, network changes and compatibility evidence.
+
+Nearby Connections is supplied by Google Play services and may collect SDK usage analytics. This probe checks Play services availability and adds no analytics. Read [Google's overview](https://developers.google.com/nearby/connections/overview), [permissions](https://developers.google.com/nearby/connections/android/get-started), [authenticated connection guidance](https://developers.google.com/nearby/connections/android/manage-connections), [SDK versions](https://developers.google.com/android/guides/setup), [AGP compatibility](https://developer.android.com/build/releases/agp-9-2-0-release-notes) and [Gradle/JDK compatibility](https://docs.gradle.org/current/userguide/compatibility.html).

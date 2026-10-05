@@ -1,0 +1,45 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Saathi nearby architecture spike</title>
+<script>
+  window.spike = {
+    received: 0,
+    tracks: 0,
+    async start() {
+      this.pc = new RTCPeerConnection({ iceServers: [] });
+      this.stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: { width: 320, height: 240 } });
+      for (const track of this.stream.getTracks()) this.pc.addTrack(track, this.stream);
+      this.pc.ontrack = () => this.tracks++;
+      this.pc.ondatachannel = ({ channel }) => this.channel(channel);
+    },
+    channel(channel) {
+      this.dc = channel;
+      channel.binaryType = 'arraybuffer';
+      channel.onmessage = ({ data }) => {
+        if (typeof data === 'string') {
+          const value = JSON.parse(data);
+          if (value.ping) channel.send(JSON.stringify({ pong: value.ping }));
+          if (value.pong) this.pong = value.pong;
+          if (value.begin) { this.received = 0; this.chunks = []; }
+        } else { this.received += data.byteLength; this.chunks.push(new Uint8Array(data)); }
+      };
+    },
+    async description(offer) {
+      if (offer) this.channel(this.pc.createDataChannel('saathi-spike'));
+      await this.pc.setLocalDescription(offer ? await this.pc.createOffer() : await this.pc.createAnswer());
+      if (this.pc.iceGatheringState !== 'complete') await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Candidate collection timed out')), 12000);
+        this.pc.addEventListener('icegatheringstatechange', () => {
+          if (this.pc.iceGatheringState === 'complete') { clearTimeout(timeout); resolve(); }
+        });
+      });
+      return this.pc.localDescription.toJSON();
+    },
+    async checksum() {
+      const bytes = new Uint8Array(this.received); let offset = 0;
+      for (const chunk of this.chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+      return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), x => x.toString(16).padStart(2, '0')).join('');
+    },
+    close() { this.dc?.close(); this.pc?.close(); this.stream?.getTracks().forEach(t => t.stop()); }
+  };
+</script>

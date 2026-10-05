@@ -1,0 +1,31 @@
+{
+  "id": "/",
+  "name": "Saathi",
+  "short_name": "Saathi",
+  "description": "Humanitarian relief, saved information and nearby coordination.",
+  "start_url": "/offline",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8f7f2",
+  "theme_color": "#216352",
+  "icons": [
+    {
+      "src": "/icons/saathi-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/saathi-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/saathi.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

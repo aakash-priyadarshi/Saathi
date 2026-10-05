@@ -1,0 +1,318 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+enum Role {
+  PUBLIC
+  VOLUNTEER
+  COORDINATOR
+  ADMIN
+}
+enum RequestStatus {
+  DRAFT
+  OPEN
+  PARTIALLY_COMMITTED
+  FULLY_COMMITTED
+  CONFIRMED
+  IN_TRANSIT
+  PARTIALLY_RECEIVED
+  COMPLETED
+  CANCELLED
+  EXPIRED
+}
+enum CommitmentStatus {
+  RESERVED
+  ORDER_PLACED
+  VOLUNTEER_CONFIRMED
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+  EXPIRED
+}
+enum ModerationState {
+  PENDING
+  APPROVED
+  REJECTED
+  HIDDEN
+}
+enum Category {
+  FOOD
+  WATER
+  MEDICAL
+  HYGIENE
+  CLOTHING
+  POWER
+  SHELTER
+  OTHER
+}
+enum Priority {
+  NORMAL
+  HIGH
+  URGENT
+}
+model User {
+  id String @id @default(uuid())
+  email String @unique
+  displayName String
+  passwordHash String
+  role Role @default(PUBLIC)
+  active Boolean @default(true)
+  emailVerifiedAt DateTime?
+  totpSecret String?
+  createdAt DateTime @default(now())
+  memberships OrganizationMembership[]
+  volunteer VolunteerProfile?
+  sessions Session[]
+  requests ReliefRequest[]
+  posts FieldUpdate[]
+  devices Device[]
+}
+model Session {
+  id String @id @default(uuid())
+  tokenHash String @unique
+  csrfHash String
+  userId String
+  user User @relation(fields:[userId], references:[id])
+  label String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  revokedAt DateTime?
+  @@index([userId, expiresAt])
+}
+model Organization {
+  id String @id @default(uuid())
+  name String @unique
+  verified Boolean @default(false)
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  memberships OrganizationMembership[]
+  points ReliefPoint[]
+  requests ReliefRequest[]
+  posts FieldUpdate[]
+}
+model OrganizationMembership {
+  id String @id @default(uuid())
+  userId String
+  organizationId String
+  role Role
+  approved Boolean @default(false)
+  user User @relation(fields:[userId], references:[id])
+  organization Organization @relation(fields:[organizationId], references:[id])
+  @@unique([userId, organizationId])
+  @@index([organizationId, approved])
+}
+model VolunteerProfile {
+  id String @id @default(uuid())
+  userId String @unique
+  user User @relation(fields:[userId], references:[id])
+  approvedAt DateTime?
+  suspendedAt DateTime?
+}
+model ReliefPoint {
+  id String @id @default(uuid())
+  name String
+  description String
+  publicLocation String
+  instructions String
+  operatingHours String
+  privacyLevel String @default("APPROXIMATE")
+  latitude Float?
+  longitude Float?
+  exactLocationApproved Boolean @default(false)
+  active Boolean @default(true)
+  organizationId String
+  organization Organization @relation(fields:[organizationId], references:[id])
+  requests ReliefRequest[]
+  posts FieldUpdate[]
+  @@index([organizationId, active])
+}
+model ReliefRequest {
+  id String @id @default(uuid())
+  publicId String @unique
+  creatorId String
+  creator User @relation(fields:[creatorId], references:[id])
+  organizationId String
+  organization Organization @relation(fields:[organizationId], references:[id])
+  reliefPointId String
+  reliefPoint ReliefPoint @relation(fields:[reliefPointId], references:[id])
+  category Category
+  title String
+  description String
+  requestedQuantity Int
+  committedQuantity Int @default(0)
+  receivedQuantity Int @default(0)
+  unit String
+  priority Priority @default(NORMAL)
+  status RequestStatus @default(OPEN)
+  version Int @default(1)
+  deadline DateTime
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  archivedAt DateTime?
+  commitments DonationCommitment[]
+  revisions ReliefRequestRevision[]
+  posts FieldUpdate[]
+  @@index([status, priority, deadline])
+  @@index([organizationId, createdAt])
+}
+model ReliefRequestRevision {
+  id String @id @default(uuid())
+  requestId String
+  request ReliefRequest @relation(fields:[requestId], references:[id])
+  version Int
+  actorId String
+  snapshot Json
+  createdAt DateTime @default(now())
+  @@unique([requestId, version])
+}
+model DonationCommitment {
+  id String @id @default(uuid())
+  requestId String
+  request ReliefRequest @relation(fields:[requestId], references:[id])
+  quantity Int
+  receivedQuantity Int @default(0)
+  email String?
+  tokenHash String @unique
+  status CommitmentStatus @default(RESERVED)
+  provider String?
+  externalOrderId String?
+  eta DateTime?
+  notes String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deliveries Delivery[]
+  @@index([status, expiresAt])
+  @@index([requestId, status])
+}
+model Delivery {
+  id String @id @default(uuid())
+  commitmentId String
+  commitment DonationCommitment @relation(fields:[commitmentId], references:[id])
+  quantity Int
+  confirmedBy String
+  receivedAt DateTime @default(now())
+}
+model FieldUpdate {
+  id String @id @default(uuid())
+  caption String
+  authorId String
+  author User @relation(fields:[authorId], references:[id])
+  organizationId String
+  organization Organization @relation(fields:[organizationId], references:[id])
+  reliefPointId String
+  reliefPoint ReliefPoint @relation(fields:[reliefPointId], references:[id])
+  requestId String?
+  request ReliefRequest? @relation(fields:[requestId], references:[id])
+  moderation ModerationState @default(PENDING)
+  publishAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  media MediaAsset[]
+  @@index([moderation, publishAt])
+}
+model MediaAsset {
+  id String @id @default(uuid())
+  ownerId String
+  organizationId String
+  fieldUpdateId String?
+  fieldUpdate FieldUpdate? @relation(fields:[fieldUpdateId], references:[id])
+  originalKey String
+  publicKey String?
+  thumbnailKey String?
+  mimeType String
+  size Int
+  moderation ModerationState @default(PENDING)
+  processingState String @default("PENDING")
+  createdAt DateTime @default(now())
+  @@index([organizationId, moderation])
+}
+model Notification {
+  id String @id @default(uuid())
+  kind String
+  email String
+  payload Json
+  deduplicationKey String @unique
+  status String @default("PENDING")
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now())
+  sentAt DateTime?
+  lastError String?
+  createdAt DateTime @default(now())
+  @@index([status, nextAttemptAt])
+}
+model AuditEvent {
+  id String @id @default(uuid())
+  actorId String?
+  event String
+  entityType String
+  entityId String
+  previous Json?
+  next Json?
+  deviceId String?
+  createdAt DateTime @default(now())
+  @@index([entityType, entityId, createdAt])
+  @@index([createdAt])
+}
+model Device {
+  id String @id @default(uuid())
+  userId String
+  user User @relation(fields:[userId], references:[id])
+  publicKey String
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+}
+model OfflineEvent {
+  id String @id
+  authorId String
+  organizationId String
+  deviceId String
+  protocolVersion Int
+  type String
+  payloadHash String
+  payload Json
+  envelope Json @default("{}")
+  receipt Json @default("{}")
+  status String @default("PENDING")
+  signature String
+  expiresAt DateTime
+  invalidatedAt DateTime?
+  createdAt DateTime @default(now())
+  receipts SyncReceipt[]
+}
+model SyncReceipt {
+  id String @id @default(uuid())
+  eventId String
+  event OfflineEvent @relation(fields:[eventId], references:[id])
+  transportDeviceId String
+  status String
+  createdAt DateTime @default(now())
+  @@unique([eventId, transportDeviceId])
+}
+model ModerationReport {
+  id String @id @default(uuid())
+  entityType String
+  entityId String
+  reason String
+  status String @default("OPEN")
+  createdAt DateTime @default(now())
+  @@index([status, createdAt])
+}
+model IdempotencyRecord {
+  id String @id @default(uuid())
+  scope String
+  key String
+  requestHash String
+  response Json
+  createdAt DateTime @default(now())
+  @@unique([scope, key])
+}
+model LoginAttempt {
+  key String @id
+  failures Int @default(0)
+  lockedUntil DateTime?
+  updatedAt DateTime @updatedAt
+}

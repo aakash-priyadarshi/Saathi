@@ -1,0 +1,18 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'org.saathi.probe'
+    compileSdk { version = release(37) { minorApiLevel = 0 } }
+    buildToolsVersion '36.0.0'
+    defaultConfig {
+        applicationId 'org.saathi.probe'
+        minSdk 33
+        targetSdk 36
+        versionCode 1
+        versionName '0.1-probe'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+dependencies { implementation 'com.google.android.gms:play-services-nearby:19.5.1' }

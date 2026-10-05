@@ -1,0 +1,14 @@
+{
+  "name": "@saathi/auth",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "otpauth": "^9.4.1"
+  },
+  "types": "src/index.ts"
+}

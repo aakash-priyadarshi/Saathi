@@ -1,0 +1,15 @@
+{
+  "name": "@saathi/config",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "zod": "^3.25.76"
+  },
+  "types": "src/index.ts"
+}

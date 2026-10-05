@@ -1,0 +1,683 @@
+import { beforeAll, afterAll, describe, it, expect } from 'vitest';
+import request from 'supertest';
+import { randomUUID } from 'node:crypto';
+import { createApp } from '../../apps/api/src/app';
+import { Database } from '../../apps/api/src/database';
+import { AuthService, actorInclude, Actor } from '../../apps/api/src/auth/auth.service';
+import { DonationsService } from '../../apps/api/src/donations/donations.service';
+import { RequestsService } from '../../apps/api/src/requests/requests.service';
+import { seed } from '../../packages/database/src/seed';
+import { env } from '../../packages/config/src';
+import { digest } from '../../packages/auth/src';
+import sharp from 'sharp';
+import { MediaService, sanitizeImage } from '../../apps/api/src/media/media.service';
+import { ManagementService } from '../../apps/api/src/management/management.service';
+import { S3Storage } from '../../apps/api/src/media/storage';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { createRequire } from 'node:module';
+import { SyncService } from '../../apps/api/src/sync/sync.service';
+import {
+  createEnvelope,
+  generateKeys,
+  exportPublic,
+  sign,
+  validReceipt,
+} from '../../packages/protocol/src';
+let app: Awaited<ReturnType<typeof createApp>>,
+  db: Database,
+  donations: DonationsService,
+  requests: RequestsService,
+  auth: AuthService,
+  volunteer: Actor,
+  doctor: Actor;
+let pointId: string;
+const origin = 'http://localhost:3000';
+async function login(email: string) {
+  const response = await request(app.getHttpServer())
+    .post('/api/v1/auth/login')
+    .set('Origin', origin)
+    .send({ email, password: process.env.SEED_PASSWORD });
+  expect(response.status).toBe(201);
+  const cookies = (response.headers['set-cookie'] as unknown as string[])
+    .map((c) => c.split(';')[0]!)
+    .join('; ');
+  const csrf = /saathi_csrf=([^;]+)/.exec(cookies)?.[1] ?? '';
+  return { cookies, csrf };
+}
+async function makeNeed(quantity = 100) {
+  return requests.create(volunteer, {
+    reliefPointId: pointId,
+    category: 'WATER',
+    title: 'Integration drinking water',
+    description: 'Sealed bottles for an isolated integration test.',
+    requestedQuantity: quantity,
+    unit: 'bottles',
+    priority: 'NORMAL',
+    deadline: new Date(Date.now() + 3600000).toISOString(),
+  });
+}
+beforeAll(async () => {
+  if (!env.DATABASE_URL.includes('schema=saathi_test'))
+    throw new Error('Refusing to run destructive fixtures outside the isolated test schema.');
+  app = await createApp();
+  await app.init();
+  db = app.get(Database);
+  donations = app.get(DonationsService);
+  requests = app.get(RequestsService);
+  auth = app.get(AuthService);
+  await db.$executeRawUnsafe(
+    'TRUNCATE TABLE "User", "Organization", "AuditEvent", "Notification", "IdempotencyRecord", "ModerationReport", "LoginAttempt", "OfflineEvent" RESTART IDENTITY CASCADE',
+  );
+  await seed(db);
+  volunteer = await db.user.findUniqueOrThrow({
+    where: { email: 'volunteer@saathi.test' },
+    include: actorInclude,
+  });
+  doctor = await db.user.findUniqueOrThrow({
+    where: { email: 'medical@saathi.test' },
+    include: actorInclude,
+  });
+  pointId = (await db.reliefPoint.findFirstOrThrow({ where: { name: 'Point A' } })).id;
+});
+afterAll(async () => {
+  await app?.close();
+});
+describe('Real PostgreSQL core workflow', () => {
+  async function signedNeed() {
+    const keys = await generateKeys(),
+      sync = app.get(SyncService);
+    const device = await sync.register(volunteer, await exportPublic(keys.publicKey));
+    const envelope = await createEnvelope(
+      {
+        type: 'REQUEST_CREATED',
+        authorId: volunteer.id,
+        deviceId: device.id,
+        organizationId: volunteer.memberships[0]!.organizationId,
+        payload: {
+          reliefPointId: pointId,
+          category: 'WATER',
+          title: 'Signed offline need',
+          description: 'An original volunteer request carried by other devices.',
+          requestedQuantity: 100,
+          unit: 'bottles',
+          priority: 'URGENT',
+          deadline: new Date(Date.now() + 3600000).toISOString(),
+        },
+      },
+      keys,
+    );
+    return { keys, sync, envelope, device };
+  }
+  it('publishes a relayed original-author request exactly once under concurrent carriers and signs its receipt', async () => {
+    const { sync, envelope } = await signedNeed();
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => sync.ingest(envelope, randomUUID())),
+    );
+    expect(new Set(results.map((r) => r.body.publicId)).size).toBe(1);
+    expect(results.every((r) => r.body.status === 'PUBLISHED')).toBe(true);
+    expect(await validReceipt(results[0]!, sync.receiptKey().publicKey, envelope)).toBe(true);
+    const record = await db.offlineEvent.findUniqueOrThrow({ where: { id: envelope.body.id } });
+    expect(record.authorId).toBe(volunteer.id);
+    expect(
+      (await db.reliefRequest.findUniqueOrThrow({ where: { publicId: results[0]!.body.publicId } }))
+        .creatorId,
+    ).toBe(volunteer.id);
+    expect(
+      await db.auditEvent.count({
+        where: { event: 'OFFLINE_EVENT_ACCEPTED', entityId: envelope.body.id },
+      }),
+    ).toBe(1);
+  });
+  it('rejects altered signatures without changing canonical quantities', async () => {
+    const { sync, envelope } = await signedNeed();
+    const changed = { ...envelope, body: { ...envelope.body, authorId: doctor.id } };
+    await expect(sync.ingest(changed, randomUUID())).rejects.toMatchObject({ status: 400 });
+    expect(await db.offlineEvent.count({ where: { id: envelope.body.id } })).toBe(0);
+  });
+  it('returns signed rejections for revoked devices and expired original events', async () => {
+    const { sync, envelope, device, keys } = await signedNeed();
+    await sync.revoke(volunteer, device.id);
+    expect((await sync.ingest(envelope, randomUUID())).body.status).toBe('REJECTED');
+    const second = await signedNeed();
+    const body = {
+      ...second.envelope.body,
+      createdAt: new Date(Date.now() - 7200000).toISOString(),
+      expiresAt: new Date(Date.now() - 3600000).toISOString(),
+    };
+    const expired = {
+      ...second.envelope,
+      body,
+      signature: await sign(body, second.keys.privateKey),
+    };
+    expect((await sync.ingest(expired, randomUUID())).body.status).toBe('REJECTED');
+    expect(keys.privateKey.extractable).toBe(false);
+  });
+  it('does not let a registered device forge another author or organization', async () => {
+    const { sync, envelope, keys } = await signedNeed();
+    const forgedBody = { ...envelope.body, authorId: doctor.id };
+    await expect(
+      sync.ingest(
+        { ...envelope, body: forgedBody, signature: await sign(forgedBody, keys.privateKey) },
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+    const otherOrganization = {
+      ...envelope.body,
+      organizationId: doctor.memberships[0]!.organizationId,
+    };
+    const rejected = await sync.ingest(
+      {
+        ...envelope,
+        body: otherOrganization,
+        signature: await sign(otherOrganization, keys.privateKey),
+      },
+      randomUUID(),
+    );
+    expect(rejected.body.status).toBe('REJECTED');
+  });
+  it('returns a signed conflict for stale changes and never reopens a terminal request', async () => {
+    const { sync, keys, device } = await signedNeed(),
+      need = await makeNeed();
+    const changes = await createEnvelope(
+      {
+        type: 'REQUEST_UPDATED',
+        authorId: volunteer.id,
+        deviceId: device.id,
+        organizationId: volunteer.memberships[0]!.organizationId,
+        payload: {
+          publicId: need.publicId,
+          changes: { version: need.version, title: 'A stale offline edit' },
+        },
+      },
+      keys,
+    );
+    await donations.reserve(need.publicId, 10, undefined, randomUUID());
+    expect((await sync.ingest(changes, randomUUID())).body.status).toBe('CONFLICT');
+    expect((await requests.get(need.publicId)).title).toBe(need.title);
+  });
+  it('propagates admin withdrawal in a signed receipt and canonical request state', async () => {
+    const { sync, envelope } = await signedNeed(),
+      first = await sync.ingest(envelope, randomUUID());
+    const admin = await db.user.findUniqueOrThrow({
+      where: { email: 'admin@saathi.test' },
+      include: actorInclude,
+    });
+    const withdrawn = await sync.invalidate(admin, envelope.body.id);
+    expect(withdrawn.body.status).toBe('INVALIDATED');
+    expect(await validReceipt(withdrawn, sync.receiptKey().publicKey, envelope)).toBe(true);
+    expect((await requests.get(first.body.publicId!)).status).toBe('CANCELLED');
+    expect((await sync.ingest(envelope, randomUUID())).body.status).toBe('INVALIDATED');
+  });
+  it('attaches later media to the original offline field post and propagates moderation and withdrawal', async () => {
+    const { sync, keys, device } = await signedNeed();
+    const envelope = await createEnvelope(
+      {
+        type: 'FIELD_PUBLISHED',
+        authorId: volunteer.id,
+        deviceId: device.id,
+        organizationId: volunteer.memberships[0]!.organizationId,
+        payload: {
+          reliefPointId: pointId,
+          caption: 'Offline field report with private media arriving later.',
+          mediaIds: [],
+        },
+      },
+      keys,
+    );
+    const receipt = await sync.ingest(envelope, randomUUID());
+    expect(receipt.body.status).toBe('PUBLISHED');
+    expect(receipt.body.fieldId).toBeTruthy();
+    const bytes = await sharp({
+      create: { width: 30, height: 30, channels: 3, background: '#216352' },
+    })
+      .jpeg()
+      .toBuffer();
+    const asset = await app
+      .get(MediaService)
+      .upload(volunteer, volunteer.memberships[0]!.organizationId, {
+        buffer: bytes,
+        size: bytes.length,
+      });
+    await expect(sync.attachMedia(doctor, envelope.body.id, [asset.id])).rejects.toMatchObject({
+      status: 403,
+    });
+    const pending = await sync.attachMedia(volunteer, envelope.body.id, [asset.id]);
+    expect(pending.body.status).toBe('ACCEPTED');
+    expect((await requests.feed()).some((post) => post.id === receipt.body.fieldId)).toBe(false);
+    await sync.attachMedia(volunteer, envelope.body.id, [asset.id]);
+    expect(await db.mediaAsset.count({ where: { fieldUpdateId: receipt.body.fieldId } })).toBe(1);
+    const coordinator = await db.user.findUniqueOrThrow({
+      where: { email: 'coordinator@saathi.test' },
+      include: actorInclude,
+    });
+    await app.get(ManagementService).moderate(coordinator, receipt.body.fieldId!, 'APPROVED');
+    const published = (await sync.receipts([envelope.body.id]))[0]!;
+    expect(published.body.status).toBe('PUBLISHED');
+    expect(await validReceipt(published, sync.receiptKey().publicKey, envelope)).toBe(true);
+    const admin = await db.user.findUniqueOrThrow({
+      where: { email: 'admin@saathi.test' },
+      include: actorInclude,
+    });
+    expect((await sync.invalidate(admin, envelope.body.id)).body.status).toBe('INVALIDATED');
+    expect((await requests.feed()).some((post) => post.id === receipt.body.fieldId)).toBe(false);
+  });
+  it('does not report a scheduled offline field post as published early', async () => {
+    const { sync, keys, device } = await signedNeed();
+    const envelope = await createEnvelope(
+      {
+        type: 'FIELD_PUBLISHED',
+        authorId: volunteer.id,
+        deviceId: device.id,
+        organizationId: volunteer.memberships[0]!.organizationId,
+        payload: {
+          reliefPointId: pointId,
+          caption: 'A field report scheduled for later publication.',
+          mediaIds: [],
+          publishAt: new Date(Date.now() + 3600000).toISOString(),
+        },
+      },
+      keys,
+    );
+    const receipt = await sync.ingest(envelope, randomUUID());
+    expect(receipt.body.status).toBe('ACCEPTED');
+    await db.fieldUpdate.update({
+      where: { id: receipt.body.fieldId! },
+      data: { publishAt: new Date(Date.now() - 1000) },
+    });
+    expect((await sync.receipts([envelope.body.id]))[0]!.body.status).toBe('PUBLISHED');
+  });
+  it('supports admin organization setup, coordinator approval, and immediate volunteer suspension', async () => {
+    const admin = await login('admin@saathi.test');
+    const write = (path: string, credentials: typeof admin, body: object) =>
+      request(app.getHttpServer())
+        .post(`/api/v1/${path}`)
+        .set('Origin', origin)
+        .set('Cookie', credentials.cookies)
+        .set('X-CSRF-Token', credentials.csrf)
+        .send(body);
+    const organization = await write('admin/organizations', admin, {
+      name: 'Integration verified relief team',
+    });
+    expect(organization.status).toBe(201);
+    expect(organization.body.verified).toBe(true);
+    const coordinatorEmail = 'new-coordinator@saathi.test';
+    const coordinatorInvite = await write('coordinator/invite', admin, {
+      email: coordinatorEmail,
+      displayName: 'New coordinator',
+      password: process.env.SEED_PASSWORD,
+      organizationId: organization.body.id,
+      role: 'COORDINATOR',
+    });
+    expect(coordinatorInvite.status).toBe(201);
+    const coordinator = await login(coordinatorEmail);
+    const volunteerEmail = 'new-volunteer@saathi.test';
+    const invitation = await write('coordinator/invite', coordinator, {
+      email: volunteerEmail,
+      displayName: 'New volunteer',
+      password: process.env.SEED_PASSWORD,
+      organizationId: organization.body.id,
+      role: 'VOLUNTEER',
+    });
+    expect(invitation.status).toBe(201);
+    const unapproved = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .set('Origin', origin)
+      .send({ email: volunteerEmail, password: process.env.SEED_PASSWORD });
+    expect(unapproved.status).toBe(401);
+    const membership = await db.organizationMembership.findFirstOrThrow({
+      where: { userId: invitation.body.id },
+    });
+    expect(
+      (await write(`coordinator/volunteers/${membership.id}/approve`, coordinator, {})).status,
+    ).toBe(201);
+    const approved = await login(volunteerEmail);
+    const me = await request(app.getHttpServer())
+      .get('/api/v1/auth/me')
+      .set('Cookie', approved.cookies);
+    expect(me.status).toBe(200);
+    expect(
+      (await write(`coordinator/volunteers/${membership.id}/suspend`, coordinator, {})).status,
+    ).toBe(201);
+    expect(
+      (await request(app.getHttpServer()).get('/api/v1/auth/me').set('Cookie', approved.cookies))
+        .status,
+    ).toBe(401);
+    expect(
+      await db.auditEvent.count({
+        where: { entityId: invitation.body.id, event: 'VOLUNTEER_APPROVED' },
+      }),
+    ).toBe(1);
+  });
+  it("preserves an unavailable organization's canonical record without claiming verification or accepting supplies", async () => {
+    const need = await makeNeed();
+    const organizationId = volunteer.memberships[0]!.organizationId;
+    await db.organization.update({ where: { id: organizationId }, data: { active: false } });
+    try {
+      const canonical = await requests.get(need.publicId);
+      expect(canonical.verified).toBe(false);
+      expect(canonical.organization.verified).toBe(false);
+      expect((await requests.list()).some((r) => r.publicId === need.publicId)).toBe(false);
+      await expect(
+        donations.reserve(need.publicId, 10, undefined, randomUUID()),
+      ).rejects.toMatchObject({ status: 409 });
+    } finally {
+      await db.organization.update({ where: { id: organizationId }, data: { active: true } });
+    }
+  });
+  it('lets public users browse without exposing internal or private details', async () => {
+    const result = await request(app.getHttpServer()).get('/api/v1/public/requests');
+    expect(result.status).toBe(200);
+    expect(result.body.length).toBeGreaterThan(0);
+    const record = result.body[0];
+    expect(record.id).toBeUndefined();
+    expect(record.creator.email).toBeUndefined();
+    expect(record.reliefPoint.latitude).toBeUndefined();
+    expect(record.organization.id).toBeUndefined();
+  });
+  it('rejects a normal public account creating a verified request', async () => {
+    const { cookies, csrf } = await login('public@saathi.test');
+    const need = await makeNeed();
+    const result = await request(app.getHttpServer())
+      .post('/api/v1/volunteer/requests')
+      .set('Origin', origin)
+      .set('Cookie', cookies)
+      .set('X-CSRF-Token', csrf)
+      .send({
+        reliefPointId: pointId,
+        category: 'WATER',
+        title: 'Fake verified need',
+        description: 'An unauthorized need',
+        requestedQuantity: 10,
+        unit: 'bottles',
+        priority: 'NORMAL',
+        deadline: need.deadline,
+      });
+    expect(result.status).toBe(403);
+  });
+  it('rejects cross-organization edits', async () => {
+    const need = await makeNeed();
+    await expect(
+      requests.edit(doctor, need.publicId, {
+        version: need.version,
+        title: 'Changed by another organization',
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+  it('protects against CSRF and forged origins', async () => {
+    const { cookies } = await login('volunteer@saathi.test');
+    const result = await request(app.getHttpServer())
+      .post('/api/v1/volunteer/feed')
+      .set('Origin', origin)
+      .set('Cookie', cookies)
+      .send({ caption: 'Valid caption but invalid security token', reliefPointId: pointId });
+    expect(result.status).toBe(403);
+    const forged = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .set('Origin', 'https://forged.test')
+      .send({ email: 'volunteer@saathi.test', password: process.env.SEED_PASSWORD });
+    expect(forged.status).toBe(403);
+  });
+  it('prevents two simultaneous donors from exceeding the final 100 units', async () => {
+    const need = await makeNeed();
+    const result = await Promise.allSettled([
+      donations.reserve(need.publicId, 100, undefined, randomUUID()),
+      donations.reserve(need.publicId, 100, undefined, randomUUID()),
+    ]);
+    expect(result.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect((await requests.get(need.publicId)).committedQuantity).toBe(100);
+    expect(
+      await db.donationCommitment.count({ where: { request: { publicId: need.publicId } } }),
+    ).toBe(1);
+  });
+  it('keeps twenty parallel partial commitments within the requested quantity', async () => {
+    const need = await makeNeed();
+    const result = await Promise.allSettled(
+      Array.from({ length: 20 }, () =>
+        donations.reserve(need.publicId, 10, undefined, randomUUID()),
+      ),
+    );
+    expect(result.filter((r) => r.status === 'fulfilled')).toHaveLength(10);
+    expect((await requests.get(need.publicId)).committedQuantity).toBe(100);
+  });
+  it('deduplicates simultaneous retries and rejects key reuse with changed input', async () => {
+    const need = await makeNeed(),
+      key = randomUUID();
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        donations.reserve(need.publicId, 20, 'donor@example.org', key),
+      ),
+    );
+    expect(new Set(results.map((r) => r.id)).size).toBe(1);
+    expect((await requests.get(need.publicId)).committedQuantity).toBe(20);
+    await expect(
+      donations.reserve(need.publicId, 21, 'donor@example.org', key),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+  it('requires an idempotency key on donation HTTP endpoints', async () => {
+    const need = await makeNeed();
+    const result = await request(app.getHttpServer())
+      .post('/api/v1/donations')
+      .set('Origin', origin)
+      .send({ publicId: need.publicId, quantity: 10 });
+    expect(result.status).toBe(400);
+  });
+  it('releases expired reservations and prevents placing orders on them', async () => {
+    const need = await makeNeed(),
+      c = await donations.reserve(need.publicId, 100, undefined, randomUUID());
+    await db.donationCommitment.update({
+      where: { id: c.id },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    await donations.sweep();
+    expect((await requests.get(need.publicId)).remainingQuantity).toBe(100);
+    await expect(
+      donations.order(
+        c.trackingToken,
+        { provider: 'Self delivery', externalOrderId: 'test', eta: new Date().toISOString() },
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+  it('records partial deliveries, completes the request, preserves its canonical page, and queues thank-you email', async () => {
+    const need = await makeNeed(40),
+      c = await donations.reserve(need.publicId, 40, 'donor@example.org', randomUUID());
+    await donations.order(
+      c.trackingToken,
+      {
+        provider: 'Local shop',
+        externalOrderId: 'TEST-40',
+        eta: new Date(Date.now() + 60000).toISOString(),
+      },
+      randomUUID(),
+    );
+    await donations.confirm(volunteer, c.id, randomUUID());
+    let current = await requests.get(need.publicId);
+    const firstKey = randomUUID();
+    await donations.receive(volunteer, c.id, 15, current.version, firstKey);
+    await donations.receive(volunteer, c.id, 15, current.version, firstKey);
+    current = await requests.get(need.publicId);
+    expect(current.receivedQuantity).toBe(15);
+    expect(current.status).toBe('PARTIALLY_RECEIVED');
+    await donations.receive(volunteer, c.id, 25, current.version, randomUUID());
+    const canonical = await requests.get(need.publicId);
+    expect(canonical.status).toBe('COMPLETED');
+    expect(canonical.remainingQuantity).toBe(0);
+    expect((await requests.list()).some((r) => r.publicId === need.publicId)).toBe(false);
+    expect((await donations.tracking(c.trackingToken)).status).toBe('DELIVERED');
+    expect(
+      await db.notification.count({
+        where: { kind: 'DELIVERY_CONFIRMED', email: 'donor@example.org' },
+      }),
+    ).toBeGreaterThan(0);
+    expect(
+      await db.auditEvent.count({
+        where: {
+          event: 'REQUEST_COMPLETED',
+          entityId: (
+            await db.reliefRequest.findUniqueOrThrow({ where: { publicId: need.publicId } })
+          ).id,
+        },
+      }),
+    ).toBe(1);
+  });
+  it('enforces optimistic concurrency and rejects stale quantity edits', async () => {
+    const need = await makeNeed();
+    await donations.reserve(need.publicId, 10, undefined, randomUUID());
+    await expect(
+      requests.edit(volunteer, need.publicId, { version: need.version, title: 'Stale edit' }),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+  it('requires an unguessable contribution token', async () => {
+    const need = await makeNeed(),
+      c = await donations.reserve(need.publicId, 10, undefined, randomUUID());
+    expect((await db.donationCommitment.findUniqueOrThrow({ where: { id: c.id } })).tokenHash).toBe(
+      digest(c.trackingToken),
+    );
+    await expect(donations.tracking('not-a-valid-token')).rejects.toMatchObject({ status: 404 });
+    expect(await donations.tracking(c.trackingToken)).not.toHaveProperty('email');
+  });
+  it('atomically publishes a text update and a linked need', async () => {
+    const input = {
+      reliefPointId: pointId,
+      category: 'WATER' as const,
+      title: 'Linked supply need',
+      description: 'A linked public relief need.',
+      requestedQuantity: 20,
+      unit: 'bottles',
+      priority: 'NORMAL' as const,
+      deadline: new Date(Date.now() + 3600000).toISOString(),
+    };
+    const post = await requests.publish(volunteer, {
+      reliefPointId: pointId,
+      caption: 'A verified test field update with a linked need.',
+      mediaIds: [],
+      request: input,
+    });
+    expect(post.moderation).toBe('APPROVED');
+    const row = await db.fieldUpdate.findUniqueOrThrow({ where: { id: post.id } });
+    expect(row.requestId).toBeTruthy();
+    expect((await requests.feed()).some((p) => p.id === row.id)).toBe(true);
+  });
+  it('blocks audit mutation and request deletion at the database layer', async () => {
+    const audit = await db.auditEvent.findFirstOrThrow();
+    await expect(
+      db.auditEvent.update({ where: { id: audit.id }, data: { event: 'TAMPERED' } }),
+    ).rejects.toThrow('append-only');
+    const need = await makeNeed();
+    await expect(db.reliefRequest.delete({ where: { publicId: need.publicId } })).rejects.toThrow(
+      'archived',
+    );
+  });
+  it('revokes a session immediately', async () => {
+    const { cookies, csrf } = await login('volunteer@saathi.test');
+    const result = await request(app.getHttpServer())
+      .post('/api/v1/auth/logout')
+      .set('Origin', origin)
+      .set('Cookie', cookies)
+      .set('X-CSRF-Token', csrf);
+    expect(result.status).toBe(201);
+    const me = await request(app.getHttpServer()).get('/api/v1/auth/me').set('Cookie', cookies);
+    expect(me.status).toBe(401);
+  });
+  it('rejects organization spoofing using server-side membership', () => {
+    expect(() => auth.requireOrg(volunteer, doctor.memberships[0]!.organizationId)).toThrow();
+  });
+  it('sanitizes image metadata and keeps media private until approved, then removes hidden derivatives', async () => {
+    const bytes = await sharp({
+      create: { width: 40, height: 30, channels: 3, background: '#216352' },
+    })
+      .jpeg()
+      .withExif({
+        IFD0: {
+          Artist: 'PRIVATE-VOLUNTEER',
+          Make: 'PRIVATE-DEVICE',
+          ImageDescription: 'Private location',
+        },
+      })
+      .toBuffer();
+    expect((await sharp(bytes).metadata()).exif).toBeDefined();
+    const media = app.get(MediaService),
+      management = app.get(ManagementService),
+      storage = app.get(S3Storage);
+    const a = await media.upload(volunteer, volunteer.memberships[0]!.organizationId, {
+      buffer: bytes,
+      size: bytes.length,
+    });
+    const row = await db.mediaAsset.findUniqueOrThrow({ where: { id: a.id } });
+    expect(row.processingState).toBe('READY');
+    const safe = await storage.readPrivate(row.publicKey!);
+    const meta = await sharp(safe).metadata();
+    expect(meta.exif).toBeUndefined();
+    expect(meta.icc).toBeUndefined();
+    await expect(storage.readPublic(row.publicKey!)).rejects.toThrow();
+    const p = await requests.publish(volunteer, {
+      caption: 'A demo media post awaiting approval.',
+      reliefPointId: pointId,
+      mediaIds: [a.id],
+    });
+    expect(p.moderation).toBe('PENDING');
+    expect((await requests.feed()).some((item) => item.id === p.id)).toBe(false);
+    const coordinator = await db.user.findUniqueOrThrow({
+      where: { email: 'coordinator@saathi.test' },
+      include: actorInclude,
+    });
+    await management.moderate(coordinator, p.id, 'APPROVED');
+    expect((await requests.feed()).find((item) => item.id === p.id)?.media).toHaveLength(1);
+    expect((await storage.readPublic(row.publicKey!)).length).toBeGreaterThan(0);
+    await management.moderate(coordinator, p.id, 'HIDDEN');
+    expect((await requests.feed()).some((item) => item.id === p.id)).toBe(false);
+    await expect(storage.readPublic(row.publicKey!)).rejects.toThrow();
+  });
+  it('rejects executable content disguised as a photo', async () => {
+    await expect(sanitizeImage(Buffer.from('<script>malicious</script>'))).rejects.toThrow();
+  });
+  it('sanitizes video and generates a private thumbnail', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'saathi-video-test-'));
+    try {
+      const binary = createRequire(resolve('apps/api/package.json'))('ffmpeg-static') as string,
+        source = join(dir, 'source.mp4');
+      await promisify(execFile)(
+        binary,
+        [
+          '-y',
+          '-f',
+          'lavfi',
+          '-i',
+          'color=c=green:s=160x120:d=1',
+          '-metadata',
+          'title=PRIVATE LOCATION',
+          '-metadata',
+          'artist=PRIVATE VOLUNTEER',
+          '-c:v',
+          'libx264',
+          '-threads',
+          '1',
+          source,
+        ],
+        { windowsHide: true },
+      );
+      const bytes = await readFile(source);
+      const a = await app
+        .get(MediaService)
+        .upload(volunteer, volunteer.memberships[0]!.organizationId, {
+          buffer: bytes,
+          size: bytes.length,
+        });
+      const row = await db.mediaAsset.findUniqueOrThrow({ where: { id: a.id } });
+      expect(row.mimeType).toBe('video/mp4');
+      expect(row.processingState).toBe('READY');
+      const sanitized = await app.get(S3Storage).readPrivate(row.publicKey!);
+      expect(sanitized.includes(Buffer.from('PRIVATE LOCATION'))).toBe(false);
+      expect(sanitized.includes(Buffer.from('PRIVATE VOLUNTEER'))).toBe(false);
+      expect(
+        (await sharp(await app.get(S3Storage).readPrivate(row.thumbnailKey!)).metadata()).exif,
+      ).toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
