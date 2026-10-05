@@ -46,6 +46,7 @@ export class LocalPeer implements SaathiPeerTransport {
   session = crypto.randomUUID();
   private pc?: RTCPeerConnection;
   private channel?: RTCDataChannel;
+  private openChannel?: () => Promise<void>;
   private audio?: RTCRtpTransceiver;
   private video?: RTCRtpTransceiver;
   private streams: MediaStream[] = [];
@@ -71,10 +72,13 @@ export class LocalPeer implements SaathiPeerTransport {
     this.status('PAIRING');
     this.remoteStream = new MediaStream();
     pc.ontrack = ({ track }) => {
+      if (this.pc !== pc) return;
       this.remoteStream.addTrack(track);
       this.onStream(this.remoteStream);
     };
-    pc.ondatachannel = ({ channel }) => this.bind(channel);
+    pc.ondatachannel = ({ channel }) => {
+      if (this.pc === pc) this.bind(pc, channel);
+    };
     pc.onconnectionstatechange = () => {
       if (this.pc !== pc) return;
       if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) {
@@ -90,26 +94,37 @@ export class LocalPeer implements SaathiPeerTransport {
     }, 120000);
     return pc;
   }
-  private bind(channel: RTCDataChannel) {
+  private bind(pc: RTCPeerConnection, channel: RTCDataChannel) {
     this.channel = channel;
     channel.bufferedAmountLowThreshold = 32768;
     let opened = false;
     const open = async () => {
-      if (opened || this.channel !== channel) return;
-      opened = true;
-      clearTimeout(this.signalTimer);
-      const fingerprints = [this.pc?.localDescription?.sdp, this.pc?.remoteDescription?.sdp]
-        .map((sdp) => /a=fingerprint:([^\r\n]+)/.exec(sdp ?? '')?.[1] ?? '')
+      if (opened || this.pc !== pc || this.channel !== channel || channel.readyState !== 'open')
+        return;
+      // Channel-open can precede completion of setRemoteDescription(answer).
+      // Retry after each description is applied; never hash a missing fingerprint.
+      if (!pc.localDescription || !pc.remoteDescription || pc.signalingState !== 'stable') return;
+      const fingerprints = [pc.localDescription.sdp, pc.remoteDescription.sdp]
+        .map((sdp) => /a=fingerprint:([^\r\n]+)/.exec(sdp)?.[1] ?? '')
         .sort();
-      this.verificationCode = (await hash({ fingerprints, session: this.session }))
+      if (fingerprints.some((fingerprint) => !fingerprint)) {
+        this.disconnect();
+        this.status('LOST');
+        return;
+      }
+      opened = true;
+      const verificationCode = (await hash({ fingerprints, session: this.session }))
         .slice(0, 8)
         .toUpperCase();
-      if (this.channel !== channel || channel.readyState !== 'open') return;
+      if (this.pc !== pc || this.channel !== channel || channel.readyState !== 'open') return;
+      clearTimeout(this.signalTimer);
+      this.verificationCode = verificationCode;
       this.status('CONNECTED');
       this.audio = this.pc?.getTransceivers().find((t) => t.receiver.track.kind === 'audio');
       this.video = this.pc?.getTransceivers().find((t) => t.receiver.track.kind === 'video');
       void this.announce().catch(() => {});
     };
+    this.openChannel = open;
     channel.onopen = open;
     channel.onclose = () => {
       if (this.channel !== channel) return;
@@ -139,6 +154,7 @@ export class LocalPeer implements SaathiPeerTransport {
     await pc.setLocalDescription(
       type === 'offer' ? await pc.createOffer() : await pc.createAnswer(),
     );
+    await this.openChannel?.();
     if (pc.iceGatheringState !== 'complete')
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(
@@ -166,7 +182,7 @@ export class LocalPeer implements SaathiPeerTransport {
     this.session = crypto.randomUUID();
     pc.addTransceiver('audio', { direction: 'sendrecv' });
     pc.addTransceiver('video', { direction: 'sendrecv' });
-    this.bind(pc.createDataChannel('saathi-v1', { ordered: true }));
+    this.bind(pc, pc.createDataChannel('saathi-v1', { ordered: true }));
     return this.description('offer');
   }
   async accept(text: string) {
@@ -189,6 +205,7 @@ export class LocalPeer implements SaathiPeerTransport {
     if (!this.pc || value.session !== this.session || this.pc.signalingState !== 'have-local-offer')
       throw new Error('This reply belongs to a different invitation.');
     await this.pc.setRemoteDescription({ type: 'answer', sdp: value.sdp });
+    await this.openChannel?.();
     return '';
   }
   async send(kind: Frame['kind'], value: unknown, id = crypto.randomUUID()) {
@@ -299,7 +316,9 @@ export class LocalPeer implements SaathiPeerTransport {
     const channel = this.channel,
       pc = this.pc;
     this.channel = undefined;
+    this.openChannel = undefined;
     this.pc = undefined;
+    this.verificationCode = '';
     channel?.close();
     pc?.close();
     this.audio = undefined;

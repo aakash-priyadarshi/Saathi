@@ -159,6 +159,39 @@ test('nearby messages, consented attachment and synthetic video work with websit
     await Promise.all(
       [ca, cb].map((context) =>
         context.addInitScript(() => {
+          // A data channel can open while applying the answer, before the
+          // remoteDescription getter exposes it. Hold that window open so the
+          // verification code must wait for setRemoteDescription to finish.
+          const remoteDescription = Object.getOwnPropertyDescriptor(
+            RTCPeerConnection.prototype,
+            'remoteDescription',
+          )!;
+          const applyDescription = RTCPeerConnection.prototype.setRemoteDescription;
+          const pendingAnswers = new WeakSet<RTCPeerConnection>();
+          let earlyAnswerReads = 0;
+          Object.defineProperty(window, '__saathiEarlyAnswerReads', {
+            get: () => earlyAnswerReads,
+          });
+          Object.defineProperty(RTCPeerConnection.prototype, 'remoteDescription', {
+            ...remoteDescription,
+            get(this: RTCPeerConnection) {
+              if (pendingAnswers.has(this)) {
+                earlyAnswerReads++;
+                return null;
+              }
+              return remoteDescription.get!.call(this);
+            },
+          });
+          RTCPeerConnection.prototype.setRemoteDescription = async function (description) {
+            if (description?.type === 'answer') pendingAnswers.add(this);
+            try {
+              await Reflect.apply(applyDescription, this, [description]);
+              if (description?.type === 'answer')
+                await new Promise((resolve) => setTimeout(resolve, 500));
+            } finally {
+              pendingAnswers.delete(this);
+            }
+          };
           const send = RTCDataChannel.prototype.send;
           let dropped = false;
           RTCDataChannel.prototype.send = function (
@@ -182,6 +215,9 @@ test('nearby messages, consented attachment and synthetic video work with websit
       cb.route('**/api/**', (route) => route.abort()),
     ]);
     await pair(a, b);
+    expect(
+      await a.evaluate(() => Reflect.get(window, '__saathiEarlyAnswerReads') as number),
+    ).toBeGreaterThan(0);
     await a.getByLabel('Message', { exact: true }).fill('Local check: clean water is ready');
     await a.getByRole('button', { name: 'Send nearby message' }).click();
     await expect(b.getByText('Local check: clean water is ready', { exact: true })).toBeVisible();
