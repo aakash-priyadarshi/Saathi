@@ -52,7 +52,7 @@ Updated 5 October 2026. Platform name: **Saathi**. The online web workflow, dura
 - [ ] Native Android and iOS clients, automatic nearby discovery, native radio adapters and temporary native hub
 - [ ] Browser-to-native and cross-platform transport proofs before selecting or advertising production native transports
 
-The browser nearby feature is a **phone-testing preview**. It requires a previously prepared secure origin, a reachable local Wi-Fi/hotspot path and foreground use. It cannot enable system radios or discover arbitrary nearby phones. Native transport selection remains gated on physical proofs; no BLE, Wi-Fi Direct, native Nearby or iOS implementation is claimed.
+The browser nearby feature is a **phone-testing preview**. It requires a previously prepared secure origin, a reachable local Wi-Fi/hotspot path and foreground use. It cannot enable system radios or discover arbitrary nearby phones. Native transport selection remains gated on physical proofs; no production BLE, Wi-Fi Direct, native Nearby or iOS adapter is claimed. The synthetic Android probe is separate from the production domain client.
 
 ## Validation recorded
 
@@ -64,6 +64,7 @@ The browser nearby feature is a **phone-testing preview**. It requires a previou
 - Offline cold opening, storage persistence, private-cache exclusion, local message/file/call exchange, interrupted attachment resumption and A-to-B-to-C publication with reverse signed receipts have browser coverage. Calls use synthetic camera/microphone sources; mobile-width checks run on Windows Chromium and are not Android hardware tests.
 - The local peer proof ran three pairings between independent Chromium processes on one Windows host with HTTP blocked and no cloud signaling or STUN/TURN. Range and battery measurements are absent. See `benchmarks/chromium-nearby.json` and `nearby-connectivity-device-tests.md`.
 - Desktop/mobile screenshots were inspected in light and dark themes. Physical-device results remain **NOT RUN** in `android-field-test-guide.md`.
+- The pinned Android wrapper build, lint and debug signature verification passed. A single Android 17/API 37 emulator passed installation/launch, permission denial/retry, advertising, foreground-stop and local JSON-export smoke checks; unpaired measurement controls remained disabled. See `benchmarks/android-emulator-smoke.json`. The owner chose to connect the S24 later; native pairing, latency, throughput, range and battery are unmeasured.
 - Docker/CI definitions are included. The local Docker daemon was unavailable, so the Docker image and remote CI execution are **unverified**. Native local PostgreSQL was used instead.
 - Local Redis was unavailable; database maintenance and reservation fallback paths ran. Real Redis-backed worker execution remains a deployment check.
 

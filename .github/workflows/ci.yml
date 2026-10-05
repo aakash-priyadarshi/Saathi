@@ -36,8 +36,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: cp .env.example .env
-      - run: node scripts/check-publish.mjs
       - run: pnpm install --frozen-lockfile
+      - run: node scripts/check-publish.mjs
       - run: pnpm db:generate
       - run: pnpm build:packages
       - run: pnpm lint && pnpm typecheck && pnpm test

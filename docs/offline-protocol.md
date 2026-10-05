@@ -1,6 +1,6 @@
 # Offline and nearby protocol v1
 
-This document describes the implemented browser foundation and its boundaries. See [current research and capability matrix](nearby-connectivity-research.md), [architecture](nearby-connectivity-architecture.md), [ADR](adr/0001-durable-events-and-local-peer-sessions.md), and [physical-device worksheet](nearby-connectivity-device-tests.md). Native radio transports are not implemented or verified.
+This document describes the implemented browser foundation and its boundaries. See [current research and capability matrix](nearby-connectivity-research.md), [architecture](nearby-connectivity-architecture.md), [ADR](adr/0001-durable-events-and-local-peer-sessions.md), and [physical-device worksheet](nearby-connectivity-device-tests.md). Production native radio transports are not implemented or physically verified; the isolated [Android instrument](../spikes/android/README.md) uses synthetic data for future measurements.
 
 ## Local persistence
 
@@ -25,6 +25,8 @@ Scheduled posts remain Accepted until their actual publication time. Media arriv
 ## Foreground nearby preview
 
 Browser WebRTC uses an existing reachable local IP path with no STUN/TURN or cloud signaling. Compressed two-way invitations/replies are exchanged manually by file/text; QR is offered only when the payload fits. Descriptions are bounded and expire after two minutes. Users compare a session fingerprint code before exchanging work. No automatic browser radio discovery, radio control, internet forwarding or cellular media gateway is provided.
+
+Capability frames are sent when the data channel opens and refreshed when the person confirms matching codes. Binding also initializes an already-open channel. Calls and files remain disabled until the other phone actually reports support; capability state is cleared for each new pairing. Browser tests deliberately drop the initial capability frame to verify recovery.
 
 Encrypted ordered data channels carry frames capped at 24 KB. Exact-ID inventory is capped at 500 events, requests at 50 IDs per batch, and event fragments at 64 KiB/eight parts. Peers ask only for missing envelopes while receiving new receipts for known events; urgent structured requests go first. Sharing requires explicit user action. TTL/hops are cooperative relay bounds, not cryptographic proof of the path. Signed receipts can return for an already-known event after its relay lifetime expires.
 
