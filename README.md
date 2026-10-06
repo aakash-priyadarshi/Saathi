@@ -102,6 +102,8 @@ Every setting is listed in [.env.example](.env.example). Never commit `.env`.
 
 `EMAIL_PROVIDER=log` records local notification attempts as `LOGGED`; it does **not** deliver an email. Resend requires a real key and verified sender. Production requires HTTPS, non-demo configuration, S3 credentials, Resend, and malware scanning. Local defaults are never production credentials.
 
+The isolated AWS QA stack and public container-build workflow are documented in the [Lightsail staging guide](ops/aws/lightsail/staging/README.md). It is not a production deployment profile.
+
 ## Verification
 
 ```powershell

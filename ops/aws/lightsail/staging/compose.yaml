@@ -1,0 +1,175 @@
+name: saathi-staging
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: saathi
+      POSTGRES_USER: saathi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U saathi -d saathi']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 768m
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    mem_limit: 256m
+
+  migrate:
+    image: ${SAATHI_IMAGE:?Set SAATHI_IMAGE in .env}
+    profiles: ['tools']
+    restart: 'no'
+    command:
+      - pnpm
+      - --filter
+      - '@saathi/database'
+      - exec
+      - prisma
+      - migrate
+      - deploy
+      - --schema
+      - prisma/schema.prisma
+    environment:
+      NODE_ENV: production
+      APP_ENV: staging
+      DATABASE_URL: postgresql://saathi:${POSTGRES_PASSWORD}@postgres:5432/saathi?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  seed:
+    image: ${SAATHI_IMAGE:?Set SAATHI_IMAGE in .env}
+    profiles: ['tools']
+    restart: 'no'
+    command: ['pnpm', 'db:seed']
+    environment:
+      NODE_ENV: production
+      APP_ENV: staging
+      DATABASE_URL: postgresql://saathi:${POSTGRES_PASSWORD}@postgres:5432/saathi?schema=public
+      DEMO_MODE: 'true'
+      SEED_PASSWORD: ${SEED_PASSWORD:?Set SEED_PASSWORD in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    image: ${SAATHI_IMAGE:?Set SAATHI_IMAGE in .env}
+    restart: unless-stopped
+    command: ['pnpm', '--filter', '@saathi/api', 'start']
+    env_file:
+      - ./runtime.secrets.env
+    environment:
+      NODE_ENV: production
+      APP_ENV: staging
+      API_PLANE: combined
+      SERVICE_ROLE: api
+      MEDIA_PROCESSING_MODE: inline
+      API_PORT: '4000'
+      DATABASE_URL: postgresql://saathi:${POSTGRES_PASSWORD}@postgres:5432/saathi?schema=public
+      REDIS_URL: redis://redis:6379
+      WEB_ORIGIN: https://${WEB_HOST:?Set WEB_HOST in .env}
+      PUBLIC_URL: https://${WEB_HOST:?Set WEB_HOST in .env}
+      PLATFORM_NAME: SWARM
+      DEMO_MODE: 'true'
+      EMAIL_PROVIDER: log
+      EMAIL_FROM: Swarm staging <staging@cockroachjantaparty.org>
+      STORAGE_PROVIDER: local
+      LOCAL_MEDIA_DIR: /app/.data/media
+      MEDIA_SCAN_PROVIDER: disabled
+    volumes:
+      - media:/app/.data
+    expose:
+      - '4000'
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:4000/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: 768m
+
+  web:
+    image: ${SAATHI_IMAGE:?Set SAATHI_IMAGE in .env}
+    restart: unless-stopped
+    command:
+      - pnpm
+      - --filter
+      - '@saathi/web'
+      - start
+      - --hostname
+      - 0.0.0.0
+      - --port
+      - '3000'
+    environment:
+      NODE_ENV: production
+      API_INTERNAL_URL: http://api:4000
+      PUBLIC_API_INTERNAL_URL: http://api:4000
+      NEXT_PUBLIC_PLATFORM_NAME: SWARM
+    expose:
+      - '3000'
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 768m
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    environment:
+      WEB_HOST: ${WEB_HOST:?Set WEB_HOST in .env}
+      API_HOST: ${API_HOST:?Set API_HOST in .env}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    mem_limit: 128m
+
+volumes:
+  postgres:
+  redis:
+  media:
+  caddy_data:
+  caddy_config:

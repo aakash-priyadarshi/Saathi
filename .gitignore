@@ -8,6 +8,8 @@ coverage/
 test-results/
 playwright-report/
 .data/
+ops/aws/lightsail/staging/.env
+ops/aws/lightsail/staging/runtime.secrets.env
 .impeccable/review/
 *.log
 .gradle/
