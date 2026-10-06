@@ -77,14 +77,14 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         session.currentPeerIdentity = { chat.peer?.let { ChatProtocol.participant(it) } }
         session.onPeerIdentityVerified = { identity -> session.retryPendingMessagesFor(identity); if(BuildConfig.CHAT_ENABLED) community.announce() }
         session.onChatConnected = {
-            if(BuildConfig.CHAT_ENABLED) { chat.announce(); lastChatAnnounceAt=System.currentTimeMillis(); scheduleDirectDeliveryRetries(); if(chat.peer!=null)community.announce() }
+            if(BuildConfig.CHAT_ENABLED) { chat.announce(); lastChatAnnounceAt=System.currentTimeMillis(); scheduleNearbyDeliveryRetries(); if(chat.peer!=null)community.announce() }
             else session.send("CHAT_PROFILE", chat.profile())
         }
         session.onChatFrame = { frame, generation ->
             if (BuildConfig.CHAT_ENABLED) chat.receive(frame,generation)
             else if (frame.optString("kind") == "CHAT_PROFILE") chat.verifyTransportPeer(frame.getJSONObject("value")).also { session.onPeerIdentityVerified(it) }
         }
-        session.onChatReset = { deliveryRetry?.cancel(); chat.reset() }; chat.onChange = { refreshLocal(); scheduleDirectDeliveryRetries() }; chat.onInvite = { receiveInvite(it) }
+        session.onChatReset = { deliveryRetry?.cancel(); chat.reset() }; chat.onChange = { refreshLocal(); scheduleNearbyDeliveryRetries() }; chat.onInvite = { receiveInvite(it) }
         session.onCommunityFrame={frame,generation->if(BuildConfig.CHAT_ENABLED)community.frame(frame,generation)};community.onChange={refreshLocal()};session.publicFileAllowed={id,hash->community.fileAllowed(id,hash)};session.onPublicFileComplete={community.completeFile(it)}
         session.chatFileAllowed = { id,hash -> chat.fileAllowed(id,hash) }; session.onChatFileComplete = { chat.completeFile(it) }
         chat.onIncoming={batchChatNotice(it)}
@@ -129,12 +129,12 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         refreshLocal(); if(startServices){refresh(); foregroundActive()}
     }
     fun notice(text: String?) { mutable.update { it.copy(notice = text) } }
-    private fun scheduleDirectDeliveryRetries() {
+    private fun scheduleNearbyDeliveryRetries() {
         if (!BuildConfig.CHAT_ENABLED || !session.confirmed || chat.peer == null || deliveryRetry?.isActive == true) return
         deliveryRetry = viewModelScope.launch {
             for (waitMillis in longArrayOf(3_000, 7_000, 15_000, 30_000, 60_000, 120_000)) {
                 delay(waitMillis)
-                if (!session.confirmed || !chat.retryPendingDirectDelivery()) break
+                if (!session.confirmed || !chat.retryPendingNearbyDelivery()) break
             }
         }
     }
@@ -275,7 +275,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
             else
                 "Nearby discovery is not enabled in the verified service configuration. Local pairing remains available when configured."
         }
-        activate(nearby); nearby.scan(advertise,automatic)
+        activate(nearby); nearby.scan(advertise,automatic,chat.profile().getJSONObject("body").getString("name"))
     }
     fun scanBle(advertise: Boolean) = action { require(preferences().optBoolean("nearbyVisible",true)){"Enable Nearby visibility in More before searching."}; activate(ble); ble.start(advertise) }
     fun connect(id: String) = action { if (session.transport === ble) ble.connect(id) else nearby.connect(id) }
@@ -299,7 +299,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     private fun startRingTimeout() { ringTimeout?.cancel(); ringTimeout = viewModelScope.launch { delay(60000); runCatching { session.send("CALL_END", obj()) }; endMedia(); notice("Call was not answered. Nearby messages still work.") } }
     private fun endMedia() { ringTimeout?.cancel(); session.callInProgress = false; if (wifiDelegate.isInitialized()) wifi.stopMedia(); mutable.update { it.copy(calling = false, callActive = false, incomingCall = null, video = false, quality = "") } }
     fun foregroundActive() {
-        scheduleDirectDeliveryRetries()
+        scheduleNearbyDeliveryRetries()
         healthCheck?.cancel()
         healthCheck = viewModelScope.launch { while (isActive) { delay(30000); repository.checkReachability(); if(BuildConfig.CHAT_ENABLED){if(repository.reachable){runCatching {chat.sync();chat.autoMedia()};runCatching{community.sync()}}; if(session.confirmed){val now=System.currentTimeMillis();if(now-lastChatAnnounceAt>=120_000){runCatching {chat.announce()};lastChatAnnounceAt=now};runCatching{community.announce()}}}; mutable.update { it.copy(reachable = repository.reachable) } } }
     }

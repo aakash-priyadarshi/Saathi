@@ -59,7 +59,7 @@ class NativeChatDualTest {
         nearby.onPeers={peers->if(author&&!connecting&&peers.isNotEmpty()){connecting=true;scope.launch{nearby.connect(peers.keys.first())}}}
         suspend fun pair(){
             round++;connecting=false;code="";meet("pair-ready-$round")
-            withContext(Dispatchers.Main){session.reset();if(wifi==null)nearby.scan(!author)else{
+            withContext(Dispatchers.Main){session.reset();if(wifi==null)nearby.scan(!author,displayName=chat.profile().getJSONObject("body").getString("name"))else{
                 val offer=if(author)wifi.offer()else "";val other=meet("offer-$round",obj("description" to offer))
                 val reply=if(!author)wifi.accept(other.getString("description"))else "";val answer=meet("reply-$round",obj("description" to reply));if(author)wifi.accept(answer.getString("description"))
             }}
@@ -111,12 +111,18 @@ class NativeChatDualTest {
             val attachmentMessage=chat.messages().first{it.getJSONObject("envelope").getJSONObject("body").getString("format")=="FILE"};val attachment=attachmentMessage.getJSONObject("payload").getJSONObject("attachment");fileIds.add(attachment.getString("id"))
             if(!author)waitFor{repository.store.get("attachments",attachment.getString("id"))?.optJSONArray("received")?.let{arr->(0 until arr.length()).count{arr.optBoolean(it)}>=16}==true}
             meet("encrypted-file-partial-persisted")
-            if(!author)withContext(Dispatchers.Main){transport.disconnect();session.reset()};waitFor{!transport.connected};meet("file-radio-interrupted");delay(11000);pair()
+            if(!author)withContext(Dispatchers.Main){transport.disconnect();session.reset()};waitFor{!transport.connected}
+            val offlineDmText="Fictional DM queued while disconnected";val offlineGroupText="Fictional channel post queued while disconnected"
+            val offlineDm=if(author)chat.send(dm,obj("text" to offlineDmText))else ""
+            val offlineGroup=if(author)chat.send(openId,obj("text" to offlineGroupText))else ""
+            meet("file-radio-interrupted");delay(11000);pair()
+            if(author)waitFor{repository.store.get("chat-messages",offlineDm)?.has("deliveredAt")==true && repository.store.get("chat-messages",offlineGroup)?.has("deliveredAt")==true}
+            else waitFor{chat.messages().any{it.getJSONObject("payload").optString("text")==offlineDmText} && chat.messages().any{it.getJSONObject("payload").optString("text")==offlineGroupText}}
             if(author)chat.offerAttachment(attachmentMessage.getString("id"))
             try{withTimeout(180000){while(repository.store.get("attachments",attachment.getString("id"))?.let{it.optBoolean("complete") && (author || it.optBoolean("chatOnly"))}!=true)delay(200)}}catch(e:TimeoutCancellationException){val f=repository.store.get("attachments",attachment.getString("id"));val parts=f?.optJSONArray("received");error("Encrypted resume did not finish: received ${parts?.let{p->(0 until p.length()).count{p.optBoolean(it)}}?:0} parts; complete=${f?.optBoolean("complete")}; errors=${errors.distinct().take(8)}")}
             val bytes=chat.attachmentBytes(attachmentMessage.getString("id"));assertEquals(4*1048576,bytes.size);assertEquals(attachment.getString("hash"),Protocol.digest(bytes));assertFalse(session.readSavedBytes(attachment.getString("id")).contentEquals(bytes));meet("encrypted-resume-plaintext-hash-verified")
             chat.sync();meet("channel-and-media-metadata-synced");chat.sync();meet("second-sync-deduplicated")
-            assertEquals(9,chat.messages().size)
+            assertEquals(11,chat.messages().size)
             if(author)chat.synchronizeAttachment(attachmentMessage.getString("id"),true)
             meet("encrypted-server-upload-complete")
             if(!author){session.removeFile(attachment.getString("id"));chat.synchronizeAttachment(attachmentMessage.getString("id"),true);assertEquals(attachment.getString("hash"),Protocol.digest(chat.attachmentBytes(attachmentMessage.getString("id"))))}
@@ -173,7 +179,7 @@ class NativeChatDualTest {
             meet("complete",obj("baselineMessages" to if(milestoneOnly)8 else 9,"milestoneMessages" to (if(author)12 else 11)-(if(milestoneOnly)1 else 0),"resumedBytes" to if(milestoneOnly)0 else 4*1048576))
         }finally{
             chat.messages().forEach{it.getJSONObject("payload").optJSONObject("attachment")?.let{a->fileIds.add(a.getString("id"))}}
-            withContext(Dispatchers.Main){transport.disconnect();session.reset();fileIds.forEach{session.removeFile(it)};wifi?.release()};scope.cancel();input.delete();photo.delete();voice.delete();repository.store.clearPrivate();repository.store.close();context.deleteDatabase("saathi-$storageScope.db");activity.close()
+            withContext(Dispatchers.Main){transport.disconnect();session.reset();fileIds.forEach{session.removeFile(it)};wifi?.release()};scope.cancel();input.delete();photo.delete();voice.delete();repository.store.clearPrivate();repository.store.close();context.deleteDatabase("saathi-$storageScope.db");runCatching{activity.close()}
         }
     }
 }

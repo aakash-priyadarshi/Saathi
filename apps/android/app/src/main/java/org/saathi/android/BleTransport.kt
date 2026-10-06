@@ -264,6 +264,7 @@ class BleTransport(context: Context, private val scope: CoroutineScope) : PeerTr
         }
 
         override fun onDescriptorWriteRequest(device: BluetoothDevice, requestId: Int, descriptor: BluetoothGattDescriptor, preparedWrite: Boolean, responseNeeded: Boolean, offset: Int, value: ByteArray) {
+            log("server-cccd-write-request", "descriptor=${descriptor.uuid} characteristic=${descriptor.characteristic.uuid} offset=$offset prepared=$preparedWrite bytes=${value.size}")
             if (descriptor.uuid != CCCD_UUID || descriptor.characteristic.uuid != TX_UUID || offset != 0 || preparedWrite) {
                 if (responseNeeded) gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_REQUEST_NOT_SUPPORTED, 0, null)
                 return
@@ -279,6 +280,7 @@ class BleTransport(context: Context, private val scope: CoroutineScope) : PeerTr
         }
 
         override fun onCharacteristicWriteRequest(device: BluetoothDevice, requestId: Int, characteristic: BluetoothGattCharacteristic, preparedWrite: Boolean, responseNeeded: Boolean, offset: Int, value: ByteArray) {
+            log("server-write-request", "characteristic=${characteristic.uuid} offset=$offset prepared=$preparedWrite bytes=${value.size}")
             if (characteristic.uuid != RX_UUID || preparedWrite || offset != 0 || value.size > mtu - 3 || serverDevice?.address != device.address) {
                 if (responseNeeded) gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_INVALID_ATTRIBUTE_LENGTH, 0, null)
                 return
@@ -288,6 +290,7 @@ class BleTransport(context: Context, private val scope: CoroutineScope) : PeerTr
         }
 
         override fun onNotificationSent(device: BluetoothDevice, status: Int) {
+            log("server-indication-sent", "status=$status")
             val pending = pendingNotification.getAndSet(null) ?: return
             if (status == BluetoothGatt.GATT_SUCCESS) pending.complete(Unit)
             else pending.completeExceptionally(IllegalStateException("Bluetooth indication failed ($status)"))
@@ -394,6 +397,7 @@ class BleTransport(context: Context, private val scope: CoroutineScope) : PeerTr
 
         override fun onDescriptorWrite(client: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
             if (token != generation || descriptor.uuid != CCCD_UUID) return
+            log("client-descriptor-write", "status=$status")
             if (status == GATT_INSUFFICIENT_AUTHENTICATION || status == GATT_INSUFFICIENT_ENCRYPTION) {
                 log("link-bond-required", "status=$status")
                 pendingDescriptor.getAndSet(null)?.completeExceptionally(IllegalStateException("Secure Bluetooth pairing is required."))
@@ -614,13 +618,17 @@ class BleTransport(context: Context, private val scope: CoroutineScope) : PeerTr
                     scope.launch { runCatching { sendGattPacket(BleFrameCodec.ack(packet.frameId, packet.objectId)) } }
                 }
             }
-            BlePacketKind.HELLO -> if (role == Role.PERIPHERAL && linkReady) {
-                val code = pairCode ?: "%06d".format(SecureRandom().nextInt(1_000_000)).also { pairCode = it; startPairTimeout(generation) }
-                scope.launch { runCatching { sendControl(BlePacketKind.PAIR_CODE, code.toByteArray(StandardCharsets.US_ASCII)); onPair(code) } }
+            BlePacketKind.HELLO -> {
+                log("hello-received", "role=$role linkReady=$linkReady")
+                if (role == Role.PERIPHERAL && linkReady) {
+                    val code = pairCode ?: "%06d".format(SecureRandom().nextInt(1_000_000)).also { pairCode = it; startPairTimeout(generation) }
+                    scope.launch { runCatching { sendControl(BlePacketKind.PAIR_CODE, code.toByteArray(StandardCharsets.US_ASCII)); onPair(code) }
+                        .onFailure { if (it !is CancellationException) log("pair-code-send-failed", it.javaClass.simpleName) } }
+                }
             }
             BlePacketKind.PAIR_CODE -> if (role == Role.CENTRAL && linkReady) {
                 val code = runCatching { packet.payload.toString(StandardCharsets.US_ASCII) }.getOrNull()
-                if (code?.matches(Regex("[0-9]{6}")) == true) { pairCode = code; startPairTimeout(generation); onPair(code) }
+                if (code?.matches(Regex("[0-9]{6}")) == true) { log("pair-code-received", "bytes=${packet.payload.size}"); pairCode = code; startPairTimeout(generation); onPair(code) }
                 else failLink("The nearby Bluetooth pairing code was invalid.")
             }
             BlePacketKind.APPROVE -> {

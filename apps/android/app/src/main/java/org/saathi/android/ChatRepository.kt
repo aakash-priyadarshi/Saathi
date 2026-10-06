@@ -440,7 +440,8 @@ class ChatRepository(private val context: Context, private val repository: Repos
     }
     private fun eligible(message:JSONObject,personId:String):Boolean {
         val b=message.getJSONObject("envelope").getJSONObject("body")
-        if(blocked(personId) || blocked(ChatProtocol.participant(b.getJSONObject("author"))) || Instant.parse(b.getString("expiresAt"))<=now() || message.getInt("hops")>=6) return false
+        val author=ChatProtocol.participant(b.getJSONObject("author"))
+        if(author==personId || blocked(personId) || blocked(author) || Instant.parse(b.getString("expiresAt"))<=now() || message.getInt("hops")>=6) return false
         if(!b.isNull("recipientId"))return b.getString("recipientId")==personId && message.getBoolean("owned")
         val current=current(b.getString("conversationId"))?:return false
         val historic=store.get("chat-policy-history",b.getString("policyHash"))?.getJSONObject("policy")?:return false
@@ -512,17 +513,23 @@ class ChatRepository(private val context: Context, private val repository: Repos
     fun reports(channelId:String)=store.all("chat-report-inbox").filter{report->report.getString("channelId")==channelId && !actions(channelId).any{a->val b=a.getJSONObject("envelope").getJSONObject("body");b.getString("action")=="REVIEW_REPORT" && b.getString("targetId")==report.getString("messageId") && b.getString("issuedAt")>=report.getString("createdAt")}}
     suspend fun clearConversation(id:String)=withContext(Dispatchers.IO) { lock.withLock { require(store.get("chat-conversations",id)?.optBoolean("joined")==false || id.startsWith("dm:")); messages().filter { it.getJSONObject("envelope").getJSONObject("body").getString("conversationId")==id }.forEach { store.remove("chat-messages",it.getString("id")) }; onChange() } }
     suspend fun announce()=withContext(Dispatchers.IO) { lock.withLock { announceUnlocked() } }
-    /** Retransmit only unacknowledged direct messages, using their stable IDs for receiver deduplication. */
-    suspend fun retryPendingDirectDelivery(): Boolean = withContext(Dispatchers.IO) { lock.withLock {
+    /** Retransmit recent messages missing a receipt from this peer, with stable IDs for deduplication. */
+    suspend fun retryPendingNearbyDelivery(): Boolean = withContext(Dispatchers.IO) { lock.withLock {
         val person = peer?.let { ChatProtocol.participant(it) } ?: return@withLock false
         if (!session.confirmed || blocked(person)) return@withLock false
+        val cutoff = now().minusSeconds(10 * 60)
         val pending = messages().filter { record ->
             val body = record.getJSONObject("envelope").getJSONObject("body")
-            record.optBoolean("owned") && !record.has("deliveredAt") && !record.optBoolean("attention") &&
-                !body.isNull("recipientId") && body.getString("recipientId") == person && eligible(record, person)
+            val id = record.getString("id")
+            val peerDelivered = store.get("chat-receipts", "$id:$person:DELIVERED") != null || store.get("chat-receipts", "$id:$person:READ") != null
+            !record.optBoolean("attention") && Instant.parse(body.getString("createdAt")).isAfter(cutoff) &&
+                !peerDelivered && eligible(record, person)
         }.take(50)
         pending.forEach { record -> runCatching { sendRecord(record) } }
-        pending.any { store.get("chat-messages", it.getString("id"))?.has("deliveredAt") != true }
+        pending.any { record ->
+            val id = record.getString("id")
+            store.get("chat-receipts", "$id:$person:DELIVERED") == null && store.get("chat-receipts", "$id:$person:READ") == null
+        }
     } }
     private suspend fun announceUnlocked() {
         if(!session.confirmed)return

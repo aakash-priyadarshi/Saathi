@@ -28,6 +28,12 @@ interface PeerTransport {
     fun disconnect()
 }
 
+internal fun nearbyEndpointName(displayName: String): String = displayName
+    .filterNot { Character.isISOControl(it) }
+    .trim()
+    .take(32)
+    .ifBlank { "Swarm " + UUID.randomUUID().toString().take(4).uppercase() }
+
 class NearbyTransport(context: Context, private val scope: CoroutineScope) : PeerTransport {
     private val appContext = context.applicationContext
     private val client = Nearby.getConnectionsClient(appContext)
@@ -46,7 +52,7 @@ class NearbyTransport(context: Context, private val scope: CoroutineScope) : Pee
     private var pending: String? = null
     private var window: Job? = null
     private var lastScan = 0L
-    private var temporaryName = newEndpointName()
+    private var temporaryName = nearbyEndpointName("")
     var onState: (String) -> Unit = {}
     var onPeers: (Map<String, String>) -> Unit = {}
     var onPair: (String?) -> Unit = {}
@@ -64,7 +70,6 @@ class NearbyTransport(context: Context, private val scope: CoroutineScope) : Pee
     }
     private fun endpointTag(id: String) = MessageDigest.getInstance("SHA-256").digest(id.toByteArray()).take(4).joinToString("") { "%02x".format(it) }
     private fun statusCode(error: Throwable): Int? = generateSequence(error) { it.cause }.filterIsInstance<ApiException>().firstOrNull()?.statusCode
-    private fun newEndpointName() = "Swarm " + UUID.randomUUID().toString().take(4).uppercase()
     private fun isCurrent(token: Long) = token == generation
     private fun setLifecycle(next: Lifecycle, detail: String = "") { lifecycle = next; log("state", "name=$next $detail") }
 
@@ -107,7 +112,7 @@ class NearbyTransport(context: Context, private val scope: CoroutineScope) : Pee
             }
         }
     }
-    suspend fun scan(advertise: Boolean, automatic:Boolean=false) {
+    suspend fun scan(advertise: Boolean, automatic:Boolean=false, displayName:String="") {
         require(available) { "Use local Wi-Fi pairing on this phone." }
         while (true) {
             val cleanup = cleanupJob
@@ -119,7 +124,7 @@ class NearbyTransport(context: Context, private val scope: CoroutineScope) : Pee
                 require(System.currentTimeMillis() - lastScan > 10000) { "Wait a moment before searching again to save battery." }
                 lastScan = System.currentTimeMillis(); peers.clear(); onPeers(emptyMap()); onPair(null)
                 activeAdvertise = advertise; activeAutomatic = automatic; accepting = false
-                temporaryName = newEndpointName()
+                temporaryName = nearbyEndpointName(displayName)
                 stopOperations("replace-session")
                 var attempt = 0
                 while (true) {

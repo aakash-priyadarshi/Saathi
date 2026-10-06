@@ -28,7 +28,7 @@ import org.webrtc.SurfaceViewRenderer
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Find another Android", style = MaterialTheme.typography.titleMedium)
-                    Text("Turn on Wi-Fi and Bluetooth. Swarm uses a temporary name and asks Android for nearby access when you start.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Turn on Wi-Fi and Bluetooth. Nearby devices see your chosen display name during this one-minute search.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = { discover(false) }, enabled = vm.nearby.available && !state.busy) { Text("Find Swarm") }; OutlinedButton(onClick = { discover(true) }, enabled = vm.nearby.available && !state.busy) { Text("Make visible") } }
                     Text("Bluetooth-only fallback works with Wi-Fi off. One person finds while the other makes their phone visible.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = { discoverBle(false) }, enabled = vm.ble.available && !state.busy) { Text("Find by Bluetooth") }; OutlinedButton(onClick = { discoverBle(true) }, enabled = vm.ble.available && !state.busy) { Text("Make Bluetooth visible") } }
