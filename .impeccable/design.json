@@ -424,6 +424,8 @@
         "sourcePaths": [
           "apps/android/app/src/main/java/org/saathi/android/SaathiTheme.kt",
           "apps/android/app/src/main/java/org/saathi/android/MainActivity.kt",
+          "apps/android/app/src/main/java/org/saathi/android/ChatScreens.kt",
+          "apps/android/app/src/main/java/org/saathi/android/ChatRepository.kt",
           "apps/android/app/src/main/java/org/saathi/android/TeamScreens.kt",
           "apps/android/app/src/main/java/org/saathi/android/NearbyScreens.kt",
           "apps/android/app/src/main/java/org/saathi/android/SaathiViewModel.kt"
@@ -432,20 +434,62 @@
           "selection": "Explicit light/dark schemes selected by isSystemInDarkTheme(); no wallpaper-derived Dynamic Color.",
           "source": "apps/android/app/src/main/java/org/saathi/android/SaathiTheme.kt",
           "colorRoleRefs": {
-            "primary": { "light": "{colors.accent}", "dark": "{colors.dark-accent}" },
-            "onPrimary": { "light": "{colors.surface}", "dark": "{colors.dark-paper}" },
-            "primaryContainer": { "light": "{colors.soft}", "dark": "{colors.dark-soft}" },
-            "onPrimaryContainer": { "light": "{colors.ink}", "dark": "{colors.dark-ink}" },
-            "background": { "light": "{colors.paper}", "dark": "{colors.dark-paper}" },
-            "onBackground": { "light": "{colors.ink}", "dark": "{colors.dark-ink}" },
-            "surface": { "light": "{colors.surface}", "dark": "{colors.dark-surface}" },
-            "onSurface": { "light": "{colors.ink}", "dark": "{colors.dark-ink}" },
-            "surfaceVariant": { "light": "{colors.soft}", "dark": "{colors.dark-soft}" },
-            "onSurfaceVariant": { "light": "{colors.muted}", "dark": "{colors.dark-muted}" },
-            "outline": { "light": "{colors.line}", "dark": "{colors.dark-line}" },
-            "error": { "light": "{colors.red}", "dark": "{colors.dark-red}" },
-            "errorContainer": { "light": "{colors.red-bg}", "dark": "{colors.dark-red-bg}" },
-            "onErrorContainer": { "light": "{colors.red}", "dark": "{colors.dark-red}" }
+            "primary": {
+              "light": "{colors.accent}",
+              "dark": "{colors.dark-accent}"
+            },
+            "onPrimary": {
+              "light": "{colors.surface}",
+              "dark": "{colors.dark-paper}"
+            },
+            "primaryContainer": {
+              "light": "{colors.soft}",
+              "dark": "{colors.dark-soft}"
+            },
+            "onPrimaryContainer": {
+              "light": "{colors.ink}",
+              "dark": "{colors.dark-ink}"
+            },
+            "background": {
+              "light": "{colors.paper}",
+              "dark": "{colors.dark-paper}"
+            },
+            "onBackground": {
+              "light": "{colors.ink}",
+              "dark": "{colors.dark-ink}"
+            },
+            "surface": {
+              "light": "{colors.surface}",
+              "dark": "{colors.dark-surface}"
+            },
+            "onSurface": {
+              "light": "{colors.ink}",
+              "dark": "{colors.dark-ink}"
+            },
+            "surfaceVariant": {
+              "light": "{colors.soft}",
+              "dark": "{colors.dark-soft}"
+            },
+            "onSurfaceVariant": {
+              "light": "{colors.muted}",
+              "dark": "{colors.dark-muted}"
+            },
+            "outline": {
+              "light": "{colors.line}",
+              "dark": "{colors.dark-line}"
+            },
+            "error": {
+              "light": "{colors.red}",
+              "dark": "{colors.dark-red}"
+            },
+            "errorContainer": {
+              "light": "{colors.red-bg}",
+              "dark": "{colors.dark-red-bg}"
+            },
+            "onErrorContainer": {
+              "light": "{colors.red}",
+              "dark": "{colors.dark-red}"
+            }
           },
           "roleAliases": {
             "secondary": "primary",
@@ -466,17 +510,31 @@
           "unit": "sp",
           "source": "apps/android/app/src/main/java/org/saathi/android/SaathiTheme.kt",
           "metricDocumentation": "docs/android-design.md#typography",
-          "loraRoles": ["displaySmall", "headlineMedium"],
-          "manropeRoles": ["headlineSmall", "titleLarge", "titleMedium", "bodyLarge", "bodyMedium", "bodySmall", "labelLarge", "labelMedium"],
+          "loraRoles": [
+            "displaySmall",
+            "headlineMedium"
+          ],
+          "manropeRoles": [
+            "headlineSmall",
+            "titleLarge",
+            "titleMedium",
+            "bodyLarge",
+            "bodyMedium",
+            "bodySmall",
+            "labelLarge",
+            "labelMedium"
+          ],
           "invitation": "Two headlineMedium-derived Lora lines; compact source override, italic primary-colored second line.",
-          "defaultPolicy": "Unlisted roles retain Material 3 defaults, including the titleSmall used by shared Notice headings. Native role metrics are not web CSS typography primitives."
+          "defaultPolicy": "Unlisted roles retain Material 3 defaults, including the titleSmall used by shared Notice headings. Native role metrics are not web CSS typography primitives.",
+          "brand": "Full SWARM masthead uses titleLarge and by CJP uses bodySmall; compact conversation masthead uses titleMedium. Conversations use titleLarge names, bodyLarge messages and inherited labelSmall timestamps/delivery states.",
+          "truncation": "Conversation row names allow one line and previews two; the conversation header allows two name lines. Unlisted Material roles keep their defaults."
         },
         "breakpoints": [
           {
             "name": "rail-and-two-column-needs",
             "value": "600dp",
             "condition": "min-width",
-            "purpose": "NavigationRail replaces NavigationBar; needs grid changes from one to two columns."
+            "purpose": "NavigationRail replaces the five-destination NavigationBar; needs grid changes from one to two columns. Rail remains visible in wide conversations."
           }
         ],
         "layout": {
@@ -485,8 +543,27 @@
           "railWidth": "104dp",
           "contentPadding": "20dp",
           "needsGridGap": "16dp",
-          "insets": "Edge-to-edge activity, Scaffold content padding, rail statusBarsPadding, and content imePadding.",
-          "scrolling": "Lazy grids/lists retain viewport continuations; state and category FilterChips share one horizontal scrolling row."
+          "insets": "Edge-to-edge activity, Scaffold content padding with consumeWindowInsets, rail statusBarsPadding, and content imePadding.",
+          "scrolling": "Lazy grids/lists retain viewport continuations; need FilterChips share one horizontal scrolling row. Chats use 12dp gaps, Nearby people/channels 16dp, More/Updates 20dp; measurements are contextual.",
+          "navigation": {
+            "defaultDestination": "Chats",
+            "destinations": [
+              "Updates",
+              "Chats",
+              "Nearby",
+              "Needs",
+              "More"
+            ],
+            "compact": "Always-visible phone labels; bottom navigation hidden inside a conversation.",
+            "expanded": "Labeled 104dp rail at 600dp and above, retained inside a conversation."
+          },
+          "conversation": {
+            "masthead": "Compact SWARM, contextual Back, conversation name/state, explicit search and settings actions.",
+            "transcript": "Retained reverse LazyColumn; 20dp content padding, 12dp gaps, newest context initially visible.",
+            "bubbles": "Trailing owned / leading inbound; maximum 520dp and 88% row width, 14dp corners, 14dp internal padding.",
+            "composer": "12dp row padding; attachment, multiline field up to four lines, voice/send and channel mention actions; IME clearance.",
+            "history": "Incoming messages preserve deliberate history scrolling; Latest messages returns immediately to newest; own sends stay visible."
+          }
         },
         "depth": {
           "needCards": "Flat OutlinedCard with no custom shadow or hover lift.",
@@ -494,72 +571,162 @@
           "defaultPolicy": "Other native Material controls and dialogs retain library defaults; the web no-shadow rule is not a claim that every Android component has zero elevation."
         },
         "motion": {
-          "policy": "Current Material controls, interaction feedback, and progress indicators; no custom duration token or transition choreography is established.",
-          "evidenceLimit": "The finish verdict did not independently verify Remove animations."
+          "policy": "Finite purposeful native motion; Material feedback remains native, no permanent scanning loop.",
+          "formation": {
+            "source": "apps/android/app/src/main/java/org/saathi/android/ChatScreens.kt",
+            "component": "SwarmFormation",
+            "duration": "420ms",
+            "easing": "FastOutSlowInEasing",
+            "behavior": "Two visible nodes connect once when a confirmed unblocked peer becomes reachable, then settle.",
+            "reducedMotion": "Settings.Global.ANIMATOR_DURATION_SCALE equal to zero uses a zero-duration tween."
+          },
+          "messageEntry": {
+            "duration": "140ms",
+            "behavior": "Fade only; placementSpec and fadeOutSpec are null."
+          },
+          "transcriptPosition": "Immediate scrollToItem for newest context and Latest messages.",
+          "evidenceLimit": "Static captures cannot verify motion execution; no independent certification of every reduced-motion setting or Back gesture."
         },
         "componentSources": [
           {
             "name": "Native actions and fields",
             "kind": "button / input",
             "source": "apps/android/app/src/main/java/org/saathi/android/TeamScreens.kt",
-            "api": ["Button", "OutlinedButton", "TextButton", "OutlinedTextField"],
+            "api": [
+              "Button",
+              "OutlinedButton",
+              "TextButton",
+              "OutlinedTextField"
+            ],
             "description": "Material controls, written labels, keyboard-specific inputs, password masking, and busy/disabled actions."
           },
           {
             "name": "Native navigation",
             "kind": "nav",
             "source": "apps/android/app/src/main/java/org/saathi/android/MainActivity.kt",
-            "api": ["TopAppBar", "NavigationBar", "NavigationRail", "BackHandler"],
-            "description": "Needs, Field, Nearby, Saved; Team action in app bar. Shared contextual Back closes form, then detail, then returns to Needs."
+            "api": [
+              "TopAppBar",
+              "NavigationBar",
+              "NavigationRail",
+              "BackHandler"
+            ],
+            "description": "Updates, Chats, Nearby, Needs, More; five always-labeled phone destinations and adaptive rail. Compact SWARM conversation header. Shared Back closes form, detail, conversation, then returns to Chats; root Chats delegates to Android."
           },
           {
             "name": "Need filters",
             "kind": "chip",
             "source": "apps/android/app/src/main/java/org/saathi/android/MainActivity.kt",
-            "api": ["FilterChip", "horizontalScroll"],
+            "api": [
+              "FilterChip",
+              "horizontalScroll"
+            ],
             "description": "Active/Completed state and category selection share one horizontally scrolling row."
           },
           {
             "name": "NeedCard",
             "kind": "card",
             "source": "apps/android/app/src/main/java/org/saathi/android/MainActivity.kt",
-            "api": ["OutlinedCard", "LinearProgressIndicator"],
+            "api": [
+              "OutlinedCard",
+              "LinearProgressIndicator"
+            ],
             "description": "Title, quantity, organization, and complete action precede supporting metadata. Completed uses received quantities/progress, View impact, Help has arrived, and no urgency."
           },
           {
             "name": "Notice and freshness",
             "kind": "custom",
             "source": "apps/android/app/src/main/java/org/saathi/android/MainActivity.kt",
-            "api": ["Notice", "Freshness", "Surface"],
-            "description": "Explicit snapshot time, current connection capability, nonproduction disclosure, and dismissible general feedback."
+            "api": [
+              "Notice",
+              "Freshness",
+              "ConnectionStatus",
+              "Surface"
+            ],
+            "description": "Explicit snapshot time, nonproduction disclosure, dismissible feedback, and connection/persistence wording: Connected nearby · Saved work remains on this phone."
           },
           {
             "name": "Request detail eligibility",
             "kind": "custom",
             "source": "apps/android/app/src/main/java/org/saathi/android/TeamScreens.kt",
-            "api": ["RequestDetail"],
+            "api": [
+              "RequestDetail"
+            ],
             "description": "New contribution controls require verified organization, eligible nonterminal status, valid future deadline, and positive remaining quantity. Unavailable states show recovery guidance."
           },
           {
             "name": "Nearby decisions",
             "kind": "custom",
             "source": "apps/android/app/src/main/java/org/saathi/android/MainActivity.kt",
-            "api": ["AlertDialog", "RequestMultiplePermissions"],
-            "description": "Matching-code pairing, file receipt, incoming calls, and permission actions; nearby connection does not verify identity."
+            "api": [
+              "AlertDialog",
+              "RequestMultiplePermissions"
+            ],
+            "description": "Matching-code pairing, file receipt, incoming calls and permission actions; only one confirmed unblocked compatible peer counts as reachable. DM call buttons require matching peer plus actual media capability; 1:1 foreground only, groups off."
           },
           {
             "name": "Saved work and delivery stages",
             "kind": "custom",
             "source": "apps/android/app/src/main/java/org/saathi/android/NearbyScreens.kt",
-            "api": ["SavedScreen", "LazyColumn"],
-            "description": "Separate drafts, signed updates, pending operations, contributions, files, messages, and original-action retries; error text for rejection/conflict/invalidation."
+            "api": [
+              "SavedScreen",
+              "LazyColumn"
+            ],
+            "description": "More → Saved: separate drafts, signed updates, pending operations, contributions, files, earlier messages and original-action retries. Reached Swarm, publication and attention remain distinct from chat delivery."
           },
           {
             "name": "Same-account recovery",
             "kind": "custom",
             "source": "apps/android/app/src/main/java/org/saathi/android/TeamScreens.kt",
-            "api": ["TeamScreen"],
+            "api": [
+              "TeamScreen"
+            ],
             "description": "Sign-in recovery preserves saved work and signing identity, with explicit same-account guidance."
+          },
+          {
+            "name": "Chats and conversation transcript",
+            "kind": "custom",
+            "source": "apps/android/app/src/main/java/org/saathi/android/ChatScreens.kt",
+            "api": [
+              "ChatsScreen",
+              "ConversationScreen",
+              "LazyColumn",
+              "rememberLazyListState",
+              "OutlinedTextField"
+            ],
+            "description": "Separate direct/channel groups, names, saved search, previews, unread/mute state and timestamps. Explicit conversation search, readable owned/inbound bubbles, attachment/voice composer, latest/history retention and per-visible-message read effects."
+          },
+          {
+            "name": "Nearby people and channels",
+            "kind": "custom",
+            "source": "apps/android/app/src/main/java/org/saathi/android/ChatScreens.kt",
+            "api": [
+              "NearbyPeopleScreen",
+              "SwarmFormation",
+              "ListItem"
+            ],
+            "description": "One-minute discovery, confirmed-person Message action, named open channels, create/join actions, and earlier connection options. Invite-only channels stay hidden; no invented reachability."
+          },
+          {
+            "name": "Channel and conversation decisions",
+            "kind": "custom",
+            "source": "apps/android/app/src/main/java/org/saathi/android/ChatScreens.kt",
+            "api": [
+              "ChannelCreate",
+              "JoinInvite",
+              "ConversationSettings",
+              "AlertDialog"
+            ],
+            "description": "Open nearby/invite-only channels, recipient/expiry invitation checks, QR when fitting, mute/block/clear choices, owner/member actions and written retained-copy limits. Huddles and group video unavailable."
+          },
+          {
+            "name": "More and About",
+            "kind": "custom",
+            "source": "apps/android/app/src/main/java/org/saathi/android/ChatScreens.kt",
+            "api": [
+              "MoreScreen",
+              "LazyColumn"
+            ],
+            "description": "Chosen nearby profile distinct from relief verification; Team, Saved and Connection routes; official brand, subtitle, full credit, version/environment and pending independent cryptographic review disclosure."
           }
         ],
         "previewPolicy": "Top-level HTML/CSS specimens remain the established web components. Native components are documented from Compose sources and device/emulator captures, not HTML facsimiles.",
@@ -567,41 +734,178 @@
           "shippingRasters": [],
           "launcherVector": "apps/android/app/src/main/res/drawable/ic_saathi.xml",
           "fonts": [
-            { "family": "Lora", "file": "apps/android/app/src/main/res/font/lora.ttf", "license": "SIL Open Font License 1.1", "licenseFile": "apps/android/app/src/main/assets/lora-license.txt" },
-            { "family": "Manrope", "file": "apps/android/app/src/main/res/font/manrope.ttf", "license": "SIL Open Font License 1.1", "licenseFile": "apps/android/app/src/main/assets/manrope-license.txt" }
+            {
+              "family": "Lora",
+              "file": "apps/android/app/src/main/res/font/lora.ttf",
+              "license": "SIL Open Font License 1.1",
+              "licenseFile": "apps/android/app/src/main/assets/lora-license.txt"
+            },
+            {
+              "family": "Manrope",
+              "file": "apps/android/app/src/main/res/font/manrope.ttf",
+              "license": "SIL Open Font License 1.1",
+              "licenseFile": "apps/android/app/src/main/assets/manrope-license.txt"
+            }
           ],
-          "capturePolicy": "Review PNGs are ignored local-only QA evidence, not shipping artwork or public Git artifacts."
+          "capturePolicy": "Review PNGs are ignored local-only QA evidence, not shipping artwork or public Git artifacts.",
+          "launcherDescription": "Connected-node native vector with forest fill and warm light strokes; stable ic_saathi resource name."
         },
-        "deliveryStates": ["Saved on this phone", "Shared nearby", "Reached Saathi · Awaiting publication", "Published · Verified Saathi confirmation", "Needs attention"],
+        "deliveryStates": [
+          "Saved on this phone",
+          "Shared nearby",
+          "Reached Swarm · Awaiting publication",
+          "Published · Verified Swarm confirmation",
+          "Needs attention"
+        ],
         "narrative": {
           "northStar": "The Community Noticeboard",
-          "thesis": "A readable community noticeboard that keeps relief quantities and saved-work status understandable in the field.",
+          "thesis": "Talk to people and coordinate in named conversations while saved work survives changing connections; authoritative relief Needs stay separate.",
           "rules": [
-            { "name": "The Semantic Color Rule", "body": "Pair every status color with written state. Nearby connection is not volunteer verification, and local saving is not publication.", "section": "colors" },
-            { "name": "The Heading First Rule", "body": "Keep the human-readable need title ahead of quantity, category, and organization metadata.", "section": "typography" },
-            { "name": "The Task First Rule", "body": "Preserve the reviewed normal-phone path from compact invitation to search, filters, freshness, and the first need's quantity, organization, and complete action. Large text, landscape, and keyboard states may continue below the viewport through scrolling; the captures do not prove all device/font combinations.", "section": "layout" }
+            {
+              "name": "The Semantic Color Rule",
+              "body": "Pair every status color with written state. Nearby connection is not volunteer verification, and local saving is not publication.",
+              "section": "colors"
+            },
+            {
+              "name": "The Heading First Rule",
+              "body": "Keep the human-readable need title ahead of quantity, category, and organization metadata.",
+              "section": "typography"
+            },
+            {
+              "name": "The Task First Rule",
+              "body": "Preserve the reviewed normal-phone path from compact invitation to search, filters, freshness, and the first need's quantity, organization, and complete action. Large text, landscape, and keyboard states may continue below the viewport through scrolling; the captures do not prove all device/font combinations.",
+              "section": "layout"
+            },
+            {
+              "name": "The Visible Read Rule",
+              "body": "Open the newest conversation context, preserve deliberate history scrolling when new incoming messages arrive, and expose “Latest messages” while away from the newest end. Read receipts follow visible inbound messages; loading saved history is not reading it.",
+              "section": "layout"
+            }
           ]
         },
         "review": {
-          "verdict": ".impeccable/review/android/finish-verdict-final.md",
-          "visibility": "Verdict and captures are ignored local-only QA evidence; these paths are not public Git links.",
-          "publicEvidence": ["docs/android-testing.md", "docs/benchmarks/android-product-devices.json"],
+          "verdict": ".impeccable/review/android/swarm-fix-verdict.md",
+          "visibility": "Verdict and captures are ignored local-only QA evidence; paths are not public Git hyperlinks.",
+          "publicEvidence": [
+            "docs/android-testing.md",
+            "docs/benchmarks/android-swarm-ui-storage.json",
+            "docs/benchmarks/android-chat-nearby.json",
+            "docs/benchmarks/android-swarm-wifi-regression.json"
+          ],
           "disposition": "ship",
-          "scope": "Exactly the original four material findings; all four resolved. Fix-list verdict only, not whole-surface, independent gesture/device, transport, or production certification.",
-          "sourceOnlyEvidence": ["Unavailable-verification eligibility branch", "Common contextual callback assignment for system and visible app-bar Back"],
-          "detector": "Skipped: native Kotlin/Compose is not HTML/CSS.",
+          "scope": "Exactly three listed findings, all resolved: latest/history positioning with visible-message reads, all phone destination labels and measured nearby-only persistence copy. Fix-list scope, not whole-surface, transport, cryptographic or production approval.",
+          "artifactSha256": "ed7cc9933ed36fee5ebd1595039c37da586807c8899f95967e1a56ffd2b3d687",
+          "finalCaptureClasses": [
+            "Six phone-sized emulator captures from final APK",
+            "Two physical SM-X510 tablet captures from final APK",
+            "Three additional final emulator long-history/connection-state proofs"
+          ],
+          "phoneLimit": "Two S24 phone captures retained from the earlier post-label/layout correction build; no final-APK phone recapture or final phone read test. Disconnection and explicit hardware-test deferral are recorded.",
+          "proofLimit": "Fictional isolated UI fixtures are layout/state evidence, not radio evidence. Reviewer inspected supplied source, assertions and logs without independently rerunning tests. Static images do not verify motion.",
+          "storageViewportRuns": [
+            {
+              "device": "Samsung SM-X510",
+              "tests": 5,
+              "seconds": 21.515,
+              "result": "PASS"
+            },
+            {
+              "device": "API 37 emulator",
+              "tests": 5,
+              "seconds": 14.595,
+              "result": "PASS"
+            }
+          ],
+          "testLimit": "Isolated UUID stores with startup services disabled; no direct-read fallback. Store reopen is not reboot/process-death coverage. Earlier physical radio/call proof artifacts retain their own hashes and scope.",
+          "detector": "No native detector: Kotlin/Compose is not HTML/CSS. Existing web output [] at local .data/tooling/swarm-design-detector.json.",
+          "comp": "Code-led Operate extension; no approved comp or decision comp applies.",
+          "regressionScope": "Regressions caused by the three fixes only; no new broad defect hunt.",
           "captures": [
-            ".impeccable/review/android/phone-needs-dark.png",
-            ".impeccable/review/android/tablet-needs-dark.png",
-            ".impeccable/review/android/emulator-needs-light.png",
-            ".impeccable/review/android/emulator-nearby-dark.png",
-            ".impeccable/review/android/emulator-nearby-large-text.png",
-            ".impeccable/review/android/emulator-team-keyboard.png",
-            ".impeccable/review/android/emulator-team-landscape.png",
-            ".impeccable/review/android/emulator-team-recovery.png",
-            ".impeccable/review/android/emulator-completed-light.png",
-            ".impeccable/review/android/emulator-closed-detail.png"
+            ".impeccable/review/android/emulator-swarm-chats.png",
+            ".impeccable/review/android/emulator-swarm-dm.png",
+            ".impeccable/review/android/emulator-swarm-keyboard.png",
+            ".impeccable/review/android/emulator-swarm-channel.png",
+            ".impeccable/review/android/emulator-swarm-channel-dark.png",
+            ".impeccable/review/android/emulator-swarm-channel-large-text.png",
+            ".impeccable/review/android/tablet-swarm-chats.png",
+            ".impeccable/review/android/tablet-swarm-channel.png",
+            ".impeccable/review/android/phone-swarm-chats.png",
+            ".impeccable/review/android/phone-swarm-dm.png",
+            ".impeccable/review/android/emulator-swarm-long-history-latest.png",
+            ".impeccable/review/android/emulator-swarm-long-history-scrolled.png",
+            ".impeccable/review/android/emulator-swarm-nearby-status.png"
+          ],
+          "webBrandCaptures": [
+            ".impeccable/review/swarm-web/desktop.png",
+            ".impeccable/review/swarm-web/mobile.png"
+          ],
+          "earlierFoundationReview": {
+            "verdict": ".impeccable/review/android/finish-verdict-final.md",
+            "visibility": "Verdict and captures are ignored local-only QA evidence; these paths are not public Git links.",
+            "publicEvidence": [
+              "docs/android-testing.md",
+              "docs/benchmarks/android-product-devices.json"
+            ],
+            "disposition": "ship",
+            "scope": "Exactly the original four material findings; all four resolved. Fix-list verdict only, not whole-surface, independent gesture/device, transport, or production certification.",
+            "sourceOnlyEvidence": [
+              "Unavailable-verification eligibility branch",
+              "Common contextual callback assignment for system and visible app-bar Back"
+            ],
+            "detector": "Skipped: native Kotlin/Compose is not HTML/CSS.",
+            "captures": [
+              ".impeccable/review/android/phone-needs-dark.png",
+              ".impeccable/review/android/tablet-needs-dark.png",
+              ".impeccable/review/android/emulator-needs-light.png",
+              ".impeccable/review/android/emulator-nearby-dark.png",
+              ".impeccable/review/android/emulator-nearby-large-text.png",
+              ".impeccable/review/android/emulator-team-keyboard.png",
+              ".impeccable/review/android/emulator-team-landscape.png",
+              ".impeccable/review/android/emulator-team-recovery.png",
+              ".impeccable/review/android/emulator-completed-light.png",
+              ".impeccable/review/android/emulator-closed-detail.png"
+            ]
+          }
+        },
+        "generatedAt": "2026-10-06",
+        "title": "Design System: CJP Swarm Android",
+        "mode": "Operate",
+        "visualAuthority": "Code-led extension of the incumbent paper/forest Lora/Manrope Material 3 world; no approved comp, decision comp, or replacement visual world.",
+        "brand": {
+          "officialName": "CJP Swarm",
+          "display": "SWARM",
+          "endorsement": "by CJP",
+          "subtitle": "Connect nearby. Coordinate together.",
+          "credit": "Developed by Cockroach Janta Party",
+          "creditLocation": "More contains native About material; the web footer carries the full credit.",
+          "configurationSource": "apps/android/app/build.gradle",
+          "compatibility": "Existing Saathi repository, package, protocol, storage and resource identifiers remain stable."
+        },
+        "chatDeliveryStates": [
+          "Saved · Waiting for connection",
+          "Sent",
+          "Sent nearby",
+          "Delivered",
+          "Read",
+          "Needs attention"
+        ],
+        "readBoundary": {
+          "source": "apps/android/app/src/main/java/org/saathi/android/ChatRepository.kt",
+          "behavior": "Visible keys select inbound unread records in the current conversation. Suspending viewport effect cancels superseded work and conversation disposal; repository checks cancellation per record, saves readLocally and feeds unread badges.",
+          "proof": "docs/benchmarks/android-swarm-ui-storage.json",
+          "assertions": [
+            "Latest incoming message is visible and locally read",
+            "Offscreen older history remains unread",
+            "New incoming message preserves deliberate history scrolling and stays unread",
+            "Latest messages reveals new message and produces one READ receipt",
+            "Own send remains visible"
           ]
+        },
+        "releaseGate": {
+          "privateChat": "Development/QA preview; CHAT_ENABLED remains false for release pending independent cryptographic review.",
+          "source": "apps/android/app/build.gradle",
+          "documentation": "docs/android-release.md",
+          "capabilityLimit": "Calls are actual-capability-gated 1:1 foreground local-Wi-Fi; huddles/group video remain disabled."
         }
       }
     }

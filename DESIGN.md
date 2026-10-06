@@ -1,5 +1,5 @@
 ---
-name: Saathi
+name: CJP Swarm
 description: Calm, credible humanitarian coordination through a community noticeboard.
 colors:
   paper: '#f8f7f2'
@@ -162,13 +162,15 @@ components:
     padding: '6px 8px'
 ---
 
-# Design System: Saathi
+# Design System: CJP Swarm
 
 ## Overview
 
 **Creative North Star: "The Community Noticeboard"**
 
-Saathi is a calm, humane place to find a verified need, check its current quantities, and coordinate help. Warm paper surfaces, forest ink, short Lora headings, and precise Manrope controls make the interface approachable while keeping operational information legible. The noticeboard is the recorded direction: approachable need cards, chronological field reports, and durable request notices.
+CJP Swarm is a calm, humane place to find a verified need, check its current quantities, and coordinate help. Warm paper surfaces, forest ink, short Lora headings, and precise Manrope controls make the interface approachable while keeping operational information legible. The noticeboard is the recorded direction: approachable need cards, chronological field reports, and durable request notices.
+
+The official app/store name is CJP Swarm. The default web header displays SWARM with by CJP and a connected-node line icon. The footer carries “Connect nearby. Coordinate together.” and “Developed by Cockroach Janta Party.” Branding remains configurable; existing Saathi repository, package, protocol, and storage identifiers stay compatible. This naming extension preserves the noticeboard's tokens, components, and layout.
 
 The built world is text-led and task-first. Thin rules separate evidence, actions, and field updates; icons clarify labels rather than replace them. There is no decorative hero imagery. User-supplied photos and videos belong inside field reports. Light and dark themes preserve the same semantic hierarchy. The product commitments remain calm, credible, accessible, politically neutral, and free of flashy startup presentation or gamification.
 
@@ -182,7 +184,7 @@ The built world is text-led and task-first. Thin rules separate evidence, action
 
 This document refreshes the directional contract from the implemented source in `apps/web/src` and `packages/ui/src`. Token frontmatter is normative; the extension sidecar contains responsive values, motion, and self-contained component specimens. Product facts remain in `PRODUCT.md`.
 
-Native Android extends the same community noticeboard through Kotlin, Jetpack Compose, and Material 3. Read the [Android design extension](docs/android-design.md) with its [surface contract](.impeccable/surfaces/android.md) for implemented native roles, `dp`/`sp` measurements, navigation, states, assets, and bounded finish evidence. The root frontmatter and HTML/CSS component specimens describe the web; the native theme and Compose sources are authoritative for Android. Native metadata is recorded separately at `extensions.platforms.android` in the sidecar.
+Native Android extends the same community noticeboard into direct messages and named channels through Kotlin, Jetpack Compose, and Material 3. Read the [Android design extension](docs/android-design.md) with its [surface contract](.impeccable/surfaces/android.md) for implemented native roles, `dp`/`sp` measurements, five-destination navigation, visible-message reads, states, motion, assets, and bounded finish evidence. The root frontmatter and HTML/CSS component specimens describe the web; the native theme and Compose sources are authoritative for Android. Native metadata is recorded separately at `extensions.platforms.android` in the sidecar.
 
 ## Colors
 
@@ -312,13 +314,13 @@ A status notice pairs a shield icon with a bold answer and explanatory text. The
 
 The displayed states are distinct: accepting help; all supplies committed and awaiting delivery; fulfilled; cancelled; expired; and “Organization verification unavailable.” Closed notices instruct donors not to send more supplies, and the canonical page stays available. Unavailable verification explicitly tells users to wait for verification to be restored. Its verification result does not display a verified badge. The pledge form is replaced by an appropriate notice and route to another need when verification is unavailable, the request is closed, or all quantities are committed.
 
-The verification page accepts a request ID or Saathi link, shows “Checking…” while busy, and presents the current quantity, status, and last update. It labels an unavailable organization truthfully and provides the canonical request link.
+The verification page accepts a request ID or Swarm link, shows “Checking…” while busy, and presents the current quantity, status, and last update. It labels an unavailable organization truthfully and provides the canonical request link.
 
 ### Connectivity and Relief Delivery
 
-The persistent connection strip uses sage wash for reachability and amber paper when Saathi is unavailable, with a line icon, explicit text and a connection-details link. It is compact (12px text, 10px vertical padding), stacks on mobile and retains the existing theme tokens.
+The persistent connection strip uses sage wash for reachability and amber paper when Swarm is unavailable, with a line icon, explicit text and a connection-details link. It is compact (12px text, 10px vertical padding), stacks on mobile and retains the existing theme tokens.
 
-Delivery progress is a compact vertical list (12px, 6px row gaps) with check/minus line icons and separate written labels for local saving, another phone, Saathi and public publication. A server rejection uses urgent-clay text with a recovery message. Nearby pairing and file controls use the existing button/field shapes; unavailable file actions expose a disabled state and the prerequisite. Saved-information time is distinct from the last successful connection.
+Delivery progress is a compact vertical list (12px, 6px row gaps) with check/minus line icons and separate written labels for local saving, another phone, Swarm and public publication. A server rejection uses urgent-clay text with a recovery message. Nearby pairing and file controls use the existing button/field shapes; unavailable file actions expose a disabled state and the prerequisite. Saved-information time is distinct from the last successful connection.
 
 ### Loading, Empty, Error, and Contribution States
 

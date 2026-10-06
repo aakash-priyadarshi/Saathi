@@ -12,13 +12,16 @@ Official app name **CJP Swarm**; display **SWARM by CJP**. The native communicat
 - [x] Needs/Updates discussion destinations and a chat-to-Need review draft; approved volunteer preparation and existing server RBAC still govern official creation.
 - [x] Capability-gated 1:1 native local-Wi-Fi calls; finite Compose Swarm formation and Remove animations path. Huddles/group video remain disabled.
 - [x] Physical two-device chat pairing, stable encrypted DM, signed receipts, open/private channel joins/messages, invite replay, interrupted encrypted 4 MiB transfer, server upload/download, member removal and blocking.
-- [x] Final-build legacy local-Wi-Fi data, hardware audio/video and S24 → tablet → Windows Chromium → API relay with reverse receipt regression.
+- [x] Retained local-Wi-Fi data, hardware audio/video and S24 → tablet → Windows Chromium → API relay with reverse receipt regression on the recorded transport proof build.
 - [x] Nine native JVM, 26 shared/API unit, 45 real PostgreSQL integration and all 14 browser cases passed locally; new chat store-close/reopen and existing encrypted-storage tests passed on both devices and emulator.
+- [x] Final APK: five storage/conversation-viewport tests passed on tablet and emulator; unseen messages stay unread, incoming messages preserve history scrolling, latest navigation produces one Read receipt and own sends remain visible. Finish reviewer scored all three listed corrections resolved; final phone coverage is deferred after disconnection.
 - [ ] Three-native-peer chat relay: only two authorized Android devices available. Logical three-participant server authorization/history is tested; legacy Windows third-peer relay does not establish new private-chat interoperability.
 - [ ] Full internet → offline nearby → internet transition for new chat, range/battery/lock/reboot/permission tests, actual voice recording, video attachment transfer and no-internet calls. Current chat run had validated internet at each checkpoint.
 - [ ] Independent cryptographic/security review, hosted QA trust/TLS/signer, production provider/restore/load verification and broader platform compatibility.
 
 [Chat architecture](chat-channel-architecture.md), [Android verification](android-testing.md), [chat measurements](benchmarks/android-chat-nearby.json) and [engineering handoff](android-handoff.md) record the implementation and exact limits. Historical sections below describe earlier milestones at their stated dates; their smaller test counts are not current totals.
+
+Published implementation: [2a7f906](https://github.com/aakash-priyadarshi/Saathi/commit/2a7f906a37478e549ca580c5c428056c4bdaa6b1). [Web/API CI](https://github.com/aakash-priyadarshi/Saathi/actions/runs/37396036178) and [Android CI](https://github.com/aakash-priyadarshi/Saathi/actions/runs/37396035822) passed at that source commit. The subsequent handoff/design commit changes documentation only.
 
 ## Android production milestone — in progress, 5 October 2026
 
