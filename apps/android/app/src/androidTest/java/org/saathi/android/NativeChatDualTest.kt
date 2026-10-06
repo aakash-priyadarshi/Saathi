@@ -123,7 +123,7 @@ class NativeChatDualTest {
             if(author){input.writeBytes(ByteArray(4*1048576){(it%251).toByte()});chat.attach(dm,Uri.fromFile(input),"text/plain","Fictional encrypted resume.txt")}
             waitFor{chat.messages().any{it.getJSONObject("envelope").getJSONObject("body").getString("format")=="FILE"}}
             val attachmentMessage=chat.messages().first{it.getJSONObject("envelope").getJSONObject("body").getString("format")=="FILE"};val attachment=attachmentMessage.getJSONObject("payload").getJSONObject("attachment");fileIds.add(attachment.getString("id"))
-            if(!author)waitFor{repository.store.get("attachments",attachment.getString("id"))?.optJSONArray("received")?.let{arr->(0 until arr.length()).count{arr.optBoolean(it)}>=16}==true}
+            if(!author)waitFor{(0 until 16).all{session.hasPart(attachment.getString("id"),it)}}
             meet("encrypted-file-partial-persisted")
             if(!author)withContext(Dispatchers.Main){transport.disconnect();session.reset()};waitFor{!transport.connected}
             val offlineDmText="Fictional DM queued while disconnected";val offlineGroupText="Fictional channel post queued while disconnected"

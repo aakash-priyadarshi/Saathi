@@ -87,10 +87,10 @@ participant's keys, contact details or private group membership.
 
 Photos are conventionally decoded, EXIF-oriented, bounded to 40 megapixels at
 input, resized to 1600 pixels at output, JPEG re-encoded and thumbnailed. Videos
-up to 60 seconds, 1080p and 16 MiB are asynchronously remuxed from supported
-AVC/HEVC/AAC tracks; location/container metadata is not copied. Android does not
-promise bitrate transcoding of arbitrary large videos: unsupported/oversized
-inputs are rejected with a gallery fallback. The existing server FFmpeg pipeline
+of any length or resolution up to 250 MB are asynchronously remuxed from supported
+AVC/HEVC/AAC tracks to a file (never held in memory); location/container metadata is not
+copied. Android does not transcode: unsupported inputs are rejected with a gallery
+fallback. Reports publish without approval, labelled unverified. The existing server FFmpeg pipeline
 normalizes accepted public video again before publication. Selected originals
 are never overwritten. No AI alters factual imagery.
 

@@ -279,7 +279,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     fun offerHelp(id:String)=chatAction{community.offer(id);runCatching{community.sync()}}
     fun checkHelpArea(area:String)=chatAction{require(CommunityProtocol.publicText(area,80)){"Choose an approximate public area without contact details."};repository.store.put("community-meta","area",obj("area" to area));community.sync()}
     fun helpStatus(id:String,status:String,responder:String?=null)=chatAction{community.status(id,status,responder);runCatching{community.sync()}}
-    fun participantReport(caption:String,area:String,warning:Boolean,uri:Uri?,video:Boolean,audio:Boolean,saved:()->Unit)=chatAction{val derivative=uri?.let{notice(if(video)"Optimising video…"else if(audio)"Preparing private-metadata-free audio…"else"Preparing a private-metadata-free photo…");FieldMedia.prepare(getApplication(),it,video,audio)};community.report(caption,area,warning,derivative);saved();notice("Report saved. Public publication requires review.");runCatching{community.sync()}.onFailure{notice(it.message)} }
+    fun participantReport(caption:String,area:String,warning:Boolean,uri:Uri?,video:Boolean,audio:Boolean,saved:()->Unit)=chatAction{val derivative=uri?.let{notice(if(video)"Optimising video…"else if(audio)"Preparing private-metadata-free audio…"else"Preparing a private-metadata-free photo…");FieldMedia.prepare(getApplication(),it,video,audio)};community.report(caption,area,warning,derivative);saved();notice("Report saved. It publishes as soon as it reaches Swarm.");runCatching{community.sync()}.onFailure{notice(it.message)} }
     fun withdrawReport(id:String)=chatAction{community.withdraw(id);runCatching{community.sync()}}
     fun shareReportMedia(id:String)=chatAction{community.announce();community.shareMedia(id)}
     fun flagStatement(id:String,reason:String)=chatAction{community.flag(id,reason);notice("Report saved for review. Offline review waits for a connection.")}
@@ -356,7 +356,9 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     fun saveDraft(id: String, draft: JSONObject) { viewModelScope.launch(Dispatchers.IO) { repository.store.put("drafts", id, JSONObject(draft.toString()).put("id", id)); refreshLocal() } }
     fun publish(id: String, draft: JSONObject, type: String, payload: JSONObject, organization: String, done: () -> Unit) = action {
         withContext(Dispatchers.IO) { repository.store.put("drafts", id, draft) }
-        repository.author(type, payload, organization); repository.store.remove("drafts", id); notice("Saved on this phone. Synchronize or share nearby to send it."); done()
+        val event = repository.author(type, payload, organization)
+        draft.optJSONArray("mediaUris")?.takeIf { it.length() > 0 }?.let { event.put("mediaUris", it); repository.store.put("events", event.getString("id"), event) }
+        repository.store.remove("drafts", id); notice("Saved on this phone. Synchronize or share nearby to send it."); done()
     }
     fun sync(carried: Boolean) = action { repository.sync(carried); notice("Saved updates checked with Swarm."); if (repository.reachable) repository.refresh() }
     fun logout(revoke: Boolean) = action { disconnect(); repository.logout(revoke); session.clearFiles(); mutable.update { it.copy(dashboard = null) }; notice("Signed out. Private saved work and this phone’s signing identity were cleared.") }

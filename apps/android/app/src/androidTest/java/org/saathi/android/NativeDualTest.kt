@@ -101,7 +101,7 @@ class NativeDualTest {
             }
             val metadata = meet("payload-ready", if (role == "author") obj("eventId" to event!!.getString("id"), "eventHash" to Protocol.hash(event.getJSONObject("envelope")), "fileHash" to file!!.getString("hash")) else obj())
             if (role == "author") withContext(Dispatchers.Main) { session.offerSaved(file!!) }
-            if (role == "carrier") waitFor { repository.store.all("attachments").any { it.optJSONArray("received")?.let { received -> (0 until received.length()).count { index -> received.optBoolean(index) } >= 32 } == true } }
+            if (role == "carrier") waitFor { repository.store.all("attachments").any { file -> (0 until 32).all { session.hasPart(file.getString("id"), it) } } }
             meet("partial-file-persisted")
             if (role == "carrier") withContext(Dispatchers.Main) { transport.disconnect(); session.reset() }
             waitFor { !transport.connected }; meet("interrupted")

@@ -17,10 +17,9 @@ import java.io.ByteArrayOutputStream
 import java.util.zip.GZIPOutputStream
 import java.util.zip.GZIPInputStream
 import android.provider.OpenableColumns
-import javax.crypto.Cipher
-import javax.crypto.spec.SecretKeySpec
-import javax.crypto.spec.GCMParameterSpec
 
+/** 8 KiB parts per signed media request (1 MiB); matches the server's limit. */
+internal const val PARTS_PER_REQUEST = 128
 /** Stable conversations over confirmed peers and signed HTTP. All local chat records are encrypted. */
 class ChatRepository(private val context: Context, private val repository: Repository, private val session: PeerSession) {
     private val store get()=repository.store
@@ -134,36 +133,48 @@ class ChatRepository(private val context: Context, private val repository: Repos
         val mime=mimeOverride?:context.contentResolver.getType(uri)?:error("Choose a photo, audio, video or text file.")
         require(mime in listOf("image/jpeg","image/png","image/webp","audio/mp4","audio/mpeg","video/mp4","video/webm","text/plain"))
         val name=nameOverride?:context.contentResolver.query(uri,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)?.use { require(it.moveToFirst());it.getString(0) }?: "Attachment"
-        val output=ByteArrayOutputStream()
-        context.contentResolver.openInputStream(uri)?.use { input->val buffer=ByteArray(8192);while(true){val n=input.read(buffer);if(n<0)break;require(output.size()+n<=16777188){"Choose a file smaller than 16 MB."};output.write(buffer,0,n)}}?:error("Cannot read this attachment.")
-        val plain=output.toByteArray();require(plain.isNotEmpty()); val id=UUID.randomUUID().toString();val key=ByteArray(32).also { SecureRandom().nextBytes(it) }
-        val cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.ENCRYPT_MODE,SecretKeySpec(key,"AES"));cipher.updateAAD(("SWARM_ATTACHMENT_V1/"+id).toByteArray());val encrypted=cipher.iv+cipher.doFinal(plain)
-        val file=session.saveChatBytes(id,encrypted)
+        val id=UUID.randomUUID().toString();val key=ByteArray(32).also { SecureRandom().nextBytes(it) }
+        // Streams through an encrypted temporary file so a 250 MB video never sits in memory.
+        val temporary=java.io.File.createTempFile("chat-",".bin",java.io.File(context.cacheDir,"chat-processing").apply{mkdirs()})
+        val (plainSize,plainHash)=try{
+            val result=context.contentResolver.openInputStream(uri)?.use{input->temporary.outputStream().buffered().use{AttachmentCipher.encrypt(input,it,key,id,FieldMedia.MAX_BYTES)}}?:error("Cannot read this attachment.")
+            session.saveChatFile(id,temporary);result
+        }finally{temporary.delete()}
+        val file=store.get("attachments",id)!!
         file.put("contentMime",mime);store.put("attachments",id,file)
-        val attachment=obj("id" to id,"name" to name.take(100),"mime" to mime,"size" to plain.size,"hash" to Protocol.digest(plain),"cipherHash" to Protocol.digest(encrypted),"key" to Protocol.b64(key))
+        val attachment=obj("id" to id,"name" to name.take(100),"mime" to mime,"size" to plainSize,"hash" to plainHash,"cipherHash" to file.getString("hash"),"key" to Protocol.b64(key))
         val format=if(mime.startsWith("image/"))"PHOTO" else if(mime.startsWith("video/"))"VIDEO" else if(mime.startsWith("audio/"))"VOICE" else "FILE"
         try {
             val messageId=sendUnlocked(conversationId,obj("attachment" to attachment),format,threadRootId)
             val envelope=store.get("chat-messages",messageId)!!.getJSONObject("envelope")
-            val manifest=signed(obj("v" to 1,"kind" to "CHAT_ATTACHMENT","id" to id,"messageId" to messageId,"messageHash" to Protocol.hash(envelope),"author" to profile(),"size" to encrypted.size,"cipherHash" to Protocol.digest(encrypted),"expiresAt" to envelope.getJSONObject("body").getString("expiresAt")))
+            val manifest=signed(obj("v" to 1,"kind" to "CHAT_ATTACHMENT","id" to id,"messageId" to messageId,"messageHash" to Protocol.hash(envelope),"author" to profile(),"size" to file.getInt("size"),"cipherHash" to file.getString("hash"),"expiresAt" to envelope.getJSONObject("body").getString("expiresAt")))
             save("chat-manifests",messageId,obj("id" to messageId,"manifest" to manifest))
             if(fileAllowed(id,file.getString("hash")))runCatching {session.send("CHAT_ATTACHMENT_META",manifest);session.offerSaved(file)}
         }catch(e:Exception){session.removeFile(id);throw e}
         onChange()
     }}
-    suspend fun attachmentBytes(messageId:String)=withContext(Dispatchers.IO){
+    /** Decrypts and verifies a saved attachment into [output] without holding it in memory. */
+    private suspend fun decryptTo(messageId:String,output:java.io.OutputStream)=withContext(Dispatchers.IO){
         val record=store.get("chat-messages",messageId)?:error("Message is unavailable.")
-        val a=record.getJSONObject("payload").getJSONObject("attachment");val encrypted=session.readSavedBytes(a.getString("id"))
-        require(Protocol.digest(encrypted)==a.getString("cipherHash") && encrypted.size==a.getInt("size")+28)
-        val cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.DECRYPT_MODE,SecretKeySpec(Protocol.decode(a.getString("key")),"AES"),GCMParameterSpec(128,encrypted.copyOfRange(0,12)));cipher.updateAAD(("SWARM_ATTACHMENT_V1/"+a.getString("id")).toByteArray())
-        cipher.doFinal(encrypted.copyOfRange(12,encrypted.size)).also {require(it.size==a.getInt("size") && Protocol.digest(it)==a.getString("hash")){"Private attachment verification failed."}}
+        val a=record.getJSONObject("payload").getJSONObject("attachment");val id=a.getString("id")
+        val file=store.get("attachments",id)?:error("Wait for a nearby member with the attachment.")
+        require(file.optBoolean("complete") && file.getString("hash")==a.getString("cipherHash")){"Private attachment verification failed."}
+        val hash=session.openSaved(id).use{AttachmentCipher.decrypt(it,output,Protocol.decode(a.getString("key")),id,a.getLong("size"),file.getLong("size"))}
+        require(hash==a.getString("hash")){"Private attachment verification failed."}
+    }
+    /** Whole attachment in memory, for photo and voice previews only. */
+    suspend fun attachmentBytes(messageId:String):ByteArray{
+        val a=store.get("chat-messages",messageId)?.getJSONObject("payload")?.getJSONObject("attachment")?:error("Message is unavailable.")
+        require(a.getInt("size")<=PeerSession.PREVIEW_BYTES){"This attachment is too large to preview. Export it instead."}
+        return java.io.ByteArrayOutputStream(a.getInt("size")).also{decryptTo(messageId,it)}.toByteArray()
     }
     suspend fun completeFile(id:String){
         val record=messages().firstOrNull { it.getJSONObject("payload").optJSONObject("attachment")?.optString("id")==id }?:return
-        attachmentBytes(record.getString("id"));val file=store.get("attachments",id)!!;file.put("chatOnly",true);store.put("attachments",id,file);onChange()
+        decryptTo(record.getString("id"),object:java.io.OutputStream(){override fun write(b:Int){};override fun write(b:ByteArray,off:Int,len:Int){}})
+        val file=store.get("attachments",id)!!;file.put("chatOnly",true);store.put("attachments",id,file);onChange()
     }
     suspend fun exportAttachment(messageId:String,destination:Uri)=withContext(Dispatchers.IO){
-        val bytes=attachmentBytes(messageId);context.contentResolver.openOutputStream(destination,"wt")?.use {it.write(bytes)}?:error("The selected destination cannot be written.")
+        context.contentResolver.openOutputStream(destination,"wt")?.use {decryptTo(messageId,it)}?:error("The selected destination cannot be written.")
     }
     suspend fun offerAttachment(messageId:String)=withContext(Dispatchers.IO){
         val record=store.get("chat-messages",messageId)?:error("Message is unavailable.");val a=record.getJSONObject("payload").getJSONObject("attachment")
@@ -176,37 +187,39 @@ class ChatRepository(private val context: Context, private val repository: Repos
         ChatProtocol.profile(b.getJSONObject("author"),now())
         require(b.get("v")==1 && b.getString("kind")=="CHAT_ATTACHMENT" && b.getString("id")==a.getString("id") && b.getString("messageId")==record.getString("id") && b.getString("messageHash")==Protocol.hash(envelope)
             && ChatProtocol.participant(b.getJSONObject("author"))==ChatProtocol.participant(envelope.getJSONObject("body").getJSONObject("author"))
-            && b.getInt("size")==a.getInt("size")+28 && b.getString("cipherHash")==a.getString("cipherHash")
+            && AttachmentCipher.validSize(a.getLong("size"),b.getLong("size")) && b.getString("cipherHash")==a.getString("cipherHash")
             && Instant.parse(b.getString("expiresAt"))<=Instant.parse(envelope.getJSONObject("body").getString("expiresAt")) && Instant.parse(b.getString("expiresAt"))>now()
             && Protocol.verify(b,manifest.getString("signature"),b.getJSONObject("author").getJSONObject("body").getJSONObject("publicKey"))) {"Private attachment manifest verification failed."}
         return manifest
     }
     /** One bounded batch per automatic check; explicit media sync can continue resumably. */
     suspend fun synchronizeAttachment(messageId:String,complete:Boolean=false)=withContext(Dispatchers.IO){mediaLock.withLock{
-        var uploadBytes:ByteArray?=null
         while(true){
             val record=store.get("chat-messages",messageId)?:error("Message is unavailable.");require(record.optBoolean("serverSaved")&&!record.optBoolean("attention")){"Check chat delivery before synchronizing this attachment."}
             val a=record.getJSONObject("payload").getJSONObject("attachment");val file=store.get("attachments",a.getString("id"))
-            val count=(a.getInt("size")+28+8191)/8192
             val manifest=store.get("chat-manifests",messageId)?.getJSONObject("manifest")
+            // The signed manifest fixes the ciphertext size; without it, the first request only fetches it.
+            val count=manifest?.getJSONObject("body")?.getInt("size")?.let{(it+8191)/8192}
             val upload=file?.optBoolean("complete")==true && manifest!=null
             val progress=store.get("chat-media-progress",messageId)?.optJSONArray("received")?.let{it.strings().map(String::toInt).toSet()}?:emptySet()
-            val missing=(0 until count).filter{if(upload)it !in progress else file?.optJSONArray("received")?.optBoolean(it)!=true}.take(6)
-            if(upload&&missing.isEmpty() || !upload&&file?.optBoolean("complete")==true)return@withLock
+            val missing=if(count==null)emptyList()else (0 until count).filter{if(upload)it !in progress else !session.hasPart(a.getString("id"),it)}.take(PARTS_PER_REQUEST)
+            if(count!=null && (upload&&missing.isEmpty() || !upload&&file?.optBoolean("complete")==true))return@withLock
             val chunks=JSONArray()
-            if(upload){if(uploadBytes==null)uploadBytes=session.readSavedBytes(a.getString("id"));val bytes=uploadBytes;for(part in missing)chunks.put(obj("part" to part,"data" to Protocol.b64(bytes.copyOfRange(part*8192,minOf(bytes.size,(part+1)*8192)))))}
+            if(upload)for(part in missing)chunks.put(obj("part" to part,"data" to Protocol.b64(session.readPart(a.getString("id"),part))))
             val body=obj("v" to 1,"kind" to "CHAT_ATTACHMENT_REQUEST","profile" to profile(),"issuedAt" to now().toString(),"messageId" to messageId,"manifest" to if(upload)manifest else null,"parts" to JSONArray(if(upload)emptyList<Int>() else missing),"chunks" to chunks)
-            val response=JSONObject(repository.api("/chat/attachment",signed(body),false));require(response.getInt("v")==1)
+            val response=JSONObject(repository.api("/chat/attachment",signed(body),false,bulk=true));require(response.getInt("v")==1)
             val verified=verifyManifest(response.getJSONObject("manifest"),record);save("chat-manifests",messageId,obj("id" to messageId,"manifest" to verified))
-            val received=response.getJSONArray("received");require(received.length()<=count);val indices=(0 until received.length()).map{received.getInt(it)};require(indices.distinct().size==indices.size&&indices.all{it in 0 until count})
+            val cipherSize=verified.getJSONObject("body").getInt("size");val parts=(cipherSize+8191)/8192
+            val received=response.getJSONArray("received");require(received.length()<=parts);val indices=(0 until received.length()).map{received.getInt(it)};require(indices.distinct().size==indices.size&&indices.all{it in 0 until parts})
             save("chat-media-progress",messageId,obj("id" to messageId,"received" to JSONArray(indices.map{it.toString()})))
+            if(count==null)continue
             if(!upload){
-                val parts=response.getJSONArray("chunks").objects();require(parts.size<=6)
-                session.saveServerChatChunks(a.getString("id"),a.getInt("size")+28,a.getString("cipherHash"),parts.map{it.exact("part","data");require(it.getInt("part") in missing);it.getInt("part") to Protocol.decode(it.getString("data"))})
+                val chunks=response.getJSONArray("chunks").objects();require(chunks.size<=PARTS_PER_REQUEST)
+                session.saveServerChatChunks(a.getString("id"),cipherSize,a.getString("cipherHash"),chunks.map{it.exact("part","data");require(it.getInt("part") in missing);it.getInt("part") to Protocol.decode(it.getString("data"))})
                 if(store.get("attachments",a.getString("id"))?.optBoolean("complete")==true){completeFile(a.getString("id"));return@withLock}
-                if(parts.isEmpty())return@withLock
+                if(chunks.isEmpty())return@withLock
             }
-            onChange();if(!complete || (upload&&indices.size==count))return@withLock
+            onChange();if(!complete || (upload&&indices.size==parts))return@withLock
             // Fits the operational request limit; text/event work runs on separate coroutines.
             kotlinx.coroutines.delay(750)
         }
@@ -214,7 +227,7 @@ class ChatRepository(private val context: Context, private val repository: Repos
     suspend fun autoMedia(){
         if(mediaLock.isLocked)return
         val next=messages().firstOrNull{m->val a=m.getJSONObject("payload").optJSONObject("attachment");a!=null&&m.optBoolean("serverSaved")&&!m.optBoolean("attention")&&
-            (store.get("attachments",a.getString("id"))?.optBoolean("complete")!=true || (store.get("chat-manifests",m.getString("id"))!=null && (store.get("chat-media-progress",m.getString("id"))?.optJSONArray("received")?.length()?:0)<(a.getInt("size")+28+8191)/8192))}
+            (store.get("attachments",a.getString("id"))?.optBoolean("complete")!=true || (store.get("chat-manifests",m.getString("id"))?.getJSONObject("manifest")?.getJSONObject("body")?.getInt("size")?.let{size->(store.get("chat-media-progress",m.getString("id"))?.optJSONArray("received")?.length()?:0)<(size+8191)/8192}==true))}
         if(next!=null)runCatching{synchronizeAttachment(next.getString("id"))}
     }
     private fun live(policy:JSONObject)=Instant.parse(policy.getJSONObject("body").getString("expiresAt"))>now() && ChatProtocol.member(policy,self()) && store.get("chat-conversations",policy.getJSONObject("body").getString("id"))?.optBoolean("joined")==true

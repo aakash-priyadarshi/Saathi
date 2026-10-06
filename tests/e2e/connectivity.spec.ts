@@ -379,6 +379,33 @@ test('an interrupted attachment resumes from persisted parts after receiver relo
   }
 });
 
+test('a video larger than one 2,048-part round arrives in rounds and verifies', async ({
+  page: a,
+  browser,
+}) => {
+  // 20 MiB = 2,560 parts: the receiver must ask for a second round after the first FILE_DONE.
+  test.setTimeout(240000);
+  const cb = await browser.newContext({ baseURL: 'http://localhost:3000' }),
+    b = await cb.newPage(),
+    bytes = Buffer.alloc(20 * 1024 * 1024, 7);
+  try {
+    await Promise.all([prepareApp(a), prepareApp(b)]);
+    await Promise.all([a.goto('/nearby'), b.goto('/nearby')]);
+    await pair(a, b);
+    await a
+      .getByLabel('Offer a photo, video or text file')
+      .setInputFiles({ name: 'long-field.mp4', mimeType: 'video/mp4', buffer: bytes });
+    await b.getByRole('button', { name: 'Receive or resume attachment' }).click();
+    await expect(
+      b.getByText('long-field.mp4 · Checked and saved on this phone', { exact: true }),
+    ).toBeVisible({ timeout: 200000 });
+    const complete = (await records<Attachment>(b, 'attachments'))[0]!;
+    expect(complete.received).toBe(2560);
+    expect(complete.hash).toBe(createHash('sha256').update(bytes).digest('hex'));
+  } finally {
+    await cb.close();
+  }
+});
 test('two-hop relay publishes once while the author is absent and carries a signed receipt back', async ({
   page: a,
   context: ca,

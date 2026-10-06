@@ -35,6 +35,8 @@ const fileOffer = z
     hash: z.string().regex(/^[a-f0-9]{64}$/),
   })
   .strict();
+/** Missing-part indices per FILE_ACCEPT; 2,048 fit one 24 KB frame (native peers enforce it). */
+const ACCEPT_BATCH = 2048;
 export class NearbySession {
   readonly peer = new LocalPeer();
   confirmed = false;
@@ -44,6 +46,7 @@ export class NearbySession {
   private requested = new Set<string>();
   private offered = new Set<string>();
   private accepted = new Set<string>();
+  private requestedMissing = new Map<string, number>();
   reset() {
     this.remoteMedia = false;
     this.remoteFiles = false;
@@ -252,6 +255,16 @@ export class NearbySession {
       const database = await db(),
         file = await database.get('attachments', id);
       if (!file || file.direction !== 'IN' || !this.accepted.has(id)) return;
+      // Large files arrive in rounds; each accept lists at most ACCEPT_BATCH parts to fit one frame.
+      const missing = await this.missing(file);
+      if (missing.length) {
+        if (missing.length >= (this.requestedMissing.get(id) ?? Infinity))
+          throw new Error('The attachment is incomplete. Accept it again to resume missing parts.');
+        this.requestedMissing.set(id, missing.length);
+        await this.peer.send('FILE_ACCEPT', { id, missing: missing.slice(0, ACCEPT_BATCH) });
+        return;
+      }
+      this.requestedMissing.delete(id);
       if ((await attachmentHash(file)) === file.hash) {
         file.complete = true;
         await database.put('attachments', file, id);
@@ -392,11 +405,15 @@ export class NearbySession {
     }
     this.transferCancelled.delete(offer.id);
     this.accepted.add(offer.id);
-    const saved = await savedParts(file),
-      missing = Array.from({ length: Math.ceil(offer.size / 8192) }, (_, i) => i).filter(
-        (i) => !saved.has(i),
-      );
-    await this.peer.send('FILE_ACCEPT', { id: offer.id, missing });
+    this.requestedMissing.delete(offer.id);
+    const missing = await this.missing(file);
+    await this.peer.send('FILE_ACCEPT', { id: offer.id, missing: missing.slice(0, ACCEPT_BATCH) });
+  }
+  private async missing(file: Attachment) {
+    const saved = await savedParts(file);
+    return Array.from({ length: Math.ceil(file.size / 8192) }, (_, i) => i).filter(
+      (i) => !saved.has(i),
+    );
   }
   async cancelFile(id: string) {
     this.transferCancelled.add(id);

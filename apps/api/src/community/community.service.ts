@@ -516,7 +516,9 @@ export class CommunityService {
           ).map((p) => p.index),
         ),
         missing = Array.from({ length: count }, (_, i) => i).filter((i) => !have.has(i));
-      if (missing.length) return { mediaId: m.id, missing, complete: false };
+      // The next batch is enough; a 250 MB file's full list would exceed the client's response limit.
+      if (missing.length)
+        return { mediaId: m.id, missing: missing.slice(0, 1024), complete: false };
       return { mediaId: m.id, missing, complete: false, assemble: true };
     });
     if ('assemble' in result) {

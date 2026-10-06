@@ -2,6 +2,7 @@ package org.saathi.android
 
 import android.content.Context
 import android.os.SystemClock
+import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
@@ -17,10 +18,12 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.io.ByteArrayOutputStream
 
-class Repository(context: Context, storageScope: String = BuildConfig.ENVIRONMENT) {
+class Repository(private val context: Context, storageScope: String = BuildConfig.ENVIRONMENT) {
     private class ApiFailure(val status: Int, message: String) : IllegalStateException(message)
     val store = SecureStore(context, storageScope)
     private val client = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECONDS).readTimeout(12, TimeUnit.SECONDS).callTimeout(20, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false).build()
+    /** Media parts and 1 MiB media batches can take minutes on slow links; ordinary calls keep short limits. */
+    private val bulkClient = client.newBuilder().readTimeout(2, TimeUnit.MINUTES).writeTimeout(2, TimeUnit.MINUTES).callTimeout(10, TimeUnit.MINUTES).build()
     private val launchClock = Instant.now(); private val launchElapsed = SystemClock.elapsedRealtime()
     var configuration: JSONObject? = null; private set
     var needsEnabled: Boolean = store.get("public", "runtime-config")?.optJSONObject("features")?.optBoolean("needs", true) ?: true; private set
@@ -66,10 +69,10 @@ class Repository(context: Context, storageScope: String = BuildConfig.ENVIRONMEN
         }
         error(failure)
     }
-    private fun fetch(url: String, body: JSONObject?, authenticated: Boolean, limit: Int = 2 * 1024 * 1024, method: String = if (body == null) "GET" else "POST", idempotencyKey: String? = null): String {
+    private fun fetch(url: String, body: JSONObject?, authenticated: Boolean, limit: Int = 2 * 1024 * 1024, method: String = if (body == null) "GET" else "POST", idempotencyKey: String? = null, raw: ByteArray? = null, bulk: Boolean = false): String {
         val request = Request.Builder().url(url).header("Accept", "application/json").header("X-Swarm-App-Version", BuildConfig.VERSION_NAME)
-        if (body != null) {
-            request.method(method, body.toString().toRequestBody("application/json".toMediaType()))
+        if (body != null || raw != null) {
+            request.method(method, raw?.toRequestBody("application/octet-stream".toMediaType()) ?: body.toString().toRequestBody("application/json".toMediaType()))
             configuration?.getJSONObject("body")?.getString("webOrigin")?.let { request.header("Origin", it) }
             request.header("Idempotency-Key", idempotencyKey ?: UUID.randomUUID().toString())
         }
@@ -77,7 +80,7 @@ class Repository(context: Context, storageScope: String = BuildConfig.ENVIRONMEN
         if (authenticated && saved?.optString("origin") == okhttp3.HttpUrl.Builder().scheme(Request.Builder().url(url).build().url.scheme).host(Request.Builder().url(url).build().url.host).port(Request.Builder().url(url).build().url.port).build().toString()) {
             request.header("Cookie", saved.getString("cookies")); request.header("X-CSRF-Token", saved.getString("csrf"))
         }
-        client.newCall(request.build()).execute().use { response ->
+        (if (bulk) bulkClient else client).newCall(request.build()).execute().use { response ->
             val responseBody = response.body ?: error("Swarm returned an empty response.")
             require(responseBody.contentLength() <= limit) { "Swarm returned too much information." }
             val buffer = ByteArrayOutputStream().apply {
@@ -102,16 +105,16 @@ class Repository(context: Context, storageScope: String = BuildConfig.ENVIRONMEN
             return String(buffer)
         }
     }
-    suspend fun api(path: String, body: JSONObject? = null, authenticated: Boolean = false, method: String = if (body == null) "GET" else "POST", idempotencyKey: String? = null, responseLimit:Int=2*1024*1024): String = withContext(Dispatchers.IO) {
+    suspend fun api(path: String, body: JSONObject? = null, authenticated: Boolean = false, method: String = if (body == null) "GET" else "POST", idempotencyKey: String? = null, responseLimit:Int=2*1024*1024, raw: ByteArray? = null, bulk: Boolean = false): String = withContext(Dispatchers.IO) {
         val config = configuration ?: error("Verified service information is unavailable. Saved work is safe.")
         try { ServiceConfiguration.verify(config, root, environment, BuildConfig.VERSION_CODE, config, config.getJSONObject("body").getLong("version"), clock()) } catch (e: Exception) { reachable = false; throw e }
         val endpoints = config.getJSONObject("body").getJSONArray("apiEndpoints").strings()
         var failure: Exception? = null
         for (endpoint in endpoints) {
-            try { return@withContext fetch(endpoint.trimEnd('/') + "/api/v1" + path, body, authenticated, limit=responseLimit, method = method, idempotencyKey = idempotencyKey).also { reachable = true; lastChecked = Instant.now().toString() } }
+            try { return@withContext fetch(endpoint.trimEnd('/') + "/api/v1" + path, body, authenticated, limit=responseLimit, method = method, idempotencyKey = idempotencyKey, raw = raw, bulk = bulk).also { reachable = true; lastChecked = Instant.now().toString() } }
             catch (e: Exception) {
                 if (e is ApiFailure) { reachable = true; lastChecked = Instant.now().toString(); throw e }
-                failure = if (e is java.io.IOException) IllegalStateException("Swarm could not be reached. Saved work is safe. Reconnect and retry the original action.", e) else e; if (body != null) break /* Signed event retries are explicit; ordinary writes never guess across endpoints. */
+                failure = if (e is java.io.IOException) IllegalStateException("Swarm could not be reached. Saved work is safe. Reconnect and retry the original action.", e) else e; if (body != null || raw != null) break /* Signed event retries are explicit; ordinary writes never guess across endpoints. */
             }
         }
         reachable = false; throw failure ?: IllegalStateException("Swarm is unavailable.")
@@ -229,6 +232,39 @@ class Repository(context: Context, storageScope: String = BuildConfig.ENVIRONMEN
         if (old != null && Instant.parse(old.getJSONObject("body").getString("recordedAt")) > Instant.parse(receipt.getJSONObject("body").getString("recordedAt"))) return
         event.put("receipt", receipt); event.remove("error"); store.put("events", id, event)
     }
+    /** Uploads one original photo/video (up to 250 MB) in resumable 8 MiB parts; the server sanitizes it. */
+    suspend fun uploadMedia(uri: android.net.Uri, organization: String): String = withContext(Dispatchers.IO) {
+        val size = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { it.moveToFirst(); it.getLong(0) } ?: error("This photo or video is no longer available.")
+        require(size in 1..FieldMedia.MAX_BYTES) { "Choose a photo or video of 250 MB or less." }
+        val start = JSONObject(api("/uploads", obj("size" to size, "organizationId" to organization), true, bulk = true))
+        val upload = start.getString("uploadId"); val partSize = start.getInt("partSize")
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            val buffer = ByteArray(partSize)
+            for (index in 0 until start.getInt("parts")) {
+                val n = AttachmentCipher.readFully(input, buffer)
+                require(n.toLong() == minOf(partSize.toLong(), size - index.toLong() * partSize)) { "The file changed while uploading. Choose it again." }
+                for (attempt in 0..4) {
+                    try { api("/uploads/$upload/parts/$index", null, true, "PUT", raw = buffer.copyOf(n), bulk = true); break }
+                    catch (e: Exception) { if ((e is ApiFailure && e.status < 500 && e.status != 429) || attempt == 4) throw e; kotlinx.coroutines.delay(2000L shl attempt) }
+                }
+            }
+        } ?: error("This photo or video is no longer available.")
+        JSONObject(api("/uploads/$upload/complete", obj(), true, bulk = true)).getString("id")
+    }
+    /** Media for an accepted field update follows its signed text; carriers never relay originals. */
+    private suspend fun sendFieldMedia() {
+        for (event in events().filter { it.optBoolean("own") && it.has("mediaUris") }) {
+            val receipt = event.optJSONObject("receipt")?.getJSONObject("body") ?: continue
+            if (receipt.optString("fieldId").isBlank() || receipt.getString("status") !in listOf("ACCEPTED", "PUBLISHED")) continue
+            val uris = event.getJSONArray("mediaUris").strings(); val ids = event.optJSONArray("mediaIds")?.strings()?.toMutableList() ?: mutableListOf()
+            for (index in ids.size until uris.size) {
+                ids.add(uploadMedia(uris[index].toUri(), event.getJSONObject("envelope").getJSONObject("body").getString("organizationId")))
+                event.put("mediaIds", JSONArray(ids)); store.put("events", event.getString("id"), event)
+            }
+            acceptReceipt(JSONObject(api("/sync/events/${event.getString("id")}/media", obj("mediaIds" to JSONArray(ids)), true)))
+            store.get("events", event.getString("id"))?.let { it.remove("mediaUris"); it.remove("mediaIds"); store.put("events", event.getString("id"), it) }
+        }
+    }
     suspend fun sync(includeCarried: Boolean) {
         refreshConfiguration()
         val carrier = store.get("relay", "identity") ?: obj("id" to UUID.randomUUID().toString()).also { store.put("relay", "identity", it) }
@@ -237,5 +273,6 @@ class Repository(context: Context, storageScope: String = BuildConfig.ENVIRONMEN
             catch (e: Exception) { event.put("error", e.message); store.put("events", event.getString("id"), event); throw e }
         }
         for (batch in events().chunked(50)) JSONArray(api("/sync/receipts", obj("ids" to JSONArray(batch.map { it.getString("id") })))).objects().forEach { acceptReceipt(it) }
+        sendFieldMedia()
     }
 }

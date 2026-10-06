@@ -24,7 +24,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
     @Volatile private var remoteChatChunks = false
     private val chatAssembler = ChatFrameAssembler()
     @Volatile private var remoteLarge = false
-    val maximumFileBytes get() = if (remoteLarge && repository.featureFlags?.optBoolean("largeFiles") == true) 16 * 1024 * 1024 else 1048576
+    val maximumFileBytes get() = if (remoteLarge && repository.featureFlags?.optBoolean("largeFiles") == true) MAX_FILE else 1048576
     private data class Received(val generation: Long, val frame: JSONObject)
     private val incoming = Channel<Received>(64)
     @Volatile private var generation = 0L
@@ -45,6 +45,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
     private val offered = mutableSetOf<String>()
     private val accepted = mutableSetOf<String>()
     private val sendingFiles = mutableMapOf<String, Job>()
+    private val requestedMissing = mutableMapOf<String, Int>()
     private val chunkDirectory = File(context.filesDir, "attachments").apply { mkdirs() }
     var onChange: () -> Unit = {}
     var onError: (String) -> Unit = {}
@@ -253,16 +254,19 @@ class PeerSession(private val context: Context, private val repository: Reposito
             "FILE_ACCEPT" -> {
                 if (transport?.supportsFiles != true) return
                 val value = frame.getJSONObject("value"); val id = value.getString("id"); if (id !in offered || sendingFiles.containsKey(id)) return
-                val file = repository.store.get("attachments", id) ?: return; val missing = value.getJSONArray("missing"); require(missing.length() <= 2048)
+                val file = repository.store.get("attachments", id) ?: return; val missing = value.getJSONArray("missing"); require(missing.length() <= ACCEPT_BATCH)
                 val indices = (0 until missing.length()).map { missing.getInt(it) }; require(indices.distinct().size == indices.size && indices.all { it in 0 until chunks(file) })
                 require(!callInProgress)
                 sendingFiles[id] = scope.launch {
+                    val self = coroutineContext[Job]
                     try {
                         val mime=file.optString("contentMime",file.getString("mime"));val priority=if(mime.startsWith("audio/"))3 else if(mime.startsWith("video/"))6 else if(mime.startsWith("image/") && file.getInt("size")<=1048576)4 else 5
                         for (index in indices) { val raw = withContext(Dispatchers.IO) { readChunk(id, index) }; send("FILE_CHUNK", obj("id" to id, "index" to index, "data" to Protocol.b64(raw)),priority=priority); delay(20) }
+                        // Free the slot before FILE_DONE: the receiver may answer at once with its next round.
+                        if (sendingFiles[id] === self) sendingFiles.remove(id)
                         send("FILE_DONE", obj("id" to id)); file.put("sentAt", Instant.now().toString()); repository.store.put("attachments", id, file); onChange()
                     } catch (e: Exception) { if (e !is CancellationException) onError("File paused. Reconnect and offer it again to resume.") }
-                    finally { sendingFiles.remove(id) }
+                    finally { if (sendingFiles[id] === self) sendingFiles.remove(id) }
                 }
             }
             "FILE_CHUNK" -> {
@@ -270,13 +274,20 @@ class PeerSession(private val context: Context, private val repository: Reposito
                 val value = frame.getJSONObject("value"); val id = value.getString("id"); if (id !in accepted) return
                 val file = repository.store.get("attachments", id) ?: return; val index = value.getInt("index"); require(index in 0 until chunks(file) && value.getString("data").length <= 11000)
                 val raw = Protocol.decode(value.getString("data")); require(raw.size == minOf(8192, file.getInt("size") - index * 8192))
-                writeChunk(id, index, raw); val completed = file.getJSONArray("received"); completed.put(index, true); repository.store.put("attachments", id, file); onChange()
+                // Saved parts are their own files; rewriting a 32,000-entry record per part would be quadratic.
+                writeChunk(id, index, raw); if (index % 64 == 0) onChange()
             }
             "FILE_DONE" -> {
                 if (transport?.supportsFiles != true) return
                 val id = frame.getJSONObject("value").getString("id"); if (id !in accepted) return
                 val file = repository.store.get("attachments", id) ?: return
-                require((0 until chunks(file)).all { file.getJSONArray("received").optBoolean(it) }) { "File is incomplete. Reconnect and receive it again to resume." }
+                // Large files arrive in rounds: each accept names at most ACCEPT_BATCH parts to fit one frame.
+                val missing = missingParts(id, file)
+                if (missing.isNotEmpty()) {
+                    require(missing.size < (requestedMissing[id] ?: Int.MAX_VALUE)) { "File is incomplete. Reconnect and receive it again to resume." }
+                    requestedMissing[id] = missing.size; send("FILE_ACCEPT", obj("id" to id, "missing" to JSONArray(missing.take(ACCEPT_BATCH)))); onChange(); return
+                }
+                requestedMissing.remove(id)
                 val hash = MessageDigest.getInstance("SHA-256"); for (index in 0 until chunks(file)) hash.update(readChunk(id, index))
                 require(hash.digest().joinToString("") { "%02x".format(it) } == file.getString("hash")) { "This file could not be verified." }
                 file.put("complete", true); repository.store.put("attachments", id, file); accepted.remove(id); send("ACK", obj("id" to id)); onChange()
@@ -300,12 +311,16 @@ class PeerSession(private val context: Context, private val repository: Reposito
     }
     private fun checkSpace(size: Int) {
         require(StatFs(context.filesDir.path).availableBytes > size.toLong() * 2 + 64 * 1024 * 1024) { "Free more phone storage before receiving this file." }
-        require((chunkDirectory.listFiles()?.sumOf { it.length() } ?: 0L) + size < 128 * 1024 * 1024) { "Attachment storage is full. Remove reviewed files first." }
+        require((chunkDirectory.listFiles()?.sumOf { it.length() } ?: 0L) + size < 1024L * 1024 * 1024) { "Attachment storage is full. Remove reviewed files first." }
         val battery = context.getSystemService(BatteryManager::class.java)
         require(size <= 1048576 || battery.isCharging || battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) >= 20) { "Charge this phone before transferring a large file." }
     }
     private fun chunks(file: JSONObject) = (file.getInt("size") + 8191) / 8192
-    private fun chunkFile(id: String, index: Int): File { UUID.fromString(id); require(index in 0..2047); return File(chunkDirectory, "$id-$index.bin") }
+    private fun chunkFile(id: String, index: Int): File { UUID.fromString(id); require(index in 0..MAX_PART); return File(chunkDirectory, "$id-$index.bin") }
+    fun hasPart(id: String, index: Int) = chunkFile(id, index).exists()
+    private fun missingParts(id: String, file: JSONObject) = (0 until chunks(file)).filter { !hasPart(id, it) }
+    /** One decrypted 8 KiB part; callers stream large files part by part. */
+    fun readPart(id: String, index: Int) = readChunk(id, index)
     private fun writeChunk(id: String, index: Int, bytes: ByteArray) { val file = chunkFile(id, index); val temp = File(file.path + ".pending"); temp.writeBytes(repository.store.encrypt(bytes, "attachment/$id/$index")); check(temp.renameTo(file)) }
     private fun readChunk(id: String, index: Int) = repository.store.decrypt(chunkFile(id, index).readBytes(), "attachment/$id/$index")
     suspend fun offerFile(uri: Uri) = withContext(Dispatchers.IO) {
@@ -345,43 +360,60 @@ class PeerSession(private val context: Context, private val repository: Reposito
         require(confirmed && transport?.supportsFiles == true && !callInProgress && offer.getInt("size") <= maximumFile() && accepted.size < 2)
         checkSpace(offer.getInt("size")); val id = offer.getString("id"); val previous = repository.store.get("attachments", id)
         require(previous == null || (previous.optString("direction") == "IN" && previous.getString("hash") == offer.getString("hash") && previous.getInt("size") == offer.getInt("size")))
-        val file = previous ?: JSONObject(offer.toString()).put("direction", "IN").put("received", JSONArray()).put("complete", false)
-        repository.store.put("attachments", id, file); accepted.add(id)
-        val missing = (0 until chunks(file)).filter { !file.getJSONArray("received").optBoolean(it) }; send("FILE_ACCEPT", obj("id" to id, "missing" to JSONArray(missing))); onChange()
+        val file = previous ?: JSONObject(offer.toString()).put("direction", "IN").put("complete", false)
+        repository.store.put("attachments", id, file); accepted.add(id); requestedMissing.remove(id)
+        val missing = missingParts(id, file); send("FILE_ACCEPT", obj("id" to id, "missing" to JSONArray(missing.take(ACCEPT_BATCH)))); onChange()
     }
     suspend fun cancelFile(id: String) { accepted.remove(id); sendingFiles.remove(id)?.cancel(); send("FILE_CANCEL", obj("id" to id)); onChange() }
-    suspend fun saveChatBytes(id:String,bytes:ByteArray)=withContext(Dispatchers.IO) {
-        UUID.fromString(id); require(bytes.size in 29..16777216 && repository.store.all("attachments").size<50);checkSpace(bytes.size)
-        var index=0
+    /** Splits an encrypted chat file into saved parts while hashing, without loading it into memory. */
+    suspend fun saveChatFile(id:String,source:File)=withContext(Dispatchers.IO) {
+        UUID.fromString(id); val size=source.length(); require(size in 29..MAX_FILE.toLong() && repository.store.all("attachments").size<50);checkSpace(size.toInt())
+        var index=0;val digest=MessageDigest.getInstance("SHA-256")
         try {
-            var offset=0;while(offset<bytes.size){val end=minOf(bytes.size,offset+8192);writeChunk(id,index++,bytes.copyOfRange(offset,end));offset=end}
-            obj("id" to id,"name" to "Encrypted attachment","mime" to "application/octet-stream","size" to bytes.size,"hash" to Protocol.digest(bytes),"direction" to "OUT","complete" to true,"chatOnly" to true).also { repository.store.put("attachments",id,it) }
+            source.inputStream().buffered().use{input->val buffer=ByteArray(8192);while(true){val n=AttachmentCipher.readFully(input,buffer);if(n==0)break;val raw=buffer.copyOf(n);digest.update(raw);writeChunk(id,index++,raw)}}
+            obj("id" to id,"name" to "Encrypted attachment","mime" to "application/octet-stream","size" to size.toInt(),"hash" to digest.digest().joinToString(""){"%02x".format(it)},"direction" to "OUT","complete" to true,"chatOnly" to true).also { repository.store.put("attachments",id,it) }
         }catch(e:Exception){(0 until index).forEach { chunkFile(id,it).delete() };throw e}
     }
-    suspend fun savePublicBytes(id:String,bytes:ByteArray,mime:String):JSONObject {
-        require(mime in listOf("image/jpeg","video/mp4"));require(bytes.size in 29..16777216)
-        return saveChatBytes(id,bytes).apply{put("name",if(mime=="image/jpeg")"Public report photo.jpg"else"Public report video.mp4");put("mime",mime);remove("chatOnly");put("publicOnly",true);repository.store.put("attachments",id,this)}
+    suspend fun savePublicFile(id:String,source:File,mime:String):JSONObject {
+        require(mime in listOf("image/jpeg","video/mp4"));require(source.length() in 29..FieldMedia.MAX_BYTES)
+        return saveChatFile(id,source).apply{put("name",if(mime=="image/jpeg")"Public report photo.jpg"else"Public report video.mp4");put("mime",mime);remove("chatOnly");put("publicOnly",true);repository.store.put("attachments",id,this)}
     }
+    /** Whole-file read for small previews only (photos, voice notes); larger files stream via [exportTo]. */
     suspend fun readSavedBytes(id:String)=withContext(Dispatchers.IO) {
-        val file=repository.store.get("attachments",id)?:error("Attachment is unavailable.");require(file.getBoolean("complete") && file.getInt("size")<=16777216)
+        val file=repository.store.get("attachments",id)?:error("Attachment is unavailable.");require(file.getBoolean("complete"));require(file.getInt("size")<=PREVIEW_BYTES){"This file is too large to preview. Export it instead."}
         val bytes=ByteArray(file.getInt("size"));for(index in 0 until chunks(file))readChunk(id,index).copyInto(bytes,index*8192)
         require(Protocol.digest(bytes)==file.getString("hash")) { "Attachment verification failed." };bytes
     }
+    /** The saved file as a stream of its decrypted parts, read one part at a time. */
+    fun openSaved(id:String):java.io.InputStream {
+        val file=repository.store.get("attachments",id)?:error("Attachment is unavailable.");require(file.getBoolean("complete"));val count=chunks(file)
+        return java.io.SequenceInputStream(object:java.util.Enumeration<java.io.InputStream>{
+            var index=0
+            override fun hasMoreElements()=index<count
+            override fun nextElement()=java.io.ByteArrayInputStream(readChunk(id,index++))
+        })
+    }
+    /** Writes the verified saved file to [target], part by part. */
+    suspend fun exportTo(id:String,target:File)=withContext(Dispatchers.IO) {
+        val file=repository.store.get("attachments",id)?:error("Attachment is unavailable.");require(file.getBoolean("complete"))
+        val digest=MessageDigest.getInstance("SHA-256")
+        target.outputStream().buffered().use{out->for(index in 0 until chunks(file)){val raw=readChunk(id,index);digest.update(raw);out.write(raw)}}
+        if(digest.digest().joinToString(""){"%02x".format(it)}!=file.getString("hash")){target.delete();error("Attachment verification failed.")}
+    }
     suspend fun saveServerChatChunks(id:String,size:Int,hash:String,parts:List<Pair<Int,ByteArray>>) = withContext(Dispatchers.IO) {
-        UUID.fromString(id); require(size in 29..16777216 && hash.matches(Regex("[a-f0-9]{64}")))
+        UUID.fromString(id); require(size in 29..MAX_FILE && hash.matches(Regex("[a-f0-9]{64}")))
         val old=repository.store.get("attachments",id)
         require(old==null || old.getInt("size")==size && old.getString("hash")==hash)
         if(old?.optBoolean("complete")==true)return@withContext
         if(old==null){require(repository.store.all("attachments").size<50);checkSpace(size)}
         val count=(size+8191)/8192
-        val file=old?:obj("id" to id,"name" to "Encrypted attachment","mime" to "application/octet-stream","size" to size,"hash" to hash,"direction" to "IN","complete" to false,"chatOnly" to true,"received" to JSONArray(List(count){false}))
-        val received=file.getJSONArray("received")
-        for((part,bytes) in parts){require(part in 0 until count && bytes.size==minOf(8192,size-part*8192));writeChunk(id,part,bytes);received.put(part,true)}
-        repository.store.put("attachments",id,file)
-        if((0 until count).all{received.optBoolean(it)}){
+        val file=old?:obj("id" to id,"name" to "Encrypted attachment","mime" to "application/octet-stream","size" to size,"hash" to hash,"direction" to "IN","complete" to false,"chatOnly" to true)
+        if(old==null)repository.store.put("attachments",id,file)
+        for((part,bytes) in parts){require(part in 0 until count && bytes.size==minOf(8192,size-part*8192));writeChunk(id,part,bytes)}
+        if(missingParts(id,file).isEmpty()){
             val digest=MessageDigest.getInstance("SHA-256");for(part in 0 until count)digest.update(readChunk(id,part))
             if(digest.digest().joinToString(""){"%02x".format(it)}!=hash){
-                file.put("received",JSONArray(List(count){false}));repository.store.put("attachments",id,file)
+                (0 until count).forEach{chunkFile(id,it).delete()}
                 error("Encrypted attachment verification failed. Retry to replace the invalid chunks.")
             }
             file.put("complete",true);repository.store.put("attachments",id,file)
@@ -399,4 +431,12 @@ class PeerSession(private val context: Context, private val repository: Reposito
     }
     suspend fun removeFile(id: String) { if (confirmed) runCatching { cancelFile(id) }; repository.store.get("attachments", id)?.let { file -> (0 until chunks(file)).forEach { index -> chunkFile(id, index).delete(); File(chunkFile(id, index).path + ".pending").delete() }; repository.store.remove("attachments", id) }; onChange() }
     fun clearFiles() { chunkDirectory.listFiles()?.forEach { it.delete() } }
+    companion object {
+        /** 250 MB media plus room for chat encryption overhead. */
+        const val MAX_FILE = FieldMedia.MAX_BYTES.toInt() + 1048576
+        const val MAX_PART = 32767
+        /** Missing-part indices per FILE_ACCEPT; 2,048 indices fit one 24 KB frame. */
+        const val ACCEPT_BATCH = 2048
+        const val PREVIEW_BYTES = 32 * 1024 * 1024
+    }
 }
