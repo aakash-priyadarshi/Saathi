@@ -512,6 +512,18 @@ class ChatRepository(private val context: Context, private val repository: Repos
     fun reports(channelId:String)=store.all("chat-report-inbox").filter{report->report.getString("channelId")==channelId && !actions(channelId).any{a->val b=a.getJSONObject("envelope").getJSONObject("body");b.getString("action")=="REVIEW_REPORT" && b.getString("targetId")==report.getString("messageId") && b.getString("issuedAt")>=report.getString("createdAt")}}
     suspend fun clearConversation(id:String)=withContext(Dispatchers.IO) { lock.withLock { require(store.get("chat-conversations",id)?.optBoolean("joined")==false || id.startsWith("dm:")); messages().filter { it.getJSONObject("envelope").getJSONObject("body").getString("conversationId")==id }.forEach { store.remove("chat-messages",it.getString("id")) }; onChange() } }
     suspend fun announce()=withContext(Dispatchers.IO) { lock.withLock { announceUnlocked() } }
+    /** Retransmit only unacknowledged direct messages, using their stable IDs for receiver deduplication. */
+    suspend fun retryPendingDirectDelivery(): Boolean = withContext(Dispatchers.IO) { lock.withLock {
+        val person = peer?.let { ChatProtocol.participant(it) } ?: return@withLock false
+        if (!session.confirmed || blocked(person)) return@withLock false
+        val pending = messages().filter { record ->
+            val body = record.getJSONObject("envelope").getJSONObject("body")
+            record.optBoolean("owned") && !record.has("deliveredAt") && !record.optBoolean("attention") &&
+                !body.isNull("recipientId") && body.getString("recipientId") == person && eligible(record, person)
+        }.take(50)
+        pending.forEach { record -> runCatching { sendRecord(record) } }
+        pending.any { store.get("chat-messages", it.getString("id"))?.has("deliveredAt") != true }
+    } }
     private suspend fun announceUnlocked() {
         if(!session.confirmed)return
         renewOwned()

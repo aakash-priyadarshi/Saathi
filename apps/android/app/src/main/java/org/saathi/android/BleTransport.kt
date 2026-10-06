@@ -61,7 +61,7 @@ class BleTransport(context: Context, private val scope: CoroutineScope) : PeerTr
     private val frameMutex = Mutex()
     private val gattOperationMutex = Mutex()
     private val reassembler = BleReassembler()
-    private val peers = linkedMapOf<String, String>()
+    private val peers = BlePeerRegistry()
     private val receivedAcks = ConcurrentHashMap<UUID, CompletableDeferred<Unit>>()
     private val expectedAcks = ConcurrentHashMap<UUID, ByteArray>()
     private val pendingWrite = java.util.concurrent.atomic.AtomicReference<CompletableDeferred<Unit>?>(null)
@@ -90,6 +90,7 @@ class BleTransport(context: Context, private val scope: CoroutineScope) : PeerTr
     private var pairCode: String? = null
     private var generation = 0L
     private var visibleTimer: Job? = null
+    private var peerExpiryJob: Job? = null
     private var pairingTimer: Job? = null
     private var cleanupJob: Job? = null
     private var bondRetry: (() -> Unit)? = null
@@ -162,12 +163,17 @@ class BleTransport(context: Context, private val scope: CoroutineScope) : PeerTr
                     advertiser = radio
                     activeAdvertiseCallback = advertiseCallback(token)
                     val advertisement = AdvertiseData.Builder().setIncludeDeviceName(false)
+                    val scanResponse = AdvertiseData.Builder().setIncludeDeviceName(false)
                     if (auto) advertisement.addServiceData(ParcelUuid(SERVICE_UUID), localAdvertisementId)
-                    else advertisement.addServiceUuid(ParcelUuid(SERVICE_UUID))
+                    else {
+                        advertisement.addServiceUuid(ParcelUuid(SERVICE_UUID))
+                        scanResponse.addServiceData(ParcelUuid(SERVICE_UUID), localAdvertisementId)
+                    }
                     radio.startAdvertising(
                         AdvertiseSettings.Builder().setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_POWER)
                             .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_LOW).setConnectable(true).build(),
                         advertisement.build(),
+                        scanResponse.build(),
                         activeAdvertiseCallback,
                     )
                 }
@@ -176,12 +182,20 @@ class BleTransport(context: Context, private val scope: CoroutineScope) : PeerTr
                     scanner = radio
                     activeScanCallback = scanCallback(token)
                     radio.startScan(listOf(scanFilter(auto)), ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_BALANCED).build(), activeScanCallback)
+                    peerExpiryJob?.cancel()
+                    peerExpiryJob = scope.launch {
+                        while (token == generation) {
+                            delay(5_000)
+                            if (token == generation) onPeers(peers.prune(android.os.SystemClock.elapsedRealtime()))
+                        }
+                    }
                 }
                 status(if (auto) "Nearby connection changed. Looking for the same person by Bluetooth…" else if (advertise) "Visible to nearby Swarm by Bluetooth for one minute" else "Looking for Swarm by Bluetooth for one minute")
                 visibleTimer = scope.launch {
                     delay(60_000)
                     if (token == generation) {
                         stopScanningAndAdvertising()
+                        peers.clear(); onPeers(emptyMap())
                         if (!connected) status("Bluetooth search finished. Search again when both people are ready.")
                     }
                 }
@@ -296,10 +310,9 @@ class BleTransport(context: Context, private val scope: CoroutineScope) : PeerTr
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             if (token != generation || connected) return
             val address = result.device.address
-            if (address !in peers && peers.size >= 20) return
-            val ordinal = peers.keys.indexOf(address).takeIf { it >= 0 }?.plus(1) ?: peers.size + 1
-            peers[address] = "Swarm device $ordinal"
-            onPeers(peers.toMap())
+            val advertisementId = result.scanRecord?.getServiceData(ParcelUuid(SERVICE_UUID))
+            val updatedPeers = peers.observe(address, advertisementId, android.os.SystemClock.elapsedRealtime(), BuildConfig.BRAND_DISPLAY)
+            onPeers(updatedPeers)
             if (automatic && role == Role.AUTO && !automaticConnectPending) {
                 val peerId = result.scanRecord?.getServiceData(ParcelUuid(SERVICE_UUID)) ?: return
                 val order = compareUnsigned(localAdvertisementId, peerId)
@@ -321,7 +334,7 @@ class BleTransport(context: Context, private val scope: CoroutineScope) : PeerTr
             }
         }
         override fun onScanFailed(errorCode: Int) {
-            if (token == generation) { log("scan-failed", "status=$errorCode"); onError("Bluetooth search stopped. Your saved work is safe.") }
+            if (token == generation) { log("scan-failed", "status=$errorCode"); peers.clear(); onPeers(emptyMap()); onError("Bluetooth search stopped. Your saved work is safe.") }
         }
     }
 
@@ -335,7 +348,7 @@ class BleTransport(context: Context, private val scope: CoroutineScope) : PeerTr
 
     suspend fun connect(address: String) = lifecycleMutex.withLock {
         ensurePermissions()
-        require(role == Role.CENTRAL && peers.containsKey(address)) { "This Bluetooth device is no longer available. Search again." }
+        require(role == Role.CENTRAL && peers.contains(address)) { "This Bluetooth device is no longer available. Search again." }
         val device = adapter?.getRemoteDevice(address) ?: error("This Bluetooth device is unavailable.")
         visibleTimer?.cancel(); visibleTimer = null; stopScanningAndAdvertising()
         val token = generation
@@ -673,6 +686,7 @@ class BleTransport(context: Context, private val scope: CoroutineScope) : PeerTr
 
     private fun stopScanningAndAdvertising() {
         visibleTimer?.cancel(); visibleTimer = null
+        peerExpiryJob?.cancel(); peerExpiryJob = null
         runCatching { scanner?.stopScan(activeScanCallback) }
         runCatching { advertiser?.stopAdvertising(activeAdvertiseCallback) }
         scanner = null; advertiser = null
@@ -689,6 +703,7 @@ class BleTransport(context: Context, private val scope: CoroutineScope) : PeerTr
             lifecycleMutex.withLock {
                 if (!connected) generation++
                 stopScanningAndAdvertising()
+                peers.clear(); onPeers(emptyMap())
             }
         }
     }

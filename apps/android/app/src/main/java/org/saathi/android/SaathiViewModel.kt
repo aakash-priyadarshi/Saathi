@@ -56,6 +56,8 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     private var voiceFile: File? = null
     private var voiceTimeout: Job? = null
     private var healthCheck: Job? = null
+    private var deliveryRetry: Job? = null
+    private var lastChatAnnounceAt = 0L
     private var ringTimeout: Job? = null
     private val incomingChats=mutableSetOf<String>()
     private var chatNotice:Job?=null
@@ -75,14 +77,14 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         session.currentPeerIdentity = { chat.peer?.let { ChatProtocol.participant(it) } }
         session.onPeerIdentityVerified = { identity -> session.retryPendingMessagesFor(identity); if(BuildConfig.CHAT_ENABLED) community.announce() }
         session.onChatConnected = {
-            if(BuildConfig.CHAT_ENABLED) { chat.announce(); if(chat.peer!=null)community.announce() }
+            if(BuildConfig.CHAT_ENABLED) { chat.announce(); lastChatAnnounceAt=System.currentTimeMillis(); scheduleDirectDeliveryRetries(); if(chat.peer!=null)community.announce() }
             else session.send("CHAT_PROFILE", chat.profile())
         }
         session.onChatFrame = { frame, generation ->
             if (BuildConfig.CHAT_ENABLED) chat.receive(frame,generation)
             else if (frame.optString("kind") == "CHAT_PROFILE") chat.verifyTransportPeer(frame.getJSONObject("value")).also { session.onPeerIdentityVerified(it) }
         }
-        session.onChatReset = { chat.reset() }; chat.onChange = { refreshLocal() }; chat.onInvite = { receiveInvite(it) }
+        session.onChatReset = { deliveryRetry?.cancel(); chat.reset() }; chat.onChange = { refreshLocal(); scheduleDirectDeliveryRetries() }; chat.onInvite = { receiveInvite(it) }
         session.onCommunityFrame={frame,generation->if(BuildConfig.CHAT_ENABLED)community.frame(frame,generation)};community.onChange={refreshLocal()};session.publicFileAllowed={id,hash->community.fileAllowed(id,hash)};session.onPublicFileComplete={community.completeFile(it)}
         session.chatFileAllowed = { id,hash -> chat.fileAllowed(id,hash) }; session.onChatFileComplete = { chat.completeFile(it) }
         chat.onIncoming={batchChatNotice(it)}
@@ -127,6 +129,15 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         refreshLocal(); if(startServices){refresh(); foregroundActive()}
     }
     fun notice(text: String?) { mutable.update { it.copy(notice = text) } }
+    private fun scheduleDirectDeliveryRetries() {
+        if (!BuildConfig.CHAT_ENABLED || !session.confirmed || chat.peer == null || deliveryRetry?.isActive == true) return
+        deliveryRetry = viewModelScope.launch {
+            for (waitMillis in longArrayOf(3_000, 7_000, 15_000, 30_000, 60_000, 120_000)) {
+                delay(waitMillis)
+                if (!session.confirmed || !chat.retryPendingDirectDelivery()) break
+            }
+        }
+    }
     fun preferences()=repository.store.get("preferences","local")?:obj("appearance" to "SYSTEM","relay" to "OFF","mediaRelay" to false,"dailyLimitMiB" to 50,"batteryMinimum" to 20,"nearbyVisible" to true)
     fun preference(key:String,value:Any){
         require(when(key){"appearance"->value in listOf("SYSTEM","LIGHT","DARK");"relay"->value in listOf("OFF","WIFI","ANY");"mediaRelay","nearbyVisible"->value is Boolean;"dailyLimitMiB"->value is Int && value in 1..500;"batteryMinimum"->value is Int && value in 10..80;else->false})
@@ -288,9 +299,10 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     private fun startRingTimeout() { ringTimeout?.cancel(); ringTimeout = viewModelScope.launch { delay(60000); runCatching { session.send("CALL_END", obj()) }; endMedia(); notice("Call was not answered. Nearby messages still work.") } }
     private fun endMedia() { ringTimeout?.cancel(); session.callInProgress = false; if (wifiDelegate.isInitialized()) wifi.stopMedia(); mutable.update { it.copy(calling = false, callActive = false, incomingCall = null, video = false, quality = "") } }
     fun foregroundActive() {
+        scheduleDirectDeliveryRetries()
         healthCheck?.cancel()
-        healthCheck = viewModelScope.launch { while (isActive) { delay(30000); repository.checkReachability(); if(BuildConfig.CHAT_ENABLED){if(repository.reachable){runCatching {chat.sync();chat.autoMedia()};runCatching{community.sync()}}; if(session.confirmed){runCatching {chat.announce()};runCatching{community.announce()}}}; mutable.update { it.copy(reachable = repository.reachable) } } }
+        healthCheck = viewModelScope.launch { while (isActive) { delay(30000); repository.checkReachability(); if(BuildConfig.CHAT_ENABLED){if(repository.reachable){runCatching {chat.sync();chat.autoMedia()};runCatching{community.sync()}}; if(session.confirmed){val now=System.currentTimeMillis();if(now-lastChatAnnounceAt>=120_000){runCatching {chat.announce()};lastChatAnnounceAt=now};runCatching{community.announce()}}}; mutable.update { it.copy(reachable = repository.reachable) } } }
     }
-    fun foregroundLost() { attachmentSync?.cancel();healthCheck?.cancel(); nearby.stopScan();ble.stopScan();cancelVoice(); if (state.value.calling) hangup() }
+    fun foregroundLost() { attachmentSync?.cancel();healthCheck?.cancel();deliveryRetry?.cancel(); nearby.stopScan();ble.stopScan();cancelVoice(); if (state.value.calling) hangup() }
     override fun onCleared() { disconnect(); if (wifiDelegate.isInitialized()) wifi.release(); repository.store.close() }
 }

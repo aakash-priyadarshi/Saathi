@@ -54,8 +54,8 @@ fun chatStatus(message:JSONObject)=when {
     message.optBoolean("attention")->"Needs attention"
     message.has("readAt")->"Read"
     message.has("deliveredAt")->"Delivered"
-    message.has("sentNearby")->"Sent nearby"
-    message.optBoolean("serverSaved")->"Sent"
+    message.has("sentNearby")->"Sent nearby · waiting for receipt"
+    message.optBoolean("serverSaved")->"Uploaded · waiting for receipt"
     else->"Saved · Waiting for connection"
 }
 @Composable private fun Avatar(name:String,channel:Boolean=false) {
