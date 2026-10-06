@@ -88,6 +88,7 @@ Earlier milestone recorded 5 October 2026 under the former **Saathi** name. The 
 - [ ] iOS client, broader radio adapters and background hub policy
 - [x] Physical Windows Chromium ↔ Android native messages/files/events/reconnect and two-hop receipt relay; Android-browser/iOS proofs remain unverified
 - [x] Server-only same-origin `/api/v1` proxy resolves the separate API at runtime from `API_INTERNAL_URL`; request/status/cookie forwarding and outage behavior have unit coverage.
+- [x] Commit `887645de142f4f1eff7282d4f9434a94d81e1cd8` was built and deployed to the existing Lightsail staging stack. The web page, same-origin config/requests/feed, and API health/readiness returned HTTP 200; public events returned HTTP 200 with `text/event-stream`.
 
 The browser nearby feature is a **phone-testing preview**. It requires a previously prepared secure origin, a reachable local Wi-Fi/hotspot path and foreground use. It cannot enable system radios or discover arbitrary nearby phones. Native Android Nearby and bounded foreground BLE/GATT now have product evidence above; Wi-Fi Direct/Aware and iOS remain unsupported. The Bluetooth-only evidence covers code-confirmed pairing and text messages, not automatic fallback, files, calls, range, battery or background reliability.
 
