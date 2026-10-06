@@ -23,6 +23,7 @@ class Repository(context: Context, storageScope: String = BuildConfig.ENVIRONMEN
     private val client = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECONDS).readTimeout(12, TimeUnit.SECONDS).callTimeout(20, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false).build()
     private val launchClock = Instant.now(); private val launchElapsed = SystemClock.elapsedRealtime()
     var configuration: JSONObject? = null; private set
+    var needsEnabled: Boolean = store.get("public", "runtime-config")?.optJSONObject("features")?.optBoolean("needs", true) ?: true; private set
     var reachable = false; private set
     var lastChecked: String? = null; private set
     private val root = JSONObject(BuildConfig.CONFIG_ROOT)
@@ -115,8 +116,26 @@ class Repository(context: Context, storageScope: String = BuildConfig.ENVIRONMEN
         }
         reachable = false; throw failure ?: IllegalStateException("Swarm is unavailable.")
     }
+    private suspend fun applyRuntimeConfig(value: JSONObject): Boolean = withContext(Dispatchers.IO) {
+        val enabled = value.optJSONObject("features")?.optBoolean("needs", true) ?: true
+        val changed = enabled != needsEnabled
+        needsEnabled = enabled
+        store.put("public", "runtime-config", value, false)
+        if (!enabled) {
+            store.writableDatabase.beginTransaction()
+            try {
+                for (bucket in listOf("requests", "completed")) {
+                    store.all(bucket).forEach { row -> store.remove(bucket, row.optString("publicId", row.optString("id"))) }
+                    store.remove("public", "$bucket-order")
+                }
+                store.writableDatabase.setTransactionSuccessful()
+            } finally { store.writableDatabase.endTransaction() }
+        }
+        changed
+    }
     suspend fun refresh() {
         refreshConfiguration()
+        applyRuntimeConfig(JSONObject(api("/public/config")))
         for ((bucket, path) in listOf("requests" to "/public/requests", "completed" to "/public/requests?completed=true", "feed" to "/public/feed")) {
             val list = JSONArray(api(path))
             withContext(Dispatchers.IO) {
@@ -151,7 +170,8 @@ class Repository(context: Context, storageScope: String = BuildConfig.ENVIRONMEN
             // If the app started without internet, there is no verified endpoint yet and api()
             // cannot recover on its own. Re-fetch signed configuration when reconnecting.
             if (configuration == null || !reachable) refreshConfiguration()
-            api("/public/config")
+            val changed = applyRuntimeConfig(JSONObject(api("/public/config")))
+            if (changed) refresh()
         }
     }
     suspend fun login(email: String, password: String, totp: String) {

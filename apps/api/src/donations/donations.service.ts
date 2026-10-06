@@ -11,6 +11,7 @@ import { Database, audit, json } from '../database';
 import { AuthService, Actor } from '../auth/auth.service';
 import { closed, deriveStatus } from '../domain/request';
 import { publicRequest, requestInclude } from '../requests/requests.service';
+import { platformFeatures } from '../public/platform-features';
 type Result = {
   id: string;
   trackingToken: string;
@@ -92,6 +93,8 @@ export class DonationsService {
       key,
       { publicId, quantity, email },
       async (tx) => {
+        if (!(await platformFeatures(tx)).needs)
+          throw new ConflictException('Relief needs are temporarily paused.');
         await tx.$queryRaw`SELECT id FROM "ReliefRequest" WHERE "publicId"=${publicId} FOR UPDATE`;
         let r = await tx.reliefRequest.findUnique({ where: { publicId }, include: requestInclude });
         if (!r) throw new NotFoundException('Request not found.');

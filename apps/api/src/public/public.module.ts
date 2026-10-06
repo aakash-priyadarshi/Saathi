@@ -3,17 +3,12 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { Database } from '../database';
 import { PublicReadService } from './public-read.service';
-import { env } from '@saathi/config';
 
 @Controller('api/v1/public')
 export class ReadOnlyPublicController {
   constructor(@Inject(PublicReadService) private readonly read: PublicReadService) {}
   @Get('config') config() {
-    return {
-      platformName: env.PLATFORM_NAME,
-      demo: env.DEMO_MODE === 'true',
-      reservationMinutes: env.RESERVATION_MINUTES,
-    };
+    return this.read.configuration();
   }
   @Get('requests') list(
     @Query('completed') completed?: string,

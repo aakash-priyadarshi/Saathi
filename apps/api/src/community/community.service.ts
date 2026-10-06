@@ -137,6 +137,7 @@ export class CommunityService {
       if (!prior) throw new ConflictException('The original help request is missing.');
       if (
         prior.hidden ||
+        prior.moderation !== 'APPROVED' ||
         prior.expiresAt.getTime() <= now ||
         prior.envelopeHash !== b.payload.requestHash ||
         (read(prior.envelope).body as Extract<CommunityEnvelope['body'], { type: 'HELP' }>).payload
@@ -249,6 +250,7 @@ export class CommunityService {
         envelope: json(e),
         envelopeHash: digest,
         hidden: b.type === 'WITHDRAW',
+        moderation: b.type === 'HELP' ? 'PENDING' : 'APPROVED',
         receivedAt: new Date(now),
         expiresAt: new Date(b.expiresAt),
       },
@@ -312,6 +314,7 @@ export class CommunityService {
       where: {
         id: { notIn: b.known },
         hidden: false,
+        AND: [{ OR: [{ moderation: 'APPROVED' }, { authorId: b.profile.body.id }] }],
         authorId: { notIn: blocked },
         type: { not: 'FLAG' },
         expiresAt: { gt: new Date(now) },
@@ -338,11 +341,13 @@ export class CommunityService {
       const status =
         row.hidden || post?.moderation === 'HIDDEN'
           ? 'INVALIDATED'
-          : post?.moderation === 'APPROVED' && post.publishAt.getTime() <= now
-            ? 'PUBLISHED'
-            : post?.moderation === 'REJECTED'
-              ? 'REJECTED'
-              : 'ACCEPTED';
+          : row.moderation === 'REJECTED' || post?.moderation === 'REJECTED'
+            ? 'REJECTED'
+            : row.moderation === 'APPROVED' && e.body.type === 'HELP'
+              ? 'PUBLISHED'
+              : post?.moderation === 'APPROVED' && post.publishAt.getTime() <= now
+                ? 'PUBLISHED'
+                : 'ACCEPTED';
       receipts.push(
         await this.sync.issueObjectReceipt(
           e,
@@ -350,7 +355,7 @@ export class CommunityService {
           status === 'PUBLISHED'
             ? 'Published on CJP Swarm.'
             : status === 'ACCEPTED'
-              ? 'Received online; participant reports await review.'
+              ? 'Received online; awaiting review.'
               : 'This public statement is unavailable.',
           post?.id,
           {
@@ -362,7 +367,13 @@ export class CommunityService {
     }
     const ordered = new Map<string, (typeof visible)[number]>();
     const include = async (row: (typeof visible)[number]): Promise<void> => {
-      if (b.known.includes(row.id) || ordered.has(row.id) || ordered.size >= 100 || row.hidden)
+      if (
+        b.known.includes(row.id) ||
+        ordered.has(row.id) ||
+        ordered.size >= 100 ||
+        row.hidden ||
+        (row.moderation !== 'APPROVED' && row.authorId !== b.profile.body.id)
+      )
         return;
       const e = read(row.envelope),
         p = e.body.payload;
@@ -518,10 +529,57 @@ export class CommunityService {
   }
   async moderation(actor: Actor) {
     if (actor.role !== 'ADMIN') throw new ForbiddenException();
-    return this.db.communityEvent.findMany({
-      where: { type: { in: ['HELP', 'FLAG'] }, hidden: false, expiresAt: { gt: new Date() } },
-      orderBy: { receivedAt: 'desc' },
-      take: 100,
+    const rows = await this.db.communityEvent.findMany({
+      where: { type: 'HELP', hidden: false, expiresAt: { gt: new Date() } },
+      orderBy: [{ version: 'desc' }, { receivedAt: 'desc' }],
+      take: 500,
+    });
+    const latest = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) if (!latest.has(row.objectId)) latest.set(row.objectId, row);
+    return [...latest.values()]
+      .filter((row) => row.moderation === 'PENDING' || row.moderation === 'APPROVED')
+      .map((row) => {
+        const envelope = read(row.envelope);
+        if (envelope.body.type !== 'HELP') return null;
+        return {
+          id: row.id,
+          objectId: row.objectId,
+          version: row.version,
+          moderation: row.moderation,
+          authorName: envelope.body.author.body.name,
+          area: row.area,
+          receivedAt: row.receivedAt.toISOString(),
+          expiresAt: row.expiresAt.toISOString(),
+          help: envelope.body.payload.help,
+        };
+      })
+      .filter((row) => row !== null);
+  }
+  async moderateHelp(actor: Actor, id: string, action: 'APPROVED' | 'REJECTED') {
+    if (actor.role !== 'ADMIN') throw new ForbiddenException();
+    return this.db.atomic(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'community:object:' + id},0))`;
+      const latest = await tx.communityEvent.findFirst({
+        where: { objectId: id, type: 'HELP', hidden: false },
+        orderBy: { version: 'desc' },
+      });
+      if (!latest || latest.expiresAt <= new Date())
+        throw new ConflictException('This help request has expired or is no longer available.');
+      if (latest.moderation === action) return { ok: true, moderation: action };
+      await tx.communityEvent.updateMany({
+        where: { objectId: id, type: 'HELP' },
+        data: { moderation: action },
+      });
+      await audit(
+        tx,
+        action === 'APPROVED' ? 'COMMUNITY_HELP_APPROVED' : 'COMMUNITY_HELP_REJECTED',
+        'CommunityEvent',
+        id,
+        actor.id,
+        { moderation: latest.moderation, version: latest.version },
+        { moderation: action, version: latest.version },
+      );
+      return { ok: true, moderation: action };
     });
   }
   async hide(actor: Actor, id: string) {

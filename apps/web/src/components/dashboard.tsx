@@ -122,6 +122,10 @@ export function DashboardFrame({
   title?: string;
 }) {
   const { data: user, error, loading } = useResource<CurrentUser>('/auth/me'),
+    { data: platformConfig } = useResource<{ features?: { needs?: boolean } }>(
+      '/public/config',
+      true,
+    ),
     mutation = useMutation(),
     router = useRouter();
   useEffect(() => {
@@ -190,10 +194,12 @@ export function DashboardFrame({
           <PackageCheck size={17} />
           Deliveries & requests
         </Link>
-        <Link href="/dashboard/new">
-          <Plus size={17} />
-          Create a need
-        </Link>
+        {platformConfig?.features?.needs !== false && (
+          <Link href="/dashboard/new">
+            <Plus size={17} />
+            Create a need
+          </Link>
+        )}
         <Link href="/dashboard/post">
           <Radio size={17} />
           Publish an update
@@ -202,6 +208,12 @@ export function DashboardFrame({
           <Link href="/dashboard/manage">
             <Settings size={17} />
             Manage team
+          </Link>
+        )}
+        {user.role === 'ADMIN' && (
+          <Link href="/dashboard/admin">
+            <ShieldCheck size={17} />
+            Administration
           </Link>
         )}
       </nav>

@@ -1,6 +1,9 @@
 package org.saathi.android
 
 import android.app.Application
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -19,7 +22,7 @@ data class AppState(
     val requests: List<JSONObject> = emptyList(), val completed: List<JSONObject> = emptyList(), val posts: List<JSONObject> = emptyList(),
     val events: List<JSONObject> = emptyList(), val messages: List<JSONObject> = emptyList(), val files: List<JSONObject> = emptyList(), val drafts: List<JSONObject> = emptyList(), val donations: List<JSONObject> = emptyList(), val operations: List<JSONObject> = emptyList(),
     val preparation: JSONObject? = null, val account: JSONObject? = null, val dashboard: JSONObject? = null, val devices: List<JSONObject> = emptyList(), val savedAt: String? = null,
-    val reachable: Boolean = false, val authenticated: Boolean = false, val busy: Boolean = false, val notice: String? = null,
+    val reachable: Boolean = false, val needsEnabled: Boolean = true, val authenticated: Boolean = false, val busy: Boolean = false, val notice: String? = null,
     val nearbyStatus: String = "Ready to connect nearby", val connected: Boolean = false, val confirmed: Boolean = false, val media: Boolean = false,
     val peers: Map<String, String> = emptyMap(), val pairCode: String? = null, val localCode: String = "", val invitation: String = "",
     val fileOffer: JSONObject? = null, val incomingCall: Boolean? = null, val calling: Boolean = false, val callActive: Boolean = false,
@@ -35,7 +38,7 @@ data class AppState(
 
 class SaathiViewModel @JvmOverloads constructor(application: Application, storageScope:String=BuildConfig.ENVIRONMENT, startServices:Boolean=true) : AndroidViewModel(application) {
     val repository = Repository(application,storageScope)
-    private val mutable = MutableStateFlow(AppState(preferences=preferences()))
+    private val mutable = MutableStateFlow(AppState(preferences=preferences(), needsEnabled=repository.needsEnabled))
     private val preferenceVersions=mutableMapOf<String,Long>()
     private val localRefreshes=Channel<Unit>(Channel.CONFLATED)
     val state = mutable.asStateFlow()
@@ -56,6 +59,8 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     private var voiceFile: File? = null
     private var voiceTimeout: Job? = null
     private var healthCheck: Job? = null
+    private var reconnectCheck: Job? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var deliveryRetry: Job? = null
     private var lastChatAnnounceAt = 0L
     private var ringTimeout: Job? = null
@@ -174,7 +179,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
                 mutable.update { it.copy(requests=requests,completed=completed,posts=posts,savedAt=savedAt,authenticated=authenticated,
                     chatProfile=profile,chatContacts=contacts,conversations=conversations,chatMessages=chatMessages,chatPeer=peer,nearbyChannels=channels,
                     chatActions=actions,localHelp=help,participantReports=reports,chatPolicies=policies,chatBlocks=blocks,chatJoinInbox=joins,chatReportInbox=reportInbox,relayReservedBytes=reserved,
-                    events=events,messages=messages,files=files,drafts=drafts,donations=donations,operations=operations,preparation=preparation,account=account,confirmed=confirmed,media=media) }
+                    events=events,messages=messages,files=files,drafts=drafts,donations=donations,operations=operations,preparation=preparation,account=account,confirmed=confirmed,media=media,needsEnabled=repository.needsEnabled) }
             } catch (_: Exception) { notice("Saved information could not be unlocked. Do not clear app storage if you need to recover work.") }
     }
     fun refresh() = action { repository.refresh(); if (repository.preparation != null) loadDashboard();if(BuildConfig.CHAT_ENABLED){runCatching {chat.sync()};runCatching{community.sync()}} }
@@ -300,9 +305,40 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     private fun endMedia() { ringTimeout?.cancel(); session.callInProgress = false; if (wifiDelegate.isInitialized()) wifi.stopMedia(); mutable.update { it.copy(calling = false, callActive = false, incomingCall = null, video = false, quality = "") } }
     fun foregroundActive() {
         scheduleNearbyDeliveryRetries()
+        if (networkCallback == null && Build.VERSION.SDK_INT >= 24) {
+            val manager = getApplication<Application>().getSystemService(ConnectivityManager::class.java)
+            val callback = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) = checkRemoteFeatures()
+                override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                    if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) checkRemoteFeatures()
+                }
+            }
+            runCatching { manager.registerDefaultNetworkCallback(callback) }.onSuccess { networkCallback = callback }
+        }
         healthCheck?.cancel()
-        healthCheck = viewModelScope.launch { while (isActive) { delay(30000); repository.checkReachability(); if(BuildConfig.CHAT_ENABLED){if(repository.reachable){runCatching {chat.sync();chat.autoMedia()};runCatching{community.sync()}}; if(session.confirmed){val now=System.currentTimeMillis();if(now-lastChatAnnounceAt>=120_000){runCatching {chat.announce()};lastChatAnnounceAt=now};runCatching{community.announce()}}}; mutable.update { it.copy(reachable = repository.reachable) } } }
+        healthCheck = viewModelScope.launch { while (isActive) { delay(30000); refreshConnectionState() } }
     }
-    fun foregroundLost() { attachmentSync?.cancel();healthCheck?.cancel();deliveryRetry?.cancel(); nearby.stopScan();ble.stopScan();cancelVoice(); if (state.value.calling) hangup() }
+    private fun checkRemoteFeatures() {
+        if (reconnectCheck?.isActive == true) return
+        reconnectCheck = viewModelScope.launch { refreshConnectionState() }
+    }
+    private suspend fun refreshConnectionState() {
+        repository.checkReachability()
+        if (BuildConfig.CHAT_ENABLED) {
+            if (repository.reachable) { runCatching { chat.sync(); chat.autoMedia() }; runCatching { community.sync() } }
+            if (session.confirmed) {
+                val now = System.currentTimeMillis()
+                if (now - lastChatAnnounceAt >= 120_000) { runCatching { chat.announce() }; lastChatAnnounceAt = now }
+                runCatching { community.announce() }
+            }
+        }
+        mutable.update { it.copy(reachable = repository.reachable, needsEnabled = repository.needsEnabled) }
+    }
+    fun foregroundLost() {
+        attachmentSync?.cancel();healthCheck?.cancel();reconnectCheck?.cancel();deliveryRetry?.cancel()
+        networkCallback?.let { callback -> runCatching { getApplication<Application>().getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(callback) } }
+        networkCallback = null
+        nearby.stopScan();ble.stopScan();cancelVoice(); if (state.value.calling) hangup()
+    }
     override fun onCleared() { disconnect(); if (wifiDelegate.isInitialized()) wifi.release(); repository.store.close() }
 }

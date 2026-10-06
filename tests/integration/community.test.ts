@@ -16,11 +16,16 @@ import { S3Storage } from '../../apps/api/src/media/storage';
 import type { Actor } from '../../apps/api/src/auth/auth.service';
 let app: Awaited<ReturnType<typeof createApp>>, db: Database;
 const admin = { id: randomUUID(), role: 'ADMIN', memberships: [] } as unknown as Actor;
-async function sync(person: Person, events: CommunityEnvelope[] = [], known: string[] = []) {
+async function sync(
+  person: Person,
+  events: CommunityEnvelope[] = [],
+  known: string[] = [],
+  areas = ['Fictional Gate 2'],
+) {
   const r = await request(app.getHttpServer())
     .post('/api/v1/community/sync')
     .set('Origin', 'http://localhost:3000')
-    .send(await communityBatch(person, events, known));
+    .send(await communityBatch(person, events, known, areas));
   expect(r.status, r.body.message).toBe(201);
   return r.body;
 }
@@ -80,11 +85,20 @@ describe('Participant help and report publication on PostgreSQL', () => {
       .send(await communityBatch(reader, [], [], ['Fictional Gate 4']));
     expect(response.status).toBe(201);
     expect(
-      response.body.events
+      response.body.events.some((e: CommunityEnvelope) => e.body.objectId === help.body.id),
+    ).toBe(false);
+    const service = app.get(CommunityService);
+    expect(
+      (await service.moderation(admin)).find((row) => row.objectId === help.body.id)?.moderation,
+    ).toBe('PENDING');
+    await service.moderateHelp(admin, help.body.id, 'APPROVED');
+    const approved = await sync(reader, [], [], ['Fictional Gate 4']);
+    expect(
+      approved.events
         .map((e: CommunityEnvelope) => e.body.id)
         .filter((id: string) => [help.body.id, moved.body.id].includes(id)),
     ).toEqual([help.body.id, moved.body.id]);
-    expect(Buffer.byteLength(JSON.stringify(response.body))).toBeLessThan(262144);
+    expect(Buffer.byteLength(JSON.stringify(approved))).toBeLessThan(262144);
     const follow = await sync(reader, [], [help.body.id]);
     expect(follow.events.some((e: CommunityEnvelope) => e.body.id === moved.body.id)).toBe(true);
     await app.get(CommunityService).hide(admin, help.body.id);
@@ -92,6 +106,27 @@ describe('Participant help and report publication on PostgreSQL', () => {
     expect(hidden.events.some((e: CommunityEnvelope) => e.body.objectId === help.body.id)).toBe(
       false,
     );
+  });
+  it('keeps rejected help private and returns a rejection receipt to its author', async () => {
+    const author = await chatPerson('Private requester'),
+      reader = await chatPerson('Nearby reader');
+    const help = await communityEvent(author, 'HELP', {
+      version: 1,
+      previousHash: null,
+      help: helpPayload(),
+    });
+    await sync(author, [help]);
+    await app.get(CommunityService).moderateHelp(admin, help.body.id, 'REJECTED');
+    const publicSync = await sync(reader, [], [], ['Fictional Gate 2']);
+    expect(
+      publicSync.events.some((event: CommunityEnvelope) => event.body.id === help.body.id),
+    ).toBe(false);
+    const ownerSync = await sync(author, [], [help.body.id]);
+    expect(
+      ownerSync.receipts.find(
+        (receipt: { body: { eventId: string } }) => receipt.body.eventId === help.body.id,
+      ).body.status,
+    ).toBe('REJECTED');
   });
   it('enforces help duplicate/cooldown bounds, requester-owned revisions, offers and terminal state', async () => {
     const author = await chatPerson('Help requester'),
@@ -101,7 +136,11 @@ describe('Participant help and report publication on PostgreSQL', () => {
       previousHash: null,
       help: helpPayload(),
     });
-    expect((await sync(helper, [help])).accepted).toContain(help.body.id);
+    const unreviewed = await sync(helper, [help]);
+    expect(unreviewed.accepted).toContain(help.body.id);
+    expect(unreviewed.events.some((e: CommunityEnvelope) => e.body.id === help.body.id)).toBe(
+      false,
+    );
     expect((await sync(author, [help])).accepted).toContain(help.body.id);
     const duplicate = await communityEvent(author, 'HELP', {
       version: 1,
@@ -115,6 +154,12 @@ describe('Participant help and report publication on PostgreSQL', () => {
       help: helpPayload({ category: 'FOOD' }),
     });
     expect((await sync(author, [cooldown])).rejected[0].reason).toContain('one minute');
+    await app.get(CommunityService).moderateHelp(admin, help.body.id, 'APPROVED');
+    expect(
+      (await sync(helper, [], [], ['Fictional Gate 2'])).events.some(
+        (e: CommunityEnvelope) => e.body.id === help.body.id,
+      ),
+    ).toBe(true);
     const offer = await communityEvent(
       helper,
       'HELP_OFFER',

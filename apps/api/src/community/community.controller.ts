@@ -21,4 +21,18 @@ export class CommunityController {
   @Post('moderation/:id/hide') async hide(@Req() req: Request, @Param('id') id: string) {
     return this.community.hide(await this.auth.actor(req, true), z.string().uuid().parse(id));
   }
+  @Post('moderation/:id/approve') async approveHelp(@Req() req: Request, @Param('id') id: string) {
+    return this.community.moderateHelp(
+      await this.auth.actor(req, true),
+      z.string().uuid().parse(id),
+      'APPROVED',
+    );
+  }
+  @Post('moderation/:id/reject') async rejectHelp(@Req() req: Request, @Param('id') id: string) {
+    return this.community.moderateHelp(
+      await this.auth.actor(req, true),
+      z.string().uuid().parse(id),
+      'REJECTED',
+    );
+  }
 }

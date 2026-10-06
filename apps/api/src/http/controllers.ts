@@ -36,6 +36,7 @@ import { RequestsService } from '../requests/requests.service';
 import { DonationsService } from '../donations/donations.service';
 import { ManagementService } from '../management/management.service';
 import { MediaService, UploadFile } from '../media/media.service';
+import { platformFeatures } from '../public/platform-features';
 const uuid = z.string().uuid();
 @ApiTags('Public relief')
 @Controller('api/v1/public')
@@ -45,11 +46,12 @@ export class PublicController {
     @Inject(Database) private readonly db: Database,
     @Inject(ManagementService) private readonly management: ManagementService,
   ) {}
-  @Get('config') config() {
+  @Get('config') async config() {
     return {
       platformName: env.PLATFORM_NAME,
       demo: env.DEMO_MODE === 'true',
       reservationMinutes: env.RESERVATION_MINUTES,
+      features: await platformFeatures(this.db),
     };
   }
   @Get('requests')
@@ -351,6 +353,13 @@ export class ManagementController {
   }
   @Get('admin/audits') async audits(@Req() req: Request) {
     return this.management.audits(await this.auth.actor(req));
+  }
+  @Get('admin/features') async features(@Req() req: Request) {
+    return this.management.features(await this.auth.actor(req));
+  }
+  @Patch('admin/features/needs') async setNeedsFeature(@Req() req: Request, @Body() body: unknown) {
+    const b = z.object({ enabled: z.boolean() }).strict().parse(body);
+    return this.management.setNeedsFeature(await this.auth.actor(req, true), b.enabled);
   }
   @Get('admin/reports') async reports(@Req() req: Request) {
     return this.management.reports(await this.auth.actor(req));

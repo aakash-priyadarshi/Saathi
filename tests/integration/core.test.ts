@@ -14,6 +14,7 @@ import { MediaService, sanitizeImage } from '../../apps/api/src/media/media.serv
 import { ManagementService } from '../../apps/api/src/management/management.service';
 import { S3Storage } from '../../apps/api/src/media/storage';
 import { MediaWorker } from '../../apps/api/src/media/media-worker.service';
+import { PublicReadService } from '../../apps/api/src/public/public-read.service';
 import { mkdtemp, readFile, rm, utimes } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -153,6 +154,42 @@ describe('Real PostgreSQL core workflow', () => {
     expect((await db.mediaAsset.findUniqueOrThrow({ where: { id } })).processingState).toBe(
       'FAILED',
     );
+  });
+  it('lets only admins pause relief needs across public reads, creation and contributions', async () => {
+    const admin = await db.user.findUniqueOrThrow({
+      where: { email: 'admin@saathi.test' },
+      include: actorInclude,
+    });
+    const management = app.get(ManagementService);
+    const need = await makeNeed();
+    await expect(management.setNeedsFeature(volunteer, false)).rejects.toThrow();
+    await management.setNeedsFeature(admin, false);
+    try {
+      expect((await management.features(admin)).features.needs).toBe(false);
+      expect(await new PublicReadService(db).list()).toEqual([]);
+      await expect(requests.get(need.publicId)).rejects.toThrow('temporarily paused');
+      await expect(
+        requests.create(volunteer, {
+          reliefPointId: pointId,
+          category: 'WATER',
+          title: 'Paused request',
+          description: 'This must not enter public circulation.',
+          requestedQuantity: 5,
+          unit: 'bottles',
+          priority: 'NORMAL',
+          deadline: new Date(Date.now() + 3600000).toISOString(),
+        }),
+      ).rejects.toThrow('temporarily paused');
+      await expect(donations.reserve(need.publicId, 1, undefined, randomUUID())).rejects.toThrow(
+        'temporarily paused',
+      );
+      const config = await request(app.getHttpServer())
+        .get('/api/v1/public/config')
+        .set('Origin', origin);
+      expect(config.body.features.needs).toBe(false);
+    } finally {
+      await management.setNeedsFeature(admin, true);
+    }
   });
   it('prunes only aged unreferenced media while preserving references, fresh uploads and active work', async () => {
     expect(env.STORAGE_PROVIDER).toBe('local');

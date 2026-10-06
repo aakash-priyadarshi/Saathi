@@ -13,6 +13,7 @@ import { Prisma } from '@saathi/database';
 import { Database, audit, json } from '../database';
 import { AuthService, Actor } from '../auth/auth.service';
 import { closed, deriveStatus } from '../domain/request';
+import { platformFeatures } from '../public/platform-features';
 export { requestInclude, publicRequest, type ExpandedRequest } from '../public/public-read.service';
 import { requestInclude, publicRequest, PublicReadService } from '../public/public-read.service';
 @Injectable()
@@ -31,6 +32,8 @@ export class RequestsService {
     return this.publicRead.get(publicId);
   }
   async createIn(tx: Prisma.TransactionClient, actor: Actor, input: z.infer<typeof requestSchema>) {
+    if (!(await platformFeatures(tx)).needs)
+      throw new ForbiddenException('Relief needs are temporarily paused by an administrator.');
     const point = await tx.reliefPoint.findUnique({ where: { id: input.reliefPointId } });
     if (!point?.active) throw new BadRequestException('Select an active relief point.');
     this.auth.requireOrg(actor, point.organizationId);
@@ -83,6 +86,8 @@ export class RequestsService {
     publicId: string,
     input: z.infer<typeof editSchema>,
   ) {
+    if (!(await platformFeatures(tx)).needs)
+      throw new ForbiddenException('Relief needs are temporarily paused by an administrator.');
     await tx.$queryRaw`SELECT id FROM "ReliefRequest" WHERE "publicId"=${publicId} FOR UPDATE`;
     const r = await tx.reliefRequest.findUnique({ where: { publicId }, include: requestInclude });
     if (!r) throw new NotFoundException();

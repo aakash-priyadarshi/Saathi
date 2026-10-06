@@ -252,9 +252,17 @@ model CommunityEvent {
   receivedAt DateTime @default(now())
   expiresAt DateTime
   hidden Boolean @default(false)
+  moderation ModerationState @default(APPROVED)
   @@index([objectId, version])
   @@index([authorId, receivedAt])
   @@index([area, expiresAt])
+  @@index([type, moderation, expiresAt])
+}
+model PlatformSetting {
+  key String @id
+  value Json
+  updatedBy String?
+  updatedAt DateTime @updatedAt
 }
 model CommunityMediaChunk {
   mediaId String

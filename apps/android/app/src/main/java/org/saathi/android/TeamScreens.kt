@@ -41,13 +41,15 @@ import java.util.UUID
                 val prepared = state.preparation
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Notice("Prepared for ${prepared.getJSONObject("user").getString("displayName")}", "Last prepared ${timeLabel(prepared.getString("preparedAt"))}. Offline work stays pending until Swarm checks your current authority.", Icons.Outlined.CheckCircle)
-                    Button(onClick = { form("request") }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(8.dp)); Text("Create a relief request") }
+                    if (state.needsEnabled) Button(onClick = { form("request") }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(8.dp)); Text("Create a relief request") }
                     OutlinedButton(onClick = { form("field") }, modifier = Modifier.fillMaxWidth()) { Text("Write a field update") }
                     TextButton(onClick = { vm.action { vm.repository.prepare(); vm.loadDashboard(); vm.notice("Offline preparation refreshed.") } }, enabled = !state.busy) { Text("Refresh preparation and deliveries") }
                 }
             }
-            item { Text("My requests", style = MaterialTheme.typography.titleLarge) }
-            items(state.dashboard?.optJSONArray("requests")?.objects() ?: emptyList(), key = { it.getString("publicId") }) { need -> OutlinedCard(onClick = { form("update:" + need.toString()) }) { Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Text(need.getString("title"), style = MaterialTheme.typography.titleMedium); Text("${need.getString("publicId")} · ${need.getString("status")}", style = MaterialTheme.typography.bodySmall); Text("Edit a signed update", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge) } } }
+            if (state.needsEnabled) {
+                item { Text("My requests", style = MaterialTheme.typography.titleLarge) }
+                items(state.dashboard?.optJSONArray("requests")?.objects() ?: emptyList(), key = { it.getString("publicId") }) { need -> OutlinedCard(onClick = { form("update:" + need.toString()) }) { Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Text(need.getString("title"), style = MaterialTheme.typography.titleMedium); Text("${need.getString("publicId")} · ${need.getString("status")}", style = MaterialTheme.typography.bodySmall); Text("Edit a signed update", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge) } } }
+            }
             item { Text("Incoming deliveries", style = MaterialTheme.typography.titleLarge) }
             val deliveries = state.dashboard?.optJSONArray("deliveries")?.objects() ?: emptyList()
             items(deliveries, key = { it.getString("id") }) { delivery -> DeliveryCard(vm, delivery) }

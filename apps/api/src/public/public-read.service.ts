@@ -5,6 +5,7 @@ import { Prisma } from '@saathi/database';
 import type { PublicRequest, PublicPost } from '@saathi/types';
 import { Database } from '../database';
 import { closed } from '../domain/request';
+import { platformFeatures } from './platform-features';
 export const requestInclude = {
   organization: true,
   reliefPoint: true,
@@ -51,7 +52,16 @@ export function publicRequest(r: ExpandedRequest): PublicRequest {
 @Injectable()
 export class PublicReadService {
   constructor(private readonly db: Database) {}
+  async configuration() {
+    return {
+      platformName: env.PLATFORM_NAME,
+      demo: env.DEMO_MODE === 'true',
+      reservationMinutes: env.RESERVATION_MINUTES,
+      features: await platformFeatures(this.db),
+    };
+  }
   async list(completed = false, category?: string) {
+    if (!(await platformFeatures(this.db)).needs) return [];
     const where: Prisma.ReliefRequestWhereInput = {
       organization: { active: true, verified: true },
       status: completed ? 'COMPLETED' : { notIn: ['DRAFT', 'COMPLETED', 'CANCELLED', 'EXPIRED'] },
@@ -71,6 +81,8 @@ export class PublicReadService {
     ).map(publicRequest);
   }
   async get(publicId: string) {
+    if (!(await platformFeatures(this.db)).needs)
+      throw new NotFoundException('Relief needs are temporarily paused.');
     const r = await this.db.reliefRequest.findUnique({
       where: { publicId },
       include: requestInclude,

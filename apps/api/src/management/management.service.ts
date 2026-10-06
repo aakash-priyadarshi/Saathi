@@ -3,6 +3,7 @@ import { Database, audit } from '../database';
 import { Actor, AuthService } from '../auth/auth.service';
 import { requestInclude, publicRequest } from '../requests/requests.service';
 import { MediaService } from '../media/media.service';
+import { platformFeatures } from '../public/platform-features';
 @Injectable()
 export class ManagementService {
   constructor(
@@ -140,6 +141,41 @@ export class ManagementService {
   async organizations(actor: Actor) {
     if (actor.role !== 'ADMIN') throw new ForbiddenException();
     return this.db.organization.findMany({ orderBy: { name: 'asc' } });
+  }
+  async features(actor: Actor) {
+    if (actor.role !== 'ADMIN') throw new ForbiddenException();
+    const [features, setting] = await Promise.all([
+      platformFeatures(this.db),
+      this.db.platformSetting.findUnique({ where: { key: 'feature.needs' } }),
+    ]);
+    return { features, updatedAt: setting?.updatedAt.toISOString() ?? null };
+  }
+  async setNeedsFeature(actor: Actor, enabled: boolean) {
+    if (actor.role !== 'ADMIN') throw new ForbiddenException();
+    return this.db.atomic(async (tx) => {
+      const previous = await tx.platformSetting.findUnique({ where: { key: 'feature.needs' } });
+      const oldValue = previous?.value as { enabled?: boolean } | undefined;
+      if ((oldValue?.enabled ?? true) === enabled)
+        return {
+          features: { needs: enabled },
+          updatedAt: previous?.updatedAt.toISOString() ?? null,
+        };
+      const setting = await tx.platformSetting.upsert({
+        where: { key: 'feature.needs' },
+        create: { key: 'feature.needs', value: { enabled }, updatedBy: actor.id },
+        update: { value: { enabled }, updatedBy: actor.id },
+      });
+      await audit(
+        tx,
+        'PLATFORM_FEATURE_CHANGED',
+        'PlatformSetting',
+        'feature.needs',
+        actor.id,
+        { enabled: oldValue?.enabled ?? true },
+        { enabled },
+      );
+      return { features: { needs: enabled }, updatedAt: setting.updatedAt.toISOString() };
+    });
   }
   async createOrg(actor: Actor, name: string) {
     if (actor.role !== 'ADMIN') throw new ForbiddenException();

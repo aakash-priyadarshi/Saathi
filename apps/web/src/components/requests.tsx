@@ -170,6 +170,8 @@ export function FieldPost({ post: p, compact = false }: { post: PublicPost; comp
 }
 export function NeedsPage({ completed = false }: { completed?: boolean }) {
   const connection = useConnection();
+  const config = useResource<{ features?: { needs?: boolean } }>('/public/config', true);
+  const needsEnabled = config.data?.features?.needs !== false;
   const { data, error, loading, refresh, stale, savedAt } = useResource<PublicRequest[]>(
     `/public/requests${completed ? '?completed=true' : ''}`,
     true,
@@ -195,7 +197,9 @@ export function NeedsPage({ completed = false }: { completed?: boolean }) {
       <section className="intro">
         <div>
           <h1>
-            {completed ? (
+            {!needsEnabled ? (
+              <>Relief needs are paused.</>
+            ) : completed ? (
               <>
                 Help that made
                 <br />
@@ -210,9 +214,11 @@ export function NeedsPage({ completed = false }: { completed?: boolean }) {
             )}
           </h1>
           <p>
-            {completed
-              ? 'These needs have been met. Their pages stay available so every shared link tells the full story.'
-              : 'Find a verified need, give what you can, and see your help arrive. Together, we look after each other.'}
+            {!needsEnabled
+              ? 'Public relief requests and contributions are temporarily paused by the network administrator.'
+              : completed
+                ? 'These needs have been met. Their pages stay available so every shared link tells the full story.'
+                : 'Find a verified need, give what you can, and see your help arrive. Together, we look after each other.'}
           </p>
         </div>
         <div className="trust-note">
@@ -230,35 +236,45 @@ export function NeedsPage({ completed = false }: { completed?: boolean }) {
           </div>
         </div>
       </section>
-      <div className="section-title">
-        <div>
-          <h2>{completed ? 'Completed requests' : 'What’s needed now'}</h2>
-          <p>
-            {completed
-              ? 'Every delivery counts.'
-              : 'Choose a need. Your contribution can be any size.'}
-          </p>
+      {needsEnabled && (
+        <div className="section-title">
+          <div>
+            <h2>{completed ? 'Completed requests' : 'What’s needed now'}</h2>
+            <p>
+              {completed
+                ? 'Every delivery counts.'
+                : 'Choose a need. Your contribution can be any size.'}
+            </p>
+          </div>
+          <label className="search">
+            <Search size={17} />
+            <span className="sr-only">Search needs</span>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search needs or locations"
+            />
+          </label>
         </div>
-        <label className="search">
-          <Search size={17} />
-          <span className="sr-only">Search needs</span>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search needs or locations"
-          />
-        </label>
-      </div>
-      <div className="category-filters" aria-label="Filter needs by category">
-        {['ALL', ...categories].map((c) => (
-          <button key={c} aria-pressed={category === c} onClick={() => setCategory(c)}>
-            {c === 'ALL' ? 'All needs' : categoryLabels[c]}
-          </button>
-        ))}
-      </div>
+      )}
+      {needsEnabled && (
+        <div className="category-filters" aria-label="Filter needs by category">
+          {['ALL', ...categories].map((c) => (
+            <button key={c} aria-pressed={category === c} onClick={() => setCategory(c)}>
+              {c === 'ALL' ? 'All needs' : categoryLabels[c]}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="content-columns">
         <section aria-label="Relief requests">
-          {loading ? (
+          {!needsEnabled ? (
+            <div className="empty-state" role="status">
+              <PackageCheck size={32} />
+              <h3>Requests are temporarily paused</h3>
+              <p>Check back later for verified needs.</p>
+            </div>
+          ) : loading ? (
             <Loading />
           ) : error ? (
             <ErrorNotice message={error} retry={() => void refresh()} />
@@ -310,20 +326,22 @@ export function NeedsPage({ completed = false }: { completed?: boolean }) {
           </div>
         </aside>
       </div>
-      <div className="trust-note mobile-trust">
-        <ShieldCheck size={28} strokeWidth={1.5} />
-        <div>
-          <strong>Real needs. Verified teams.</strong>
-          <p>
-            Requests from approved volunteers.
-            <br />
-            Quantities kept up to date.
-          </p>
-          <Link href="/about" className="text-link">
-            How it works <ArrowRight size={14} />
-          </Link>
+      {needsEnabled && (
+        <div className="trust-note mobile-trust">
+          <ShieldCheck size={28} strokeWidth={1.5} />
+          <div>
+            <strong>Real needs. Verified teams.</strong>
+            <p>
+              Requests from approved volunteers.
+              <br />
+              Quantities kept up to date.
+            </p>
+            <Link href="/about" className="text-link">
+              How it works <ArrowRight size={14} />
+            </Link>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -340,7 +358,10 @@ export function LivePage() {
     <div className="page-wrap narrow">
       <div className="page-heading">
         <h1>From the field</h1>
-        <p>Reports from the field. Volunteer updates and unverified participant reports are labeled separately.</p>
+        <p>
+          Reports from the field. Volunteer updates and unverified participant reports are labeled
+          separately.
+        </p>
       </div>
       <div className="feed-status">
         <span className="live-dot" />
