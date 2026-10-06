@@ -6,6 +6,12 @@ export const MAX_CHANNEL_MEMBERS = 200;
 export const MAX_CHANNEL_POLICY_BYTES = 384 * 1024;
 export const MAX_CHAT_SYNC_BYTES = 900000;
 
+/** One limit for every photo/video/file path: uploads, reports, chat and nearby transfer. */
+export const MAX_MEDIA_BYTES = 250 * 1024 * 1024;
+/** Largest 8 KiB part index; 256 MiB leaves room for encryption overhead. */
+export const MAX_MEDIA_PART = 32767;
+/** Parts per signed HTTP request (1 MiB) keep a 250 MB upload to ~250 requests. */
+export const MAX_MEDIA_PARTS_PER_REQUEST = 128;
 export const participantIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const signature = z.string().regex(/^[A-Za-z0-9_-]{86}$/);
 const instant = z.string().datetime();
@@ -351,7 +357,7 @@ export const chatPayloadSchema = z
           'video/webm',
           'text/plain',
         ]),
-        size: z.number().int().min(1).max(16777188),
+        size: z.number().int().min(1).max(MAX_MEDIA_BYTES),
         hash: participantIdSchema,
         cipherHash: participantIdSchema,
         key: z.string().regex(/^[A-Za-z0-9_-]{43}$/),

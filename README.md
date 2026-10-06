@@ -63,7 +63,7 @@ for resource limits, original-author receipts and release gates.
 7. Completed needs leave the active feed. Their canonical pages and verification results explicitly say not to send more supplies.
 8. Optional donor notifications are recorded in the same database transaction. Resend delivery retries independently.
 
-Volunteers can publish text updates or upload photos/videos. Originals stay private. Images are re-encoded with Sharp; videos with FFmpeg. Sanitized media stays private until a coordinator approves the post; hiding removes its public derivatives. Automatic face detection/blur is not implemented: publishing guidance asks volunteers to check faces and personal information.
+Anyone can share photos/videos: volunteers, coordinators and admins from the portal, Android participants through signed reports, and guests without an account at `/share` (labelled unverified). Each file may be up to 250 MB, and videos have no length limit. Uploads arrive in resumable 8 MiB parts. Originals stay private. Images are re-encoded with Sharp; videos with FFmpeg. There is no approval step: sanitized media becomes public as soon as processing finishes. Coordinators and admins can still hide posts afterwards, which removes their public derivatives. Automatic face detection/blur is not implemented: publishing guidance asks volunteers to check faces and personal information.
 
 ## Architecture and repository
 

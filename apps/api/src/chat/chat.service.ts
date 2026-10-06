@@ -202,7 +202,7 @@ export class ChatService {
       b = request.body,
       now = Date.now(),
       id = b.profile.body.id;
-    if (bytes(request).length > 90000 || Math.abs(Date.parse(b.issuedAt) - now) > 300000)
+    if (bytes(request).length > 1500000 || Math.abs(Date.parse(b.issuedAt) - now) > 300000)
       throw new BadRequestException('Private attachment request bounds exceeded.');
     try {
       await validChatProfile(b.profile, now);
@@ -292,8 +292,9 @@ export class ChatService {
             const total = await tx.chatAttachment.aggregate({ _sum: { size: true } });
             if (
               own._count >= 50 ||
-              (own._sum.size ?? 0) + manifest.body.size > 64 * 1048576 ||
-              (total._sum.size ?? 0) + manifest.body.size > 512 * 1048576
+              // ponytail: ciphertext lives in PostgreSQL; move to object storage past these quotas.
+              (own._sum.size ?? 0) + manifest.body.size > 1024 * 1048576 ||
+              (total._sum.size ?? 0) + manifest.body.size > 8192 * 1048576
             )
               throw new BadRequestException('Private attachment storage quota reached.');
             if (await tx.chatAttachment.findUnique({ where: { id: manifest.body.id } }))

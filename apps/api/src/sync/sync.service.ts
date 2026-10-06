@@ -513,28 +513,29 @@ export class SyncService {
           ownerId: actor.id,
           organizationId: record.organizationId,
           fieldUpdateId: null,
-          processingState: 'READY',
+          processingState: { in: ['PENDING', 'PROCESSING', 'READY'] },
           moderation: { notIn: ['REJECTED', 'HIDDEN'] },
         },
       });
       if (assets.length !== newIds.length)
         throw new BadRequestException(
-          'Media must be sanitized, belong to the original author, and not already be attached.',
+          'Media must belong to the original author, not have failed processing, and not already be attached.',
         );
       await tx.fieldUpdate.update({
         where: { id: post.id },
-        data: { media: { connect: assets.map((a) => ({ id: a.id })) }, moderation: 'PENDING' },
+        data: { media: { connect: assets.map((a) => ({ id: a.id })) } },
       });
+      await this.requests.attachApproved(tx, newIds);
       const receipt = await this.receipt(
         record.envelope as unknown as Envelope,
-        'ACCEPTED',
-        'Media reached Saathi. The field update is waiting for moderation.',
+        previous.body.status,
+        'Media reached Saathi. It appears on the update once processing finishes.',
         previous.body.publicId,
         post.id,
       );
       await tx.offlineEvent.update({
         where: { id },
-        data: { receipt: json(receipt), status: 'ACCEPTED' },
+        data: { receipt: json(receipt), status: receipt.body.status },
       });
       await audit(tx, 'OFFLINE_MEDIA_ATTACHED', 'FieldUpdate', post.id, actor.id, undefined, {
         mediaIds: newIds,

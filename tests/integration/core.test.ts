@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, describe, it, expect } from 'vitest';
 import request from 'supertest';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { createApp } from '../../apps/api/src/app';
 import { Database } from '../../apps/api/src/database';
 import { AuthService, actorInclude, Actor } from '../../apps/api/src/auth/auth.service';
@@ -15,7 +15,7 @@ import { ManagementService } from '../../apps/api/src/management/management.serv
 import { S3Storage } from '../../apps/api/src/media/storage';
 import { MediaWorker } from '../../apps/api/src/media/media-worker.service';
 import { PublicReadService } from '../../apps/api/src/public/public-read.service';
-import { mkdtemp, readFile, rm, utimes } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFile } from 'node:child_process';
@@ -39,6 +39,20 @@ let app: Awaited<ReturnType<typeof createApp>>,
   doctor: Actor;
 let pointId: string;
 const origin = 'http://localhost:3000';
+/** Uploads arrive on disk (multer or assembled parts), so tests hand the service a file. */
+async function onDisk(bytes: Buffer) {
+  const path = join(await mkdtemp(join(tmpdir(), 'saathi-upload-test-')), 'file');
+  await writeFile(path, bytes);
+  return { path, size: bytes.length };
+}
+async function ready(id: string) {
+  for (let i = 0; i < 300; i++) {
+    const row = await db.mediaAsset.findUniqueOrThrow({ where: { id } });
+    if (row.processingState !== 'PENDING') return row;
+    await new Promise((done) => setTimeout(done, 100));
+  }
+  throw new Error('Media processing did not finish.');
+}
 async function login(email: string) {
   const response = await request(app.getHttpServer())
     .post('/api/v1/auth/login')
@@ -149,6 +163,12 @@ describe('Real PostgreSQL core workflow', () => {
         processingStartedAt: new Date(Date.now() - 11 * 60 * 1000),
         processingLease: randomUUID(),
       },
+    });
+    // Long videos may legitimately encode for hours; an 11-minute run is not stale.
+    expect((await worker.reconcile()).count).toBe(0);
+    await db.mediaAsset.update({
+      where: { id },
+      data: { processingStartedAt: new Date(Date.now() - 5 * 60 * 60 * 1000) },
     });
     expect((await worker.reconcile()).count).toBe(1);
     expect((await db.mediaAsset.findUniqueOrThrow({ where: { id } })).processingState).toBe(
@@ -492,7 +512,7 @@ describe('Real PostgreSQL core workflow', () => {
     expect((await requests.get(first.body.publicId!)).status).toBe('CANCELLED');
     expect((await sync.ingest(envelope, randomUUID())).body.status).toBe('INVALIDATED');
   });
-  it('attaches later media to the original offline field post and propagates moderation and withdrawal', async () => {
+  it('attaches later media to the original offline field post without approval and propagates withdrawal', async () => {
     const { sync, keys, device } = await signedNeed();
     const envelope = await createEnvelope(
       {
@@ -518,23 +538,17 @@ describe('Real PostgreSQL core workflow', () => {
       .toBuffer();
     const asset = await app
       .get(MediaService)
-      .upload(volunteer, volunteer.memberships[0]!.organizationId, {
-        buffer: bytes,
-        size: bytes.length,
-      });
+      .upload(volunteer, volunteer.memberships[0]!.organizationId, await onDisk(bytes));
     await expect(sync.attachMedia(doctor, envelope.body.id, [asset.id])).rejects.toMatchObject({
       status: 403,
     });
-    const pending = await sync.attachMedia(volunteer, envelope.body.id, [asset.id]);
-    expect(pending.body.status).toBe('ACCEPTED');
-    expect((await requests.feed()).some((post) => post.id === receipt.body.fieldId)).toBe(false);
+    const attached = await sync.attachMedia(volunteer, envelope.body.id, [asset.id]);
+    expect(attached.body.status).toBe('PUBLISHED');
+    expect(
+      (await requests.feed()).find((post) => post.id === receipt.body.fieldId)?.media,
+    ).toHaveLength(1);
     await sync.attachMedia(volunteer, envelope.body.id, [asset.id]);
     expect(await db.mediaAsset.count({ where: { fieldUpdateId: receipt.body.fieldId } })).toBe(1);
-    const coordinator = await db.user.findUniqueOrThrow({
-      where: { email: 'coordinator@saathi.test' },
-      include: actorInclude,
-    });
-    await app.get(ManagementService).moderate(coordinator, receipt.body.fieldId!, 'APPROVED');
     const published = (await sync.receipts([envelope.body.id]))[0]!;
     expect(published.body.status).toBe('PUBLISHED');
     expect(await validReceipt(published, sync.receiptKey().publicKey, envelope)).toBe(true);
@@ -866,7 +880,7 @@ describe('Real PostgreSQL core workflow', () => {
   it('rejects organization spoofing using server-side membership', () => {
     expect(() => auth.requireOrg(volunteer, doctor.memberships[0]!.organizationId)).toThrow();
   });
-  it('sanitizes image metadata and keeps media private until approved, then removes hidden derivatives', async () => {
+  it('sanitizes image metadata, publishes media without approval, then removes hidden derivatives', async () => {
     const bytes = await sharp({
       create: { width: 40, height: 30, channels: 3, background: '#216352' },
     })
@@ -883,10 +897,11 @@ describe('Real PostgreSQL core workflow', () => {
     const media = app.get(MediaService),
       management = app.get(ManagementService),
       storage = app.get(S3Storage);
-    const a = await media.upload(volunteer, volunteer.memberships[0]!.organizationId, {
-      buffer: bytes,
-      size: bytes.length,
-    });
+    const a = await media.upload(
+      volunteer,
+      volunteer.memberships[0]!.organizationId,
+      await onDisk(bytes),
+    );
     const row = await db.mediaAsset.findUniqueOrThrow({ where: { id: a.id } });
     expect(row.processingState).toBe('READY');
     const safe = await storage.readPrivate(row.publicKey!);
@@ -895,22 +910,121 @@ describe('Real PostgreSQL core workflow', () => {
     expect(meta.icc).toBeUndefined();
     await expect(storage.readPublic(row.publicKey!)).rejects.toThrow();
     const p = await requests.publish(volunteer, {
-      caption: 'A demo media post awaiting approval.',
+      caption: 'A demo media post published without approval.',
       reliefPointId: pointId,
       mediaIds: [a.id],
     });
-    expect(p.moderation).toBe('PENDING');
-    expect((await requests.feed()).some((item) => item.id === p.id)).toBe(false);
+    expect(p.moderation).toBe('APPROVED');
+    expect((await requests.feed()).find((item) => item.id === p.id)?.media).toHaveLength(1);
     const coordinator = await db.user.findUniqueOrThrow({
       where: { email: 'coordinator@saathi.test' },
       include: actorInclude,
     });
-    await management.moderate(coordinator, p.id, 'APPROVED');
-    expect((await requests.feed()).find((item) => item.id === p.id)?.media).toHaveLength(1);
     expect((await storage.readPublic(row.publicKey!)).length).toBeGreaterThan(0);
     await management.moderate(coordinator, p.id, 'HIDDEN');
     expect((await requests.feed()).some((item) => item.id === p.id)).toBe(false);
     await expect(storage.readPublic(row.publicKey!)).rejects.toThrow();
+  });
+  it('lets a guest share a multi-part upload over HTTP with no account and no approval', async () => {
+    const server = app.getHttpServer(),
+      token = randomBytes(32).toString('base64url'),
+      other = randomBytes(32).toString('base64url');
+    // Incompressible pixels give a PNG larger than one 8 MiB upload part.
+    const bytes = await sharp(randomBytes(1800 * 1800 * 3), {
+      raw: { width: 1800, height: 1800, channels: 3 },
+    })
+      .png({ compressionLevel: 0 })
+      .toBuffer();
+    expect(bytes.length).toBeGreaterThan(8 * 1024 * 1024);
+    const tooLarge = await request(server)
+      .post('/api/v1/uploads')
+      .set('Origin', origin)
+      .set('X-Upload-Token', token)
+      .send({ size: 250 * 1024 * 1024 + 1 });
+    expect(tooLarge.status).toBe(400);
+    const begin = await request(server)
+      .post('/api/v1/uploads')
+      .set('Origin', origin)
+      .set('X-Upload-Token', token)
+      .send({ size: bytes.length });
+    expect(begin.status, begin.body.message).toBe(201);
+    expect(begin.body.parts).toBe(2);
+    const part = (index: number, owner: string) =>
+      request(server)
+        .put(`/api/v1/uploads/${begin.body.uploadId}/parts/${index}`)
+        .set('Origin', origin)
+        .set('X-Upload-Token', owner)
+        .set('Content-Type', 'application/octet-stream')
+        .send(bytes.subarray(index * begin.body.partSize, (index + 1) * begin.body.partSize));
+    expect((await part(0, other)).status).toBe(404);
+    expect((await part(0, token)).status).toBe(200);
+    const early = await request(server)
+      .post(`/api/v1/uploads/${begin.body.uploadId}/complete`)
+      .set('Origin', origin)
+      .set('X-Upload-Token', token);
+    expect(early.status).toBe(400);
+    expect((await part(1, token)).status).toBe(200);
+    const done = await request(server)
+      .post(`/api/v1/uploads/${begin.body.uploadId}/complete`)
+      .set('Origin', origin)
+      .set('X-Upload-Token', token);
+    expect(done.status, done.body.message).toBe(201);
+    expect(done.body.processingState).toBe('READY');
+    const post = (owner: string, caption: string) =>
+      request(server)
+        .post('/api/v1/guest/posts')
+        .set('Origin', origin)
+        .set('X-Upload-Token', owner)
+        .send({ caption, area: 'Fictional Gate 4', mediaIds: [done.body.id] });
+    expect((await post(other, 'Fictional flooding near the gate')).status).toBe(400);
+    expect((await post(token, 'Call me on +91 98765 43210')).status).toBe(400);
+    const shared = await post(token, 'Fictional flooding near the gate');
+    expect(shared.status, shared.body.message).toBe(201);
+    const item = (await requests.feed()).find((p) => p.id === shared.body.id);
+    expect(item?.verificationState).toBe('PARTICIPANT');
+    expect(item?.author.displayName).toBe('Guest');
+    expect(item?.media).toHaveLength(1);
+    expect(await db.mediaAsset.count({ where: { id: begin.body.uploadId } })).toBe(0);
+  });
+  it('keeps the full length of a video longer than the former two-minute cut', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'saathi-long-video-'));
+    try {
+      const binary = createRequire(resolve('apps/api/package.json'))('ffmpeg-static') as string,
+        source = join(dir, 'long.mp4');
+      const run = (args: string[]) =>
+        promisify(execFile)(binary, args, { windowsHide: true }).catch(
+          (error: { stderr?: string }) => ({ stderr: error.stderr ?? '' }),
+        );
+      await run([
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=blue:s=64x48:r=2:d=150',
+        '-c:v',
+        'libx264',
+        '-threads',
+        '1',
+        source,
+      ]);
+      const a = await app
+        .get(MediaService)
+        .upload(
+          volunteer,
+          volunteer.memberships[0]!.organizationId,
+          await onDisk(await readFile(source)),
+        );
+      const row = await ready(a.id);
+      expect(row.processingState).toBe('READY');
+      const output = join(dir, 'sanitized.mp4');
+      await writeFile(output, await app.get(S3Storage).readPrivate(row.publicKey!));
+      // ffmpeg -i with no output exits non-zero but prints the input duration.
+      const { stderr } = await run(['-i', output]);
+      const [, m, sec] = /Duration: 00:(\d\d):(\d\d)/.exec(stderr) ?? [];
+      expect(Number(m) * 60 + Number(sec)).toBeGreaterThanOrEqual(149);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
   it('rejects executable content disguised as a photo', async () => {
     await expect(sanitizeImage(Buffer.from('<script>malicious</script>'))).rejects.toThrow();
@@ -943,11 +1057,10 @@ describe('Real PostgreSQL core workflow', () => {
       const bytes = await readFile(source);
       const a = await app
         .get(MediaService)
-        .upload(volunteer, volunteer.memberships[0]!.organizationId, {
-          buffer: bytes,
-          size: bytes.length,
-        });
-      const row = await db.mediaAsset.findUniqueOrThrow({ where: { id: a.id } });
+        .upload(volunteer, volunteer.memberships[0]!.organizationId, await onDisk(bytes));
+      // Videos have no length limit, so inline mode finishes them in the background.
+      expect(a.processingState).toBe('PENDING');
+      const row = await ready(a.id);
       expect(row.mimeType).toBe('video/mp4');
       expect(row.processingState).toBe('READY');
       const sanitized = await app.get(S3Storage).readPrivate(row.publicKey!);

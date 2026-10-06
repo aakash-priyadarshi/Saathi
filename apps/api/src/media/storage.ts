@@ -5,6 +5,7 @@ import {
   HeadBucketCommand,
   PutObjectCommand,
   GetObjectCommand,
+  CopyObjectCommand,
   DeleteObjectCommand,
   PutBucketPolicyCommand,
   ListObjectsV2Command,
@@ -12,11 +13,25 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { env } from '@saathi/config';
 import { resolve, dirname } from 'node:path';
-import { mkdir, readFile, writeFile, unlink, readdir, lstat } from 'node:fs/promises';
+import {
+  mkdir,
+  readFile,
+  writeFile,
+  unlink,
+  readdir,
+  lstat,
+  copyFile,
+  stat,
+} from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
+import type { Readable } from 'node:stream';
 import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
 export interface MediaStorageProvider {
   putPrivate(key: string, bytes: Buffer, mime: string): Promise<void>;
+  putPrivateFile(key: string, file: string, mime: string): Promise<void>;
   readPrivate(key: string): Promise<Buffer>;
+  downloadPrivate(key: string, file: string): Promise<void>;
   deletePrivate(key: string): Promise<void>;
   publish(key: string, mime: string): Promise<void>;
   hide(key: string): Promise<void>;
@@ -138,6 +153,32 @@ export class S3Storage implements MediaStorageProvider {
       }),
     );
   }
+  /** Streams from disk so a 250 MB upload never sits in memory. */
+  async putPrivateFile(key: string, file: string, mime: string) {
+    if (this.provider === 'local') {
+      const path = this.path('private', key);
+      await mkdir(dirname(path), { recursive: true });
+      await copyFile(file, path);
+      return;
+    }
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: env.S3_PRIVATE_BUCKET,
+        Key: key,
+        Body: createReadStream(file),
+        ContentLength: (await stat(file)).size,
+        ContentType: mime,
+      }),
+    );
+  }
+  async downloadPrivate(key: string, file: string) {
+    if (this.provider === 'local') return copyFile(this.path('private', key), file);
+    const r = await this.client.send(
+      new GetObjectCommand({ Bucket: env.S3_PRIVATE_BUCKET, Key: key }),
+    );
+    if (!r.Body) throw new Error('Empty storage object');
+    await pipeline(r.Body as Readable, createWriteStream(file));
+  }
   async readPrivate(key: string) {
     if (this.provider === 'local') return readFile(this.path('private', key));
     const r = await this.client.send(
@@ -147,18 +188,19 @@ export class S3Storage implements MediaStorageProvider {
     return Buffer.from(await r.Body.transformToByteArray());
   }
   async publish(key: string, mime: string) {
-    const bytes = await this.readPrivate(key);
     if (this.provider === 'local') {
       const path = this.path('public', key);
       await mkdir(dirname(path), { recursive: true });
-      await writeFile(path, bytes);
+      await copyFile(this.path('private', key), path);
       return;
     }
+    // Server-side copy: large videos never pass through the API process.
     await this.client.send(
-      new PutObjectCommand({
+      new CopyObjectCommand({
         Bucket: env.S3_PUBLIC_BUCKET,
         Key: key,
-        Body: bytes,
+        CopySource: `${env.S3_PRIVATE_BUCKET}/${key}`,
+        MetadataDirective: 'REPLACE',
         ContentType: mime,
         CacheControl: 'no-store',
       }),
@@ -175,6 +217,9 @@ export class S3Storage implements MediaStorageProvider {
   }
   async readPublic(key: string) {
     return readFile(this.path('public', key));
+  }
+  publicPath(key: string) {
+    return this.path('public', key);
   }
   async signedOriginal(key: string) {
     if (this.provider === 'local') {

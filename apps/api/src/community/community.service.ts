@@ -1,5 +1,8 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import { open, mkdtemp, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import {
   bytes,
   hash,
@@ -15,6 +18,10 @@ import { Database, json, audit } from '../database';
 import { SyncService } from '../sync/sync.service';
 import { MediaService } from '../media/media.service';
 import { S3Storage } from '../media/storage';
+// ponytail: database-held media; move to object storage if these quotas need to grow further.
+const MEDIA_QUOTA_BYTES = 8 * 1024 * 1024 * 1024,
+  AUTHOR_QUOTA_BYTES = 1024 * 1024 * 1024,
+  RECEIVING_QUOTA_BYTES = 2 * 1024 * 1024 * 1024;
 import type { Actor } from '../auth/auth.service';
 type Tx = Prisma.TransactionClient;
 const read = (v: unknown) => v as CommunityEnvelope;
@@ -168,8 +175,8 @@ export class CommunityService {
           _sum: { size: true },
         });
         if (
-          (global._sum.size ?? 0) + m.size > 512 * 1048576 ||
-          (authored._sum.size ?? 0) + m.size > 64 * 1048576
+          (global._sum.size ?? 0) + m.size > MEDIA_QUOTA_BYTES ||
+          (authored._sum.size ?? 0) + m.size > AUTHOR_QUOTA_BYTES
         )
           throw new BadRequestException(
             'Public media storage quota reached. Contact a moderator to review retained media.',
@@ -185,6 +192,9 @@ export class CommunityService {
             contentWarning: b.payload.contentWarning,
             createdAt: new Date(b.createdAt),
             receivedAt: new Date(now),
+            // Reports need no approval; media shows once it arrives and is sanitized.
+            moderation: 'APPROVED',
+            publishedAt: new Date(now),
             media: {
               create: {
                 id: m.id,
@@ -192,6 +202,7 @@ export class CommunityService {
                 originalKey: `original/${m.id}`,
                 size: m.size,
                 mimeType: m.mime,
+                moderation: 'APPROVED',
                 processingState: 'RECEIVING',
               },
             },
@@ -207,6 +218,8 @@ export class CommunityService {
             contentWarning: b.payload.contentWarning,
             createdAt: new Date(b.createdAt),
             receivedAt: new Date(now),
+            moderation: 'APPROVED',
+            publishedAt: new Date(now),
           },
         });
     } else if (b.type === 'WITHDRAW') {
@@ -439,7 +452,7 @@ export class CommunityService {
       b = request.body,
       now = Date.now();
     if (
-      bytes(request).length > 90000 ||
+      bytes(request).length > 1500000 ||
       Math.abs(Date.parse(b.issuedAt) - now) > 300000 ||
       !(await validChatProfile(b.profile, now)) ||
       !(await verify(b, request.signature, b.profile.body.publicKey))
@@ -461,14 +474,14 @@ export class CommunityService {
       await tx.communityMediaChunk.deleteMany({ where: { expiresAt: { lte: new Date(now) } } });
       const usage = await tx.$queryRaw<
         { size: bigint }[]
-      >`SELECT COALESCE(SUM(octet_length(data)),0)::bigint AS size FROM "CommunityMediaChunk"`;
+      >`SELECT (COUNT(*) * 8192)::bigint AS size FROM "CommunityMediaChunk"`;
       const own = await tx.mediaAsset.aggregate({
         where: { ownerId: row.authorId, processingState: 'RECEIVING' },
         _sum: { size: true },
       });
       if (
-        Number(usage[0]!.size) + b.chunks.length * 8192 > 512 * 1048576 ||
-        (own._sum.size ?? 0) > 64 * 1048576
+        Number(usage[0]!.size) + b.chunks.length * 8192 > RECEIVING_QUOTA_BYTES ||
+        (own._sum.size ?? 0) > AUTHOR_QUOTA_BYTES
       )
         throw new BadRequestException('Public media storage quota reached.');
       const count = Math.ceil(m.size / 8192),
@@ -493,39 +506,101 @@ export class CommunityService {
             data: { mediaId: m.id, index: part.index, data, expiresAt: new Date(now + 86400000) },
           });
       }
-      const parts = await tx.communityMediaChunk.findMany({
-          where: { mediaId: m.id },
-          orderBy: { index: 'asc' },
-        }),
-        missing = Array.from({ length: count }, (_, i) => i).filter(
-          (i) => !parts.some((p) => p.index === i),
-        );
+      // Only indices here: loading every chunk's bytes per request would be quadratic.
+      const have = new Set(
+          (
+            await tx.communityMediaChunk.findMany({
+              where: { mediaId: m.id },
+              select: { index: true },
+            })
+          ).map((p) => p.index),
+        ),
+        missing = Array.from({ length: count }, (_, i) => i).filter((i) => !have.has(i));
       if (missing.length) return { mediaId: m.id, missing, complete: false };
-      const raw = Buffer.concat(parts.map((p) => Buffer.from(p.data)));
-      if (raw.length !== m.size || createHash('sha256').update(raw).digest('hex') !== m.hash) {
-        await tx.communityMediaChunk.deleteMany({ where: { mediaId: m.id } });
-        return {
-          mediaId: m.id,
-          missing: Array.from({ length: count }, (_, i) => i),
-          complete: false,
-          invalidHash: true,
-        };
-      }
-      await this.storage.initializeLocal();
-      await this.storage.putPrivate(asset.originalKey, raw, 'application/octet-stream');
-      await tx.mediaAsset.update({ where: { id: m.id }, data: { processingState: 'PENDING' } });
-      await tx.communityMediaChunk.deleteMany({ where: { mediaId: m.id } });
-      return { mediaId: m.id, missing: [] as number[], complete: true };
+      return { mediaId: m.id, missing, complete: false, assemble: true };
     });
-    if (result.complete) {
-      const asset = await this.db.mediaAsset.findUniqueOrThrow({ where: { id: result.mediaId } });
-      if (
-        asset.processingState === 'PENDING' &&
-        (await import('@saathi/config')).env.MEDIA_PROCESSING_MODE === 'inline'
-      )
-        await this.media.process(asset.id);
+    if ('assemble' in result) {
+      const assembled = await this.assemble(b.reportId, result.mediaId);
+      if (!assembled.complete) return assembled;
+    } else if (!result.complete) return result;
+    const asset = await this.db.mediaAsset.findUniqueOrThrow({ where: { id: result.mediaId } });
+    if (
+      asset.processingState === 'PENDING' &&
+      (await import('@saathi/config')).env.MEDIA_PROCESSING_MODE === 'inline'
+    ) {
+      // Long videos outlast the carrier's request; they finish in the background.
+      if (asset.mimeType === 'video/mp4')
+        void this.media.process(asset.id).catch(() =>
+          this.db.mediaAsset.update({
+            where: { id: asset.id },
+            data: { processingState: 'FAILED' },
+          }),
+        );
+      else await this.media.process(asset.id);
     }
-    return result;
+    return { mediaId: result.mediaId, missing: [] as number[], complete: true };
+  }
+  /** Joins all parts outside the short chunk transaction; 250 MB needs more than 15 seconds. */
+  private async assemble(reportId: string, mediaId: string) {
+    return this.db.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'community:object:' + reportId},0))`;
+        const asset = await tx.mediaAsset.findUniqueOrThrow({ where: { id: mediaId } });
+        if (asset.processingState !== 'RECEIVING')
+          return { mediaId, missing: [] as number[], complete: true };
+        const row = await tx.communityEvent.findUniqueOrThrow({ where: { id: reportId } });
+        const e = read(row.envelope);
+        if (e.body.type !== 'REPORT' || !e.body.payload.media)
+          throw new BadRequestException('This report has no media.');
+        const m = e.body.payload.media,
+          count = Math.ceil(m.size / 8192);
+        const dir = await mkdtemp(join(tmpdir(), 'saathi-report-'));
+        try {
+          const file = join(dir, 'original'),
+            out = await open(file, 'w'),
+            digest = createHash('sha256');
+          let size = 0,
+            next = 0;
+          try {
+            for (let from = 0; from < count; from += 512) {
+              const batch = await tx.communityMediaChunk.findMany({
+                where: { mediaId, index: { gte: from, lt: from + 512 } },
+                orderBy: { index: 'asc' },
+              });
+              for (const p of batch) {
+                if (p.index !== next++) break;
+                const data = Buffer.from(p.data);
+                digest.update(data);
+                size += data.length;
+                await out.write(data);
+              }
+            }
+          } finally {
+            await out.close();
+          }
+          if (size !== m.size || digest.digest('hex') !== m.hash) {
+            await tx.communityMediaChunk.deleteMany({ where: { mediaId } });
+            return {
+              mediaId,
+              missing: Array.from({ length: count }, (_, i) => i),
+              complete: false,
+              invalidHash: true,
+            };
+          }
+          await this.storage.initializeLocal();
+          await this.storage.putPrivateFile(asset.originalKey, file, 'application/octet-stream');
+        } finally {
+          await rm(dir, { recursive: true, force: true });
+        }
+        await tx.mediaAsset.update({
+          where: { id: mediaId },
+          data: { processingState: 'PENDING' },
+        });
+        await tx.communityMediaChunk.deleteMany({ where: { mediaId } });
+        return { mediaId, missing: [] as number[], complete: true };
+      },
+      { timeout: 10 * 60 * 1000, maxWait: 15000 },
+    );
   }
   async moderation(actor: Actor) {
     if (actor.role !== 'ADMIN') throw new ForbiddenException();

@@ -18,7 +18,7 @@ import { authorEvent, syncEvents } from '../lib/offline/sync';
 import { useConnection } from './connectivity-provider';
 import { EventStatus, downloadJson } from './connectivity-page';
 import { formatDate } from '../lib/api';
-import { api, write } from '../lib/api';
+import { api, write, uploadMedia, MAX_MEDIA_BYTES } from '../lib/api';
 import { acceptReceipt } from '../lib/offline/sync';
 import type { Receipt } from '@saathi/protocol';
 type Draft = {
@@ -160,13 +160,8 @@ export function OfflineWorkspace() {
       const database = await db(),
         ids: string[] = JSON.parse(draft.values.uploadedIds ?? '[]');
       for (let index = ids.length; index < (draft.media?.length ?? 0); index++) {
-        const form = new FormData();
-        form.set('file', draft.media![index]!);
-        form.set('organizationId', event.envelope.body.organizationId);
-        const result = await api<{ id: string }>('/volunteer/media', {
-          method: 'POST',
-          body: form,
-          signal: AbortSignal.timeout(150000),
+        const result = await uploadMedia(draft.media![index]!, {
+          organizationId: event.envelope.body.organizationId,
         });
         ids.push(result.id);
         draft = { ...draft, values: { ...draft.values, uploadedIds: JSON.stringify(ids) } };
@@ -184,7 +179,7 @@ export function OfflineWorkspace() {
       }
       changed();
       setNotice(
-        'Media reached Swarm and is waiting for moderation. The original field post is used.',
+        'Media reached Swarm. It appears on the original field post once processing finishes.',
       );
     } catch (e) {
       setError(
@@ -271,8 +266,8 @@ export function OfflineWorkspace() {
                     disabled={Boolean(values.relatedEventId)}
                     onChange={(e) => {
                       const selected = Array.from(e.target.files ?? []);
-                      if (selected.length > 4 || selected.some((f) => f.size > 25 * 1024 * 1024)) {
-                        setError('Choose up to four files, each below 25 MB.');
+                      if (selected.length > 4 || selected.some((f) => f.size > MAX_MEDIA_BYTES)) {
+                        setError('Choose up to four files, each 250 MB or smaller.');
                         return;
                       }
                       setFiles(selected);
@@ -282,7 +277,7 @@ export function OfflineWorkspace() {
                 {files.length > 0 && (
                   <p className="form-hint">
                     {files.length} originals stay privately on this phone. Text can travel first.
-                    Media still needs Swarm’s sanitization and moderation.
+                    Media is sanitized by Swarm, then published without an approval step.
                   </p>
                 )}
               </>

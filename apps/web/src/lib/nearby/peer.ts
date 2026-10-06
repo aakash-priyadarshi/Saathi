@@ -142,13 +142,15 @@ export class LocalPeer implements SaathiPeerTransport {
     };
     if (channel.readyState === 'open') void open();
   }
-  announce() {
-    return this.send('HELLO', {
+  async announce() {
+    await this.send('HELLO', {
       protocol: 1,
       maxFrame: 24000,
       media: Boolean(navigator.mediaDevices?.getUserMedia),
       files: true,
     });
+    // Tells native peers this browser accepts files up to 250 MB.
+    await this.send('NATIVE_CAPS', { largeFiles: true });
   }
   private async description(type: 'offer' | 'answer') {
     const pc = this.pc!;
