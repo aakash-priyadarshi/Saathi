@@ -75,11 +75,17 @@ class ChatRepository(private val context: Context, private val repository: Repos
         onChange()
         return participant
     }
-    private fun remember(profile:JSONObject) {
+    internal fun remember(profile:JSONObject) {
         ChatProtocol.profile(profile,now()); val id=ChatProtocol.participant(profile)
         val old=store.get("chat-contacts",id)?.getJSONObject("profile")
         require(old==null || Protocol.hash(old.getJSONObject("body").getJSONObject("encryptionKey"))==Protocol.hash(profile.getJSONObject("body").getJSONObject("encryptionKey"))) { "This person's chat identity changed. Compare identities again." }
-        if(old==null || Instant.parse(profile.getJSONObject("body").getString("updatedAt"))>=Instant.parse(old.getJSONObject("body").getString("updatedAt"))) save("chat-contacts",id,obj("id" to id,"profile" to profile))
+        val current=old==null || Instant.parse(profile.getJSONObject("body").getString("updatedAt"))>=Instant.parse(old.getJSONObject("body").getString("updatedAt"))
+        val latest=if(current)profile else old
+        if(current)save("chat-contacts",id,obj("id" to id,"profile" to latest))
+        val name=latest.getJSONObject("body").getString("name")
+        store.all("chat-conversations").filter { it.optString("type")=="DIRECT" && it.optString("peerId")==id && it.optString("title")!=name }.forEach { conversation ->
+            conversation.put("title",name); save("chat-conversations",conversation.getString("id"),conversation)
+        }
     }
     suspend fun rename(name:String)=withContext(Dispatchers.IO) { lock.withLock {
         require(name.trim().length in 1..32); val body=JSONObject(profile().getJSONObject("body").toString()).put("name",name.trim()).put("updatedAt",now().toString())

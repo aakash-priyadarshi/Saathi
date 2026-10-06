@@ -10,6 +10,30 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class ChatStoreTest {
+    @Test fun updatedPeerProfileRefreshesContactAndExistingDirectTitle():Unit=runBlocking{
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val ownScope="test-chat-name-${UUID.randomUUID()}";val peerScope="$ownScope-peer"
+        val ownRepository=Repository(context,ownScope);val peerRepository=Repository(context,peerScope)
+        val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main)
+        val own=ChatRepository(context,ownRepository,PeerSession(context,ownRepository,scope))
+        val peer=ChatRepository(context,peerRepository,PeerSession(context,peerRepository,scope))
+        try{
+            peer.rename("Earlier display name")
+            val oldProfile=peer.profile();val direct=own.direct(oldProfile)
+            assertEquals("Earlier display name",own.conversations().single().getString("title"))
+            peer.rename("Updated display name")
+            own.remember(peer.profile())
+            assertEquals("Updated display name",own.contacts().single().getJSONObject("profile").getJSONObject("body").getString("name"))
+            assertEquals("Updated display name",own.conversations().single().getString("title"))
+            own.remember(oldProfile)
+            assertEquals("Updated display name",own.conversations().single().getString("title"))
+            assertEquals(direct,own.conversations().single().getString("id"))
+        }finally{
+            scope.cancel();ownRepository.store.clearPrivate();peerRepository.store.clearPrivate();ownRepository.store.close();peerRepository.store.close()
+            context.deleteDatabase("saathi-$ownScope.db");context.deleteDatabase("saathi-$peerScope.db")
+        }
+    }
+
     @Test fun reopenedEncryptedConversationKeepsIdentityMessagesAndMembership():Unit=runBlocking{
         val context=InstrumentationRegistry.getInstrumentation().targetContext
         val storageScope="test-chat-store-${UUID.randomUUID()}"
