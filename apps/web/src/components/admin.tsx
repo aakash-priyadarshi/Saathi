@@ -88,8 +88,8 @@ function AdminContent({ user }: { user: CurrentUser }) {
         <div>
           <h2>Keep the network safe and useful.</h2>
           <p>
-            Review public updates, decide which nearby help requests can circulate, and pause public
-            relief needs when operations require it.
+            Review public updates, review nearby help requests once they sync to the server, and
+            pause official relief needs when operations require it.
           </p>
         </div>
         <Link className="button secondary" href="/dashboard/manage">
@@ -253,8 +253,9 @@ function AdminContent({ user }: { user: CurrentUser }) {
           <div>
             <h2 id="help-heading">Nearby help requests</h2>
             <p>
-              Approval lets a request sync to other people in its area. Requests expire
-              automatically.
+              Nearby phones can share requests directly while offline. Server approval controls
+              internet relay; a rejection takes effect on a phone after its next sync. Requests
+              expire automatically.
             </p>
           </div>
           <span className="admin-count">
