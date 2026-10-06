@@ -72,6 +72,10 @@ export async function seed(db: PrismaClient) {
         update: {},
       });
   }
+  if (env.APP_ENV === 'staging' && process.env.STAGING_SEED_RELIEF_DATA !== 'true') {
+    console.log('Staging demo accounts ready; relief sample data seeding is disabled.');
+    return;
+  }
   const volunteer = users.find((u) => u.role === 'VOLUNTEER')!,
     doctor = users.find((u) => u.email === 'medical@saathi.test')!;
   const points = [];

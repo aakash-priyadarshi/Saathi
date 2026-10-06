@@ -114,7 +114,12 @@ private val tabs = listOf(Triple("Updates", Icons.Outlined.Feed, "Public field u
                 bottomBar = { if (!wide && !inConversation) NavigationBar(modifier=Modifier.heightIn(min=if(largeNavigationText)112.dp else 80.dp),containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) { tabs.forEach { (name, icon, description) -> NavigationBarItem(page == name, { page = name; detail = null; form = null;conversation=null }, { Icon(icon, "$name · $description") }, label = { Text(name, maxLines=if(largeNavigationText)2 else 1, overflow=TextOverflow.Ellipsis,textAlign=TextAlign.Center) }) } } }
             ) { padding ->
                 Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
-                    if (BuildConfig.ENVIRONMENT != "production") Surface(color = MaterialTheme.colorScheme.errorContainer) { Text("${BuildConfig.ENVIRONMENT.uppercase()} · Test relief data only", Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onErrorContainer) }
+                    val environmentLabel = when (BuildConfig.ENVIRONMENT) {
+                        "development" -> "DEVELOPMENT · Local services"
+                        "staging" -> "STAGING · QA services"
+                        else -> null
+                    }
+                    environmentLabel?.let { label -> Surface(color = MaterialTheme.colorScheme.errorContainer) { Text(label, Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onErrorContainer) } }
                     if(!inConversation) ConnectionStatus(state)
                     if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                     state.notice?.let { notice -> Surface(color = MaterialTheme.colorScheme.surfaceVariant) { Row(Modifier.fillMaxWidth().padding(start = 20.dp), verticalAlignment = Alignment.CenterVertically) { Text(notice, Modifier.weight(1f).padding(vertical = 10.dp), style = MaterialTheme.typography.bodySmall); IconButton(onClick = { vm.notice(null) }) { Icon(Icons.Outlined.Close, "Dismiss message") } } } }

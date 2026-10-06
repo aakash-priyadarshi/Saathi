@@ -146,7 +146,14 @@ class Repository(context: Context, storageScope: String = BuildConfig.ENVIRONMEN
         }
     }
     suspend fun retryWrite(operation: JSONObject) = write(operation.getString("id"), operation.getString("path"), operation.getJSONObject("body"), operation.getBoolean("authenticated"))
-    suspend fun checkReachability() { runCatching { api("/public/config") }; }
+    suspend fun checkReachability() {
+        runCatching {
+            // If the app started without internet, there is no verified endpoint yet and api()
+            // cannot recover on its own. Re-fetch signed configuration when reconnecting.
+            if (configuration == null || !reachable) refreshConfiguration()
+            api("/public/config")
+        }
+    }
     suspend fun login(email: String, password: String, totp: String) {
         val previous = store.get("account", "user")
         require(previous == null || previous.optString("email").equals(email, ignoreCase = true)) { "Sign out and clear the previous person’s private work before switching accounts." }

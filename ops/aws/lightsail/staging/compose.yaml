@@ -64,6 +64,7 @@ services:
       DATABASE_URL: postgresql://saathi:${POSTGRES_PASSWORD}@postgres:5432/saathi?schema=public
       DEMO_MODE: 'true'
       STAGING_SEED_ALLOWED: 'true'
+      STAGING_SEED_RELIEF_DATA: 'false'
       SEED_PASSWORD: ${SEED_PASSWORD:?Set SEED_PASSWORD in .env}
       WEB_ORIGIN: https://${WEB_HOST:?Set WEB_HOST in .env}
       PUBLIC_URL: https://${WEB_HOST:?Set WEB_HOST in .env}
@@ -89,7 +90,7 @@ services:
       WEB_ORIGIN: https://${WEB_HOST:?Set WEB_HOST in .env}
       PUBLIC_URL: https://${WEB_HOST:?Set WEB_HOST in .env}
       PLATFORM_NAME: SWARM
-      DEMO_MODE: 'true'
+      DEMO_MODE: 'false'
       EMAIL_PROVIDER: log
       EMAIL_FROM: Swarm staging <staging@cockroachjantaparty.org>
       STORAGE_PROVIDER: local

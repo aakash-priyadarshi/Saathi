@@ -1,5 +1,6 @@
 import { config } from 'dotenv';
 import { spawnSync } from 'node:child_process';
+import { resolve } from 'node:path';
 config({ quiet: true });
 const url = new URL(process.env.DATABASE_URL);
 if (!['localhost', '127.0.0.1'].includes(url.hostname))
@@ -21,5 +22,10 @@ function run(args) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 run(['build:packages']);
-run(['--filter', '@saathi/database', 'exec', 'prisma', 'migrate', 'deploy']);
+const migration = spawnSync(
+  process.execPath,
+  [resolve('packages/database/node_modules/prisma/build/index.js'), 'migrate', 'deploy', '--schema', 'prisma/schema.prisma'],
+  { cwd: resolve('packages/database'), stdio: 'inherit', env },
+);
+if (migration.status !== 0) process.exit(migration.status ?? 1);
 run(['exec', 'vitest', 'run', '--config', 'vitest.integration.config.ts']);

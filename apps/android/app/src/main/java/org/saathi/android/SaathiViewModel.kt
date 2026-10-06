@@ -253,7 +253,19 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     fun listDevices() = action { mutable.update { it.copy(devices = org.json.JSONArray(repository.api("/sync/devices", authenticated = true)).objects()) } }
     fun revokeDevice(id: String) = action { repository.api("/sync/devices/$id/revoke", obj(), true); mutable.update { it.copy(devices = org.json.JSONArray(repository.api("/sync/devices", authenticated = true)).objects()) }; notice("Phone revoked by Swarm. Unsent events signed by that phone may be rejected.") }
     private fun activate(transport: PeerTransport, preservePeerIdentity: Boolean = false) { if (!preservePeerIdentity) session.clearPeerRequirement(); session.transport?.disconnect(); session.reset(); session.transport = transport; mutable.update { it.copy(invitation = "", localCode = "", pairCode = null, peers = emptyMap(), media = false, connected = false, callActive = false, calling = false) } }
-    fun scan(advertise: Boolean,automatic:Boolean=false) = action { require(preferences().optBoolean("nearbyVisible",true)){"Enable Nearby visibility in More before searching."};require(repository.featureFlags?.optBoolean("nearby") == true) { "Nearby discovery is not enabled for this environment. Local pairing remains available when configured." }; activate(nearby); nearby.scan(advertise,automatic) }
+    fun scan(advertise: Boolean,automatic:Boolean=false) = action {
+        require(preferences().optBoolean("nearbyVisible",true)){"Enable Nearby visibility in More before searching."}
+        if (repository.featureFlags?.optBoolean("nearby") != true) {
+            runCatching { repository.refreshConfiguration(); repository.api("/public/config") }
+        }
+        require(repository.featureFlags?.optBoolean("nearby") == true) {
+            if (repository.configuration == null)
+                "Connect to the internet once to verify Nearby services. Bluetooth pairing remains available."
+            else
+                "Nearby discovery is not enabled in the verified service configuration. Local pairing remains available when configured."
+        }
+        activate(nearby); nearby.scan(advertise,automatic)
+    }
     fun scanBle(advertise: Boolean) = action { require(preferences().optBoolean("nearbyVisible",true)){"Enable Nearby visibility in More before searching."}; activate(ble); ble.start(advertise) }
     fun connect(id: String) = action { if (session.transport === ble) ble.connect(id) else nearby.connect(id) }
     fun confirmPair(match: Boolean) { if (session.transport === ble) ble.confirm(match) else nearby.confirm(match) }

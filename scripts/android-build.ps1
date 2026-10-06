@@ -12,7 +12,12 @@ if (-not $env:JAVA_HOME) { $env:JAVA_HOME = 'C:\Program Files\Android\Android St
 Push-Location (Join-Path $taskRoot 'apps\android')
 try {
     $taskVariant = (Get-Culture).TextInfo.ToTitleCase($BuildType)
-    & .\gradlew.bat ":app:assemble$taskVariant" ":app:assemble${taskVariant}AndroidTest" ":app:lint$taskVariant" ":app:test${taskVariant}UnitTest" --console=plain
+    $gradleTasks = @(":app:assemble$taskVariant", ":app:lint$taskVariant", ':app:testDebugUnitTest')
+    if ($BuildType -eq 'debug') { $gradleTasks += ':app:assembleDebugAndroidTest' }
+    if ($Instrument -and $BuildType -ne 'debug') {
+        throw 'Instrumented tests currently target the development debug build; staging has its own product build and unit tests.'
+    }
+    & .\gradlew.bat @gradleTasks --console=plain
     if ($LASTEXITCODE -ne 0) { throw 'Android validation failed.' }
     if ($Instrument) {
         & .\gradlew.bat ":app:connected${taskVariant}AndroidTest" --console=plain

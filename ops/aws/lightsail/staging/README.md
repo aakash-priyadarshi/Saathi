@@ -53,3 +53,41 @@ The API container alone receives this file.
 The image is published to `ghcr.io/aakash-priyadarshi/saathi` by the public
 repository's GitHub Actions workflow. The package must be marked public once in
 GitHub Packages so the Lightsail host can pull it without a long-lived token.
+
+## Android QA build
+
+Build the installable staging app on Windows with Android Studio installed:
+
+```powershell
+./scripts/android-build.ps1 -BuildType staging -TrustDirectory .data/aws-staging
+```
+
+This builds the complete QA app as `org.saathi.android.qa` with chat enabled and
+Android debugging disabled. The APK is written to
+`apps/android/app/build/outputs/apk/staging/app-staging.apk`. A Play Store
+release still needs its production signing key and production service bootstrap;
+the staging APK is for direct QA installs only.
+
+## QA data and service updates
+
+The staging API runs with `DEMO_MODE=false`, so public pages do not advertise
+seeded relief examples. The optional seed job still provisions the synthetic
+`@saathi.test` QA accounts, but `STAGING_SEED_RELIEF_DATA=false` prevents it
+from recreating sample requests, updates, commitments or receiving points.
+To withdraw the six existing marked relief fixtures after updating the stack,
+run this guarded command from `/opt/saathi-staging`:
+
+```sh
+sudo docker compose exec -T api env SAATHI_CLEAR_DEMO_RELIEF=true pnpm --filter @saathi/database clear-staging-demo-relief
+```
+
+It is restricted to `APP_ENV=staging`, verifies the known seeded request IDs,
+accounts, demo receiving points and audit markers, and refuses to alter linked
+updates with unexpected authors or media. Database safeguards require relief
+requests to be archived and audit records to remain append-only, so this task
+redacts and cancels the requests, hides and redacts their field updates, removes
+only the exact local-shop fixture commitments and deliveries, and deactivates
+and redacts receiving points with no non-fixture references. QA accounts,
+organizations and audit history remain. The operation is idempotent. An empty
+AWS Postgres volume does not need replacement; this cleanup targets only the
+sample relief content.
