@@ -34,6 +34,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -47,61 +48,77 @@ class MainActivity : ComponentActivity() {
     private var model: SaathiViewModel? = null
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); enableEdgeToEdge()
-        setContent { SaathiTheme { val vm: SaathiViewModel = viewModel(); model = vm; SaathiApp(vm) } }
+        val fixtureScope=if(BuildConfig.DEBUG&&BuildConfig.ENVIRONMENT=="development")intent.getStringExtra("swarmUiFixture")?.takeIf{it.matches(Regex("test-ui-[a-z0-9-]{1,48}"))}else null
+        setContent { SaathiTheme {
+            val vm: SaathiViewModel = if(fixtureScope==null)viewModel() else viewModel(factory=object:androidx.lifecycle.ViewModelProvider.Factory{
+                @Suppress("UNCHECKED_CAST") override fun <T:androidx.lifecycle.ViewModel> create(modelClass:Class<T>):T=SaathiViewModel(application,fixtureScope) as T
+            })
+            model = vm; SaathiApp(vm)
+        } }
     }
     override fun onStop() { model?.foregroundLost(); super.onStop() }
     override fun onStart() { super.onStart(); model?.foregroundActive() }
+    override fun onNewIntent(intent:Intent){super.onNewIntent(intent);setIntent(intent);model?.receiveInvite(intent.dataString)}
 }
 
-private val tabs = listOf(Triple("Needs", Icons.Outlined.VolunteerActivism, "Relief needs"), Triple("Field", Icons.Outlined.Forum, "Field updates"), Triple("Nearby", Icons.Outlined.WifiTethering, "Nearby connections"), Triple("Saved", Icons.Outlined.Inventory2, "Saved work"))
+private val tabs = listOf(Triple("Updates", Icons.Outlined.Feed, "Public field updates"),Triple("Chats",Icons.Outlined.ChatBubbleOutline,"Conversations"),Triple("Nearby",Icons.Outlined.Groups,"Nearby people and channels"),Triple("Needs",Icons.Outlined.VolunteerActivism,"Relief needs"),Triple("More",Icons.Outlined.MoreHoriz,"Profile and saved work"))
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun SaathiApp(vm: SaathiViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
-    var page by rememberSaveable { mutableStateOf("Needs") }; var detail by rememberSaveable { mutableStateOf<String?>(null) }
+    var page by rememberSaveable { mutableStateOf("Chats") }; var detail by rememberSaveable { mutableStateOf<String?>(null) }
+    var conversation by rememberSaveable{mutableStateOf<String?>(null)};var createChannel by rememberSaveable{mutableStateOf(false)};var invite by rememberSaveable{mutableStateOf(false)}
     var form by rememberSaveable { mutableStateOf<String?>(null) }; var logout by remember { mutableStateOf(false) }
+    val openChat:(String)->Unit={conversation=it;page="Chats";detail=null;form=null}
     var pendingPermission by remember { mutableStateOf<(() -> Unit)?>(null) }
     val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
         if (granted.values.all { it }) pendingPermission?.invoke() else vm.notice("Permission was not granted. Saved work remains available. You can allow access in Android settings when ready.")
         pendingPermission = null
     }
     val askNearby: (Boolean) -> Unit = { advertise ->
-        pendingPermission = { vm.scan(advertise) }
+        pendingPermission = { vm.scan(advertise,page=="Nearby"&&!advertise) }
         val needed = buildList { if (Build.VERSION.SDK_INT >= 31) addAll(listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE)); if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.NEARBY_WIFI_DEVICES) else addAll(listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)) }
         permissions.launch(needed.toTypedArray())
     }
     val askCall: (Boolean, Boolean) -> Unit = { video, incoming -> pendingPermission = { vm.call(video, incoming) }; permissions.launch((if (video) arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA) else arrayOf(Manifest.permission.RECORD_AUDIO))) }
-    val navigateBack: () -> Unit = { if (form != null) form = null else if (detail != null) detail = null else page = "Needs" }
-    BackHandler(page != "Needs" || detail != null || form != null, onBack = navigateBack)
+    val askRecord:()->Unit={pendingPermission={vm.startVoice()};permissions.launch(arrayOf(Manifest.permission.RECORD_AUDIO))}
+    val navigateBack: () -> Unit = { if (form != null) form = null else if (detail != null) detail = null else if(conversation!=null)conversation=null else page = "Chats" }
+    BackHandler(page != "Chats" || detail != null || form != null || conversation!=null, onBack = navigateBack)
+    val context=LocalContext.current
+    LaunchedEffect(Unit){vm.receiveInvite((context as? MainActivity)?.intent?.dataString)}
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 600.dp
+        val inConversation = conversation != null && form == null && detail == null
         Row {
             if (wide) NavigationRail(Modifier.fillMaxHeight().width(104.dp).statusBarsPadding(), containerColor = MaterialTheme.colorScheme.surface) {
-                Icon(Icons.Outlined.FavoriteBorder, "Saathi", Modifier.padding(vertical = 24.dp), tint = MaterialTheme.colorScheme.primary)
-                tabs.forEach { (name, icon, description) -> NavigationRailItem(page == name, { page = name; detail = null; form = null }, { Icon(icon, description) }, label = { Text(name) }) }
+                Icon(Icons.Outlined.Groups, BuildConfig.BRAND_NAME, Modifier.padding(vertical = 24.dp), tint = MaterialTheme.colorScheme.primary)
+                tabs.forEach { (name, icon, description) -> NavigationRailItem(page == name, { page = name; detail = null; form = null;conversation=null }, { Icon(icon, description) }, label = { Text(name) }) }
             }
             Scaffold(modifier = Modifier.weight(1f), containerColor = MaterialTheme.colorScheme.background,
                 topBar = { TopAppBar(title = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Icon(Icons.Outlined.FavoriteBorder, null, tint = MaterialTheme.colorScheme.primary); Column { Text("Saathi", style = MaterialTheme.typography.titleLarge); Text("Here for each other", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                } }, navigationIcon = { if (detail != null || form != null || page == "Team") IconButton(onClick = navigateBack) { Icon(Icons.Outlined.ArrowBack, "Back") } },
-                    actions = { TextButton(onClick = { page = "Team"; detail = null; form = null }) { Text(if (state.preparation == null) "Team sign in" else "My team") } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)) },
-                bottomBar = { if (!wide) NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) { tabs.forEach { (name, icon, description) -> NavigationBarItem(page == name, { page = name; detail = null; form = null }, { Icon(icon, description) }, label = { Text(name) }) } } }
+                    Icon(Icons.Outlined.Groups, null, tint = MaterialTheme.colorScheme.primary)
+                    if(inConversation) Text(BuildConfig.BRAND_DISPLAY, style = MaterialTheme.typography.titleMedium)
+                    else Column { Text(BuildConfig.BRAND_DISPLAY, style = MaterialTheme.typography.titleLarge); Text(BuildConfig.BRAND_BYLINE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                } }, navigationIcon = { if (detail != null || form != null || conversation!=null || page in listOf("Team","Saved","Connection")) IconButton(onClick = navigateBack) { Icon(Icons.Outlined.ArrowBack, "Back") } },
+                    actions = { if(!inConversation) TextButton(onClick = { page = "Team"; detail = null; form = null;conversation=null }) { Text(if (state.preparation == null) "Team sign in" else "My team") } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)) },
+                bottomBar = { if (!wide && !inConversation) NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) { tabs.forEach { (name, icon, description) -> NavigationBarItem(page == name, { page = name; detail = null; form = null;conversation=null }, { Icon(icon, "$name · $description") }, label = { Text(name, maxLines=1, overflow=TextOverflow.Ellipsis) }) } } }
             ) { padding ->
-                Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
+                Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
                     if (BuildConfig.ENVIRONMENT != "production") Surface(color = MaterialTheme.colorScheme.errorContainer) { Text("${BuildConfig.ENVIRONMENT.uppercase()} · Test relief data only", Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onErrorContainer) }
-                    Surface(color = MaterialTheme.colorScheme.primaryContainer) { Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(if (state.reachable) Icons.Outlined.CloudDone else if (state.confirmed) Icons.Outlined.WifiTethering else Icons.Outlined.CloudOff, null, Modifier.size(18.dp))
-                        Text(if (state.reachable) "Connected to Saathi" else if (state.confirmed) "Connected nearby · Saved work can be shared" else "Saathi unavailable · Saved information still works", style = MaterialTheme.typography.bodySmall)
-                    } }
+                    if(!inConversation) ConnectionStatus(state)
                     if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                     state.notice?.let { notice -> Surface(color = MaterialTheme.colorScheme.surfaceVariant) { Row(Modifier.fillMaxWidth().padding(start = 20.dp), verticalAlignment = Alignment.CenterVertically) { Text(notice, Modifier.weight(1f).padding(vertical = 10.dp), style = MaterialTheme.typography.bodySmall); IconButton(onClick = { vm.notice(null) }) { Icon(Icons.Outlined.Close, "Dismiss message") } } } }
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                         val content = Modifier.widthIn(max = 1000.dp).fillMaxSize()
                         when {
                             form != null -> DraftForm(vm, form!!, { form = null }, content)
-                            detail != null -> RequestDetail(vm, JSONObject(detail!!), { form = "update:" + detail!! }, content)
+                            detail != null -> RequestDetail(vm, JSONObject(detail!!), { form = "update:" + detail!! }, content,{need->vm.discuss(obj("type" to "NEED","id" to need.getString("publicId"),"title" to need.getString("title")),openChat)})
+                            conversation!=null -> ConversationScreen(vm,state,conversation!!,askCall,askRecord,{message->vm.needFromChat(message){form=it}},{id->state.requests.plus(state.completed).firstOrNull{it.optString("publicId")==id}?.let{detail=it.toString()}?:vm.notice("Refresh Needs to check this reference’s latest public status.")},content)
                             page == "Needs" -> NeedsScreen(state, vm, { detail = it.toString() }, wide, content)
-                            page == "Field" -> FieldScreen(state, { page = "Team"; form = "field" }, content)
-                            page == "Nearby" -> NearbyScreen(vm, state, askNearby, askCall, content)
+                            page == "Updates" -> FieldScreen(state, { page = "Team"; form = "field" }, content,{post->vm.discuss(obj("type" to "UPDATE","id" to post.getString("id"),"title" to post.getString("caption").take(120)),openChat)})
+                            page == "Chats" -> ChatsScreen(vm,state,openChat,{page="Nearby"},{createChannel=true},content)
+                            page == "Nearby" -> NearbyPeopleScreen(vm,state,askNearby,openChat,{createChannel=true},{invite=true},{page="Connection"},content)
+                            page == "Connection" -> NearbyScreen(vm, state, askNearby, askCall, content)
+                            page == "More" -> MoreScreen(vm,state,{page="Team"},{page="Saved"},{page="Connection"},content)
                             page == "Saved" -> SavedScreen(vm, state, { form = it }, content)
                             else -> TeamScreen(vm, state, { form = it }, { logout = true }, content)
                         }
@@ -110,11 +127,20 @@ private val tabs = listOf(Triple("Needs", Icons.Outlined.VolunteerActivism, "Rel
             }
         }
     }
+    if(createChannel)ChannelCreate({name,visibility->vm.createChannel(name,visibility){createChannel=false;openChat(it)}},{createChannel=false},state.busy)
+    if(invite || state.incomingInvite!=null)JoinInvite(state.incomingInvite?:"",{link->vm.joinInvite(link){invite=false;vm.dismissInvite();openChat(it)}},{invite=false;vm.dismissInvite()},state.busy)
     state.pairCode?.let { code -> AlertDialog(onDismissRequest = { vm.nearby.confirm(false) }, title = { Text("Compare both device codes") }, text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { Text(code, style = MaterialTheme.typography.headlineMedium); Text("Accept only when the other device shows this same code. A connection does not verify volunteer identity.") } }, confirmButton = { TextButton(onClick = { vm.nearby.confirm(true) }) { Text("Codes match") } }, dismissButton = { TextButton(onClick = { vm.nearby.confirm(false) }) { Text("Decline") } }) }
     if (state.localCode.isNotBlank() && !state.confirmed) AlertDialog(onDismissRequest = { vm.disconnect() }, title = { Text("Compare both device codes") }, text = { Column { Text(state.localCode, style = MaterialTheme.typography.headlineMedium); Text("Confirm this same code with the other person before sharing.") } }, confirmButton = { TextButton(onClick = { vm.confirmLocal() }) { Text("Codes match") } }, dismissButton = { TextButton(onClick = { vm.disconnect() }) { Text("Decline") } })
     state.fileOffer?.let { offer -> AlertDialog(onDismissRequest = { vm.declineFile() }, title = { Text("Receive a nearby file?") }, text = { Text("${offer.getString("name")} · ${fileSize(offer.getLong("size"))}\n\nOnly accept files from someone you trust. Received files stay private on this phone.") }, confirmButton = { TextButton(onClick = { vm.acceptFile() }) { Text("Receive") } }, dismissButton = { TextButton(onClick = { vm.declineFile() }) { Text("Decline") } }) }
     state.incomingCall?.let { video -> AlertDialog(onDismissRequest = { vm.hangup() }, title = { Text(if (video) "Nearby video call" else "Nearby voice call") }, text = { Text("The connected person would like to call. Microphone${if (video) " and camera" else ""} access starts only when you accept.") }, confirmButton = { TextButton(onClick = { askCall(video, true) }) { Text("Accept") } }, dismissButton = { TextButton(onClick = { vm.hangup() }) { Text("Decline") } }) }
     if (logout) AlertDialog(onDismissRequest = { logout = false }, title = { Text("Sign out and clear private work?") }, text = { Text("Drafts, messages, events, attachments and this phone’s signing identity will be cleared. Synchronize or share pending work first. Other carriers may retain events already shared.") }, confirmButton = { TextButton(onClick = { logout = false; vm.logout(false) }) { Text("Sign out and clear") } }, dismissButton = { TextButton(onClick = { logout = false }) { Text("Keep my work") } })
+}
+
+@Composable internal fun ConnectionStatus(state:AppState) {
+    Surface(color=MaterialTheme.colorScheme.primaryContainer){Row(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){
+        Icon(if(state.reachable)Icons.Outlined.CloudDone else if(state.confirmed)Icons.Outlined.WifiTethering else Icons.Outlined.CloudOff,null,Modifier.size(18.dp))
+        Text(if(state.reachable)"Connected · Saved work can sync" else if(state.confirmed)"Connected nearby · Saved work remains on this phone" else "Waiting for connection · Saved information still works",style=MaterialTheme.typography.bodySmall)
+    }}
 }
 
 @Composable private fun NeedsScreen(state: AppState, vm: SaathiViewModel, open: (JSONObject) -> Unit, wide: Boolean, modifier: Modifier) {
@@ -139,7 +165,7 @@ private val tabs = listOf(Triple("Needs", Icons.Outlined.VolunteerActivism, "Rel
             Freshness(state.savedAt)
         } }
         items(needs, key = { it.getString("publicId") }) { need -> NeedCard(need) { open(need) } }
-        if (needs.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { EmptyState(if (source.isEmpty()) "No saved needs yet" else "No matching needs", if (source.isEmpty()) "Connect to Saathi and refresh to save verified relief needs on this phone." else "Try another search or category.", Icons.Outlined.VolunteerActivism) }
+        if (needs.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { EmptyState(if (source.isEmpty()) "No saved needs yet" else "No matching needs", if (source.isEmpty()) "Connect to Swarm and refresh to save verified relief needs on this phone." else "Try another search or category.", Icons.Outlined.VolunteerActivism) }
         item(span = { GridItemSpan(maxLineSpan) }) { Text("Find a verified need, give what you can, and see your help arrive. Together, we look after each other.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         item(span = { GridItemSpan(maxLineSpan) }) { Notice("Real needs. Verified teams.", "Check the request ID and its current status before arranging a delivery.", Icons.Outlined.VerifiedUser) }
     }
@@ -159,16 +185,16 @@ private val tabs = listOf(Triple("Needs", Icons.Outlined.VolunteerActivism, "Rel
         }
     }
 }
-@Composable private fun FieldScreen(state: AppState, publish: () -> Unit, modifier: Modifier) {
+@Composable private fun FieldScreen(state: AppState, publish: () -> Unit, modifier: Modifier,discuss:(JSONObject)->Unit={}) {
     LazyColumn(modifier, contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        item { Heading("From the field", "Updates from the people on the ground."); Freshness(state.savedAt); if (state.preparation != null) TextButton(publish) { Icon(Icons.Outlined.Add, null); Text("Write a field update") } }
-        items(state.posts, key = { it.getString("id") }) { post -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { Text(timeLabel(post.getString("createdAt")), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary); Text(post.getString("caption"), style = MaterialTheme.typography.bodyLarge); Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { Icon(Icons.Outlined.VerifiedUser, null, Modifier.size(18.dp)); Text(post.getJSONObject("author").getString("displayName"), style = MaterialTheme.typography.bodySmall) }; Text(post.getJSONObject("reliefPoint").getString("publicLocation"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); HorizontalDivider() } }
-        if (state.posts.isEmpty()) item { EmptyState("No saved field updates", "Approved public updates will appear after a refresh.", Icons.Outlined.Forum) }
+        item { Heading("Updates", "Public field reports from the people on the ground."); Freshness(state.savedAt); if (state.preparation != null) TextButton(publish) { Icon(Icons.Outlined.Add, null); Text("Write a field update") } }
+        items(state.posts, key = { it.getString("id") }) { post -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { Text(timeLabel(post.getString("createdAt")), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary); Text(post.getString("caption"), style = MaterialTheme.typography.bodyLarge); Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { Icon(Icons.Outlined.VerifiedUser, null, Modifier.size(18.dp)); Text(post.getJSONObject("author").getString("displayName"), style = MaterialTheme.typography.bodySmall) }; Text(post.getJSONObject("reliefPoint").getString("publicLocation"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); if(BuildConfig.CHAT_ENABLED)TextButton(onClick={discuss(post)}) { Text("Discuss in a channel") }; HorizontalDivider() } }
+        if (state.posts.isEmpty()) item { EmptyState("No saved field updates", "Approved public updates will appear after a refresh.", Icons.Outlined.Feed) }
     }
 }
 @Composable fun Heading(title: String, text: String) { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(title, style = MaterialTheme.typography.headlineMedium); Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
 @Composable fun EmptyState(title: String, text: String, icon: ImageVector) { Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { Icon(icon, null, Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary); Text(title, style = MaterialTheme.typography.titleMedium); Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
 @Composable fun Notice(title: String, text: String, icon: ImageVector) { Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(8.dp)).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) { Icon(icon, null, tint = MaterialTheme.colorScheme.primary); Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { Text(title, style = MaterialTheme.typography.titleSmall); Text(text, style = MaterialTheme.typography.bodySmall) } } }
-@Composable fun Freshness(saved: String?) { Text(if (saved == null) "No saved snapshot yet" else "Saved ${timeLabel(saved)} · Check with Saathi for the latest status", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+@Composable fun Freshness(saved: String?) { Text(if (saved == null) "No saved snapshot yet" else "Saved ${timeLabel(saved)} · Check with Swarm for the latest status", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
 fun timeLabel(value: String) = runCatching { DateTimeFormatter.ofPattern("d MMM, h:mm a").withZone(ZoneId.systemDefault()).format(Instant.parse(value)) }.getOrDefault("at an unknown time")
 fun fileSize(bytes: Long) = if (bytes < 1048576) "${bytes / 1024} KB" else "%.1f MB".format(bytes / 1048576.0)

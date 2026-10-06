@@ -1,0 +1,17 @@
+CREATE TABLE "ChatParticipant" ("id" TEXT PRIMARY KEY, "profile" JSONB NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL);
+CREATE TABLE "ChatConversation" ("id" TEXT PRIMARY KEY, "visibility" TEXT NOT NULL CHECK ("visibility" IN ('DIRECT','OPEN','INVITE')), "ownerId" TEXT, "version" INTEGER NOT NULL DEFAULT 0 CHECK ("version">=0), "policy" JSONB, "deleted" BOOLEAN NOT NULL DEFAULT false, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL);
+CREATE TABLE "ChatMembership" ("conversationId" TEXT NOT NULL REFERENCES "ChatConversation"("id") ON DELETE CASCADE, "participantId" TEXT NOT NULL REFERENCES "ChatParticipant"("id") ON DELETE CASCADE, "role" TEXT NOT NULL CHECK ("role" IN ('OWNER','MODERATOR','MEMBER')), "joinedAt" TIMESTAMP(3) NOT NULL, "removedAt" TIMESTAMP(3), PRIMARY KEY("conversationId","participantId"));
+CREATE INDEX "ChatMembership_participantId_removedAt_idx" ON "ChatMembership"("participantId","removedAt");
+CREATE TABLE "ChatMessage" ("id" TEXT PRIMARY KEY, "conversationId" TEXT NOT NULL REFERENCES "ChatConversation"("id") ON DELETE CASCADE, "authorId" TEXT NOT NULL REFERENCES "ChatParticipant"("id"), "envelope" JSONB NOT NULL, "envelopeHash" TEXT NOT NULL, "receivedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "expiresAt" TIMESTAMP(3) NOT NULL);
+CREATE INDEX "ChatMessage_conversationId_receivedAt_id_idx" ON "ChatMessage"("conversationId","receivedAt","id");
+CREATE INDEX "ChatMessage_expiresAt_idx" ON "ChatMessage"("expiresAt");
+CREATE TABLE "ChatDeliveryReceipt" ("messageId" TEXT NOT NULL REFERENCES "ChatMessage"("id") ON DELETE CASCADE, "participantId" TEXT NOT NULL, "status" TEXT NOT NULL CHECK ("status" IN ('DELIVERED','READ')), "receipt" JSONB NOT NULL, PRIMARY KEY("messageId","participantId","status"));
+CREATE TABLE "ChatJoinRequest" ("id" TEXT PRIMARY KEY, "conversationId" TEXT NOT NULL REFERENCES "ChatConversation"("id") ON DELETE CASCADE, "participantId" TEXT NOT NULL, "profile" JSONB NOT NULL, "fulfilled" BOOLEAN NOT NULL DEFAULT false, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE UNIQUE INDEX "ChatJoinRequest_conversationId_participantId_key" ON "ChatJoinRequest"("conversationId","participantId");
+CREATE TABLE "ChatBlock" ("participantId" TEXT NOT NULL, "blockedId" TEXT NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY("participantId","blockedId"));
+CREATE TABLE "ChatReport" ("id" TEXT PRIMARY KEY, "participantId" TEXT NOT NULL, "messageId" TEXT NOT NULL, "reason" TEXT NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE "ChatSyncNonce" ("id" TEXT PRIMARY KEY, "participantId" TEXT NOT NULL, "hash" TEXT NOT NULL, "expiresAt" TIMESTAMP(3) NOT NULL);
+CREATE INDEX "ChatSyncNonce_expiresAt_idx" ON "ChatSyncNonce"("expiresAt");
+ALTER TABLE "ChatJoinRequest" ADD COLUMN "action" TEXT NOT NULL DEFAULT 'JOIN' CHECK ("action" IN ('JOIN','LEAVE'));
+CREATE TABLE "ChatPolicy" ("id" TEXT PRIMARY KEY,"conversationId" TEXT NOT NULL REFERENCES "ChatConversation"("id") ON DELETE CASCADE,"version" INTEGER NOT NULL,"policy" JSONB NOT NULL);
+CREATE UNIQUE INDEX "ChatPolicy_conversationId_version_key" ON "ChatPolicy"("conversationId","version");

@@ -125,7 +125,7 @@ class LocalWifiTransport(private val context: Context, private val scope: Corout
         return description(true)
     }
     suspend fun accept(text: String): String {
-        require(text.startsWith("SAATHI1:") && text.length <= 20000) { "This is not a Saathi invitation." }
+        require(text.startsWith("SAATHI1:") && text.length <= 20000) { "This is not a Swarm invitation." }
         val output = ByteArrayOutputStream()
         GZIPInputStream(ByteArrayInputStream(Protocol.decode(text.substring(8)))).use { input ->
             val chunk = ByteArray(2048)
@@ -158,7 +158,7 @@ class LocalWifiTransport(private val context: Context, private val scope: Corout
         if (video) {
             val cameras = Camera2Enumerator(context); val name = cameras.deviceNames.firstOrNull { cameras.isFrontFacing(it) } ?: cameras.deviceNames.firstOrNull() ?: error("No camera is available.")
             videoSource = factory.createVideoSource(false); capturer = cameras.createCapturer(name, null)
-            helper = SurfaceTextureHelper.create("SaathiCamera", egl.eglBaseContext)
+            helper = SurfaceTextureHelper.create("SwarmCamera", egl.eglBaseContext)
             capturer!!.initialize(helper, context, videoSource!!.capturerObserver); capturer!!.startCapture(640, 360, 15)
             videoTrack = factory.createVideoTrack("saathi-video", videoSource).apply { setEnabled(true) }
             pc!!.transceivers.firstOrNull { it.mediaType == MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO }?.sender?.setTrack(videoTrack, false)

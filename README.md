@@ -1,8 +1,10 @@
-# Saathi
+# CJP Swarm
 
-**Here for each other.** Saathi coordinates verified humanitarian supply needs, guest contributions, incoming deliveries, and public field updates. A permanent request page tells people whether a shared request still needs help.
+**Connect nearby. Coordinate together.** SWARM by CJP combines verified humanitarian needs and public updates with a native Android communication preview. A permanent request page tells people whether a shared request still needs help. Developed by Cockroach Janta Party; the repository and existing Saathi package/protocol IDs remain compatible.
 
 The web/API, browser offline foundation and native Android product use real PostgreSQL persistence. This is a demonstration installation, not a live relief operation. The native product has passed offline Nearby messages, interrupted file transfer and original-author event/receipt relay on a Samsung S24 and tablet. Browser communication remains a phone-testing preview. See [implementation status](docs/IMPLEMENTATION_STATUS.md) for the tested scope and remaining gates.
+
+Android now separates Updates, Chats, Nearby, Needs and More. Development/QA builds support stable encrypted DMs, open and invite-only channels, signed membership/invitations/receipts, durable media and authorized synchronization. The S24/tablet chat fixture passed radio messages, duplicate suppression, membership removal, blocks and interrupted encrypted 4 MiB transfer, plus encrypted server upload/download. Internet was available in that run. Private chat stays disabled in release builds pending independent security review; three-Android-device chat, complete internet-loss transitions and physical range/battery/lock tests remain unverified. See [chat architecture](docs/chat-channel-architecture.md) and [measured evidence](docs/benchmarks/android-chat-nearby.json).
 
 Source: [public GitHub repository](https://github.com/aakash-priyadarshi/Saathi). [Web/API CI](https://github.com/aakash-priyadarshi/Saathi/actions/workflows/ci.yml) runs database/browser checks and the isolated probe build. [Android product CI](https://github.com/aakash-priyadarshi/Saathi/actions/workflows/android-product.yml) builds/lints/tests the native product and publishes a seven-day staging artifact after its public trust/bootstrap variables and persistent QA signer are provisioned. The [transport probe](spikes/android/README.md) and its earlier [physical measurements](docs/benchmarks/samsung-s24-tablet-nearby.json) remain separate from product evidence.
 
@@ -52,9 +54,9 @@ packages/auth             Scrypt passwords, token hashing, TOTP verification
 packages/config           Validated configuration and production startup checks
 packages/types            Public response contracts
 packages/validation       Strict shared Zod schemas
-packages/protocol         Signed durable public relief envelopes and receipts
+packages/protocol         Signed relief events, chat/membership/receipts and encrypted attachments
 packages/ui               Accessible common UI feedback and verification
-apps/android              Native Kotlin/Compose Saathi product
+apps/android              Native Kotlin/Compose CJP Swarm product
 spikes/android            Separate synthetic transport measurement instrument
 tests/unit                Domain and authentication tests
 tests/integration         Real PostgreSQL workflow, authorization, media tests
@@ -77,7 +79,7 @@ Every setting is listed in [.env.example](.env.example). Never commit `.env`.
 | `REDIS_URL`                                              | BullMQ connection URL                                                      |
 | `API_PORT`, `API_INTERNAL_URL`                           | API listen port and Next.js proxy destination                              |
 | `WEB_ORIGIN`, `PUBLIC_URL`                               | Exact allowed browser origin and canonical public website URL              |
-| `PLATFORM_NAME`, `NEXT_PUBLIC_PLATFORM_NAME`             | Runtime name and frontend metadata branding (default Saathi)               |
+| `PLATFORM_NAME`, `NEXT_PUBLIC_PLATFORM_NAME`             | Runtime name and frontend metadata branding (default CJP Swarm)            |
 | `REQUEST_ID_PREFIX`                                      | Prefix for public request identifiers (default SAA)                        |
 | `RESERVATION_MINUTES`, `SESSION_DAYS`                    | Reservation and session lifetimes                                          |
 | `DEMO_MODE`, `SEED_PASSWORD`                             | Explicit demo disclosure and seed credentials; disabled in production      |

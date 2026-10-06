@@ -81,7 +81,7 @@ export function ContributionPage({ token }: { token: string }) {
       </div>
       {!connection.internet && (
         <p className="status-notice closed">
-          Your connection to Saathi is unavailable. Reconnect and check this reservation before
+          Your connection to Swarm is unavailable. Reconnect and check this reservation before
           purchasing supplies or recording an order.
         </p>
       )}
@@ -150,7 +150,7 @@ export function ContributionPage({ token }: { token: string }) {
           </div>
           <h2>Arrange your delivery</h2>
           <p>
-            Use these public receiving details in your delivery app. Saathi does not place or pay
+            Use these public receiving details in your delivery app. Swarm does not place or pay
             for external orders.
           </p>
           <div className="delivery-instructions">

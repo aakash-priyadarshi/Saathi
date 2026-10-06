@@ -1,5 +1,7 @@
 # Privacy and moderation
 
+CJP Swarm development/QA chat encrypts private profiles, drafts, messages, policies, keys and attachment chunks on Android. Chosen names are not verified identities. DMs and invite-only content are encrypted at the operational server; participant public keys, membership, timestamps and attachment sizes remain metadata. Open channels are member/server-readable. Removal cannot recall earlier copies; offline policy expires within six hours and message/attachment retention is seven days. Discovery counts the confirmed current peer. There are batched in-app alerts, with mute, rather than a push/background-delivery guarantee. See [the detailed contract and limits](chat-channel-architecture.md).
+
 Public responses include display names, organization names, designated receiving-point details, request quantities and status. They exclude private emails, phones, home addresses, device/session IDs and internal organization/request IDs. Exact coordinates are omitted unless `exactLocationApproved` is true; relief points created through the portal are approximate by default.
 
 Donor email is optional and used only for requested transaction notifications. Public browsing requires no permanent account. A private tracking token is a capability, not an identity check. Staff delivery views omit donor email and tracking tokens. Audit snapshots for public requests contain public fields, not authentication secrets. Order IDs and delivery notes are operational private data; define a retention period and restricted staff access before deployment.

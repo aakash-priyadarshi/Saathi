@@ -1,5 +1,7 @@
 # Architecture
 
+The product is now **CJP Swarm**, visually **SWARM by CJP**. Saathi package/protocol/storage names remain stable. The [experimental conversation layer](chat-channel-architecture.md) adds participant-based DMs, owner-signed channels, durable private media and transport-independent sync on the current Android/relief foundation. Chat membership and official humanitarian authority remain separate. The website remains the public relief client.
+
 Saathi has one authoritative public origin. Public content is deliberately projected into narrow response contracts; internal IDs and donor contact data do not cross those contracts. PostgreSQL owns durable requests, commitments, deliveries, sessions, revisions, media records, notification outbox, and append-only audit events.
 
 ```mermaid

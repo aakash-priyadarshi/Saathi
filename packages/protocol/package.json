@@ -11,6 +11,7 @@
   "dependencies": {
     "@saathi/validation": "workspace:*",
     "canonicalize": "2.1.0",
+    "jose": "6.2.12",
     "zod": "^3.25.76"
   }
 }

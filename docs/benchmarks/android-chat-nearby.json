@@ -1,0 +1,145 @@
+{
+  "testedAt": "2026-10-05T23:50:36.207Z",
+  "models": ["SM-S921B", "SM-X510"],
+  "transport": "nearby",
+  "thirdPeer": null,
+  "completed": true,
+  "fixture": "NativeChatDualTest",
+  "authorDurationSeconds": 404.258,
+  "carrierDurationSeconds": 404.203,
+  "networkScope": "Nearby radio exchange with validated internet available at all checkpoints; server route used USB reverse to isolated local API",
+  "stepTimingScope": "Coordinator barrier intervals, not radio throughput or general message latency",
+  "mediaScope": "Generated 32x32 PNG, synthetic one-second AAC tone, encrypted 4 MiB file; no owner media or voice recording",
+  "notVerified": [
+    "three native Android peers",
+    "complete internet-loss transition",
+    "range",
+    "sustained battery",
+    "screen lock or reboot"
+  ],
+  "appSha256": "14a8f7ad4e891ec643b2ef990398682bb8f1c4f0e1e088c6d1fa81ec08970d63",
+  "steps": [
+    {
+      "step": "prepared",
+      "milliseconds": 850,
+      "authorInternetValidated": true,
+      "carrierInternetValidated": true
+    },
+    {
+      "step": "pair-ready-1",
+      "milliseconds": 1
+    },
+    {
+      "step": "code-1",
+      "milliseconds": 41
+    },
+    {
+      "step": "connected-1",
+      "milliseconds": 171,
+      "authorInternetValidated": true,
+      "carrierInternetValidated": true
+    },
+    {
+      "step": "logical-dm",
+      "milliseconds": 39
+    },
+    {
+      "step": "private-dm-delivered-read",
+      "milliseconds": 55
+    },
+    {
+      "step": "dm-server-saved",
+      "milliseconds": 157
+    },
+    {
+      "step": "online-radio-deduplicated",
+      "milliseconds": 175
+    },
+    {
+      "step": "repository-reopened-identity-and-history",
+      "milliseconds": 105
+    },
+    {
+      "step": "open-created",
+      "milliseconds": 744
+    },
+    {
+      "step": "open-owner-signed-join",
+      "milliseconds": 414
+    },
+    {
+      "step": "open-channel-messages",
+      "milliseconds": 275
+    },
+    {
+      "step": "recipient-invite-replay-idempotent",
+      "milliseconds": 1936
+    },
+    {
+      "step": "private-channel-decrypted",
+      "milliseconds": 131
+    },
+    {
+      "step": "photo-and-aac-voice-note-verified",
+      "milliseconds": 3337
+    },
+    {
+      "step": "encrypted-file-partial-persisted",
+      "milliseconds": 2008
+    },
+    {
+      "step": "file-radio-interrupted",
+      "milliseconds": 696
+    },
+    {
+      "step": "pair-ready-2",
+      "milliseconds": 2
+    },
+    {
+      "step": "code-2",
+      "milliseconds": 45
+    },
+    {
+      "step": "connected-2",
+      "milliseconds": 103,
+      "authorInternetValidated": true,
+      "carrierInternetValidated": true
+    },
+    {
+      "step": "encrypted-resume-plaintext-hash-verified",
+      "milliseconds": 35734
+    },
+    {
+      "step": "channel-and-media-metadata-synced",
+      "milliseconds": 99
+    },
+    {
+      "step": "second-sync-deduplicated",
+      "milliseconds": 417
+    },
+    {
+      "step": "encrypted-server-upload-complete",
+      "milliseconds": 196459
+    },
+    {
+      "step": "encrypted-server-download-plaintext-verified",
+      "milliseconds": 108510
+    },
+    {
+      "step": "private-member-removal-applied",
+      "milliseconds": 339
+    },
+    {
+      "step": "blocked-recipient",
+      "milliseconds": 227
+    },
+    {
+      "step": "block-prevents-new-delivery",
+      "milliseconds": 5
+    },
+    {
+      "step": "complete",
+      "milliseconds": 0
+    }
+  ]
+}

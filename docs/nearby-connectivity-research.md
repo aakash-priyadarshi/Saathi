@@ -20,6 +20,8 @@ The 20 July 2026 Nearby announcement schedules removal of automatic radio enable
 
 ## Platform capability matrix
 
+Current product evidence, 6 October: the S24/tablet have native Nearby encrypted chat/channel and media tests; the existing local-Wi-Fi hardware call/data and Windows-browser relief relay paths also pass. New private chat is a development/QA preview, not a browser feature. Only one peer session is live per adapter; persisted contacts/history do not constitute a live full mesh. Complete new-chat internet-loss transitions, three-native-peer relay, range/battery/lock tests and iOS remain unverified. See [Android verification](android-testing.md) and [chat architecture](chat-channel-architecture.md). The table below describes platform API possibilities rather than tested product support.
+
 **D** = documented API possibility, **C** = conditional on network/hardware/permission, **N** = unavailable through standard APIs. Every row is a research result, not hardware verification.
 
 | Platform              | Offline shell/storage         | Messages/events                             | Files                             | Voice/video                    | Discovery                                              | Reconnection                           | Background                                 |

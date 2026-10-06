@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Saathi",
-  "short_name": "Saathi",
+  "name": "CJP Swarm",
+  "short_name": "SWARM",
   "description": "Humanitarian relief, saved information and nearby coordination.",
   "start_url": "/offline",
   "scope": "/",

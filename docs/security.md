@@ -1,5 +1,7 @@
 # Security model
 
+The CJP Swarm communication preview has a separate [chat security boundary](chat-channel-architecture.md). Participant signatures confer no humanitarian or organization permissions. Private conversation handlers are operational-only. Dedicated tests cover JOSE encryption, signed membership, recipient-bound invitations/receipts, blocks, replay protection and encrypted attachments. Release chat stays disabled pending independent review. Static keys do not provide forward secrecy. Chat media never enters public publication without a separate explicit user action.
+
 The API derives roles and organizations from database sessions, never from the request body. Organization membership must be approved and its organization active/verified. Volunteer suspension blocks future actions and revokes sessions/devices. Admin and coordinator endpoints recheck authority on every action. Public browsing has no session requirement; verified publishing always does.
 
 Passwords use salted Node.js scrypt. Session and CSRF secrets are 256-bit random tokens, stored as SHA-256 hashes. Sessions expire and can be revoked immediately. Production cookies are Secure, HttpOnly for the session, SameSite=Strict, and same-origin. Authenticated writes check CSRF. All mutations, including guest donation writes and login, require the configured exact Origin. Login failures are tracked in PostgreSQL with lockouts; in-process general rate limiting supplements this, and production ingress should provide distributed client/IP enforcement.

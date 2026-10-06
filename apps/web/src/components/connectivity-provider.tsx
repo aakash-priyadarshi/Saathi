@@ -50,7 +50,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         .then(() => update({ prepared: true }))
         .catch(() =>
           update({
-            storageError: 'Saathi could not prepare offline opening. Reconnect and try again.',
+            storageError: 'Swarm could not prepare offline opening. Reconnect and try again.',
           }),
         );
     const result = (event: Event) => {
@@ -77,7 +77,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
           cache: 'no-store',
           signal: AbortSignal.timeout(6000),
         });
-        if (!response.ok) throw new Error('Saathi is unavailable');
+        if (!response.ok) throw new Error('Swarm is unavailable');
         await response.json();
         result(
           new CustomEvent('saathi-api-result', {
@@ -151,10 +151,10 @@ export function ConnectionBar() {
           : state.internet
             ? state.weak
               ? 'Your connection is slow. Saved work stays on this phone.'
-              : 'Connected to Saathi'
+              : 'Connected to Swarm'
             : state.nearby
-              ? 'No internet. Connected to nearby Saathi.'
-              : 'No connection to Saathi. Read saved information or write a draft.'}
+              ? 'No internet. Connected to nearby Swarm.'
+              : 'No connection to Swarm. Read saved information or write a draft.'}
       </span>
       <Link href="/connectivity">What works right now?</Link>
     </div>

@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
-  HeartHandshake,
+  Network,
   Sun,
   Moon,
   ArrowUpRight,
@@ -35,7 +35,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
     localStorage.setItem('saathi-theme', next ? 'dark' : 'light');
     document.documentElement.dataset.theme = next ? 'dark' : 'light';
   }
-  const name = data?.platformName ?? process.env.NEXT_PUBLIC_PLATFORM_NAME ?? 'Saathi';
+  const name = data?.platformName ?? process.env.NEXT_PUBLIC_PLATFORM_NAME ?? 'CJP Swarm';
+  const display = name === 'CJP Swarm' ? 'SWARM' : name;
   return (
     <>
       <a href="#main" className="skip-link">
@@ -49,10 +50,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <header className="site-header">
         <div className="header-inner">
           <Link className="brand" href="/" aria-label={`${name} home`}>
-            <HeartHandshake size={30} strokeWidth={1.8} />
+            <Network size={30} strokeWidth={1.8} />
             <span>
-              {name}
-              <small>Here for each other</small>
+              {display}
+              <small>{name === 'CJP Swarm' ? 'by CJP' : 'Here for each other'}</small>
             </span>
           </Link>
           <nav aria-label="Main navigation" className="desktop-nav">
@@ -84,14 +85,15 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <Link className="footer-brand" href="/">
             {name}
           </Link>
-          <p>Small acts. Stronger communities.</p>
+          <p>Connect nearby. Coordinate together.</p>
+          {name === 'CJP Swarm' && <p>Developed by Cockroach Janta Party</p>}
         </div>
         <p>
           Always check a request’s current status before sending supplies.
           <br />
           <Link href="/verify">Verify a shared request</Link>
           <span> · </span>
-          <Link href="/about">How Saathi works</Link>
+          <Link href="/about">How Swarm works</Link>
           <span> · </span>
           <Link href="/offline">Saved work</Link>
           <span> · </span>

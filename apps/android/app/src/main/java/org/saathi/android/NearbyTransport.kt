@@ -28,7 +28,7 @@ class NearbyTransport(context: Context, private val scope: CoroutineScope) : Pee
     private var pending: String? = null
     private var window: Job? = null
     private var lastScan = 0L
-    private var temporaryName = "Saathi " + UUID.randomUUID().toString().take(4).uppercase()
+    private var temporaryName = "Swarm " + UUID.randomUUID().toString().take(4).uppercase()
     var onState: (String) -> Unit = {}
     var onPeers: (Map<String, String>) -> Unit = {}
     var onPair: (String?) -> Unit = {}
@@ -63,16 +63,16 @@ class NearbyTransport(context: Context, private val scope: CoroutineScope) : Pee
             if (endpoint == id) { endpoint = null; connected = false; onState("Nearby connection lost. Saved work is safe. Move closer or reconnect.") }
         }
     }
-    suspend fun scan(advertise: Boolean) {
+    suspend fun scan(advertise: Boolean, automatic:Boolean=false) {
         require(available) { "Use local Wi-Fi pairing on this phone." }
         require(System.currentTimeMillis() - lastScan > 10000) { "Wait a moment before searching again to save battery." }
-        disconnect(); lastScan = System.currentTimeMillis(); peers.clear(); onPeers(peers.toMap()); temporaryName = "Saathi " + UUID.randomUUID().toString().take(4).uppercase()
-        if (advertise) client.startAdvertising(temporaryName, service, lifecycle, AdvertisingOptions.Builder().setStrategy(Strategy.P2P_POINT_TO_POINT).setConnectionType(ConnectionType.BALANCED).build()).await()
-        else client.startDiscovery(service, object : EndpointDiscoveryCallback() {
+        disconnect(); lastScan = System.currentTimeMillis(); peers.clear(); onPeers(peers.toMap()); temporaryName = "Swarm " + UUID.randomUUID().toString().take(4).uppercase()
+        if (advertise || automatic) client.startAdvertising(temporaryName, service, lifecycle, AdvertisingOptions.Builder().setStrategy(Strategy.P2P_POINT_TO_POINT).setConnectionType(ConnectionType.BALANCED).build()).await()
+        if (!advertise || automatic) client.startDiscovery(service, object : EndpointDiscoveryCallback() {
             override fun onEndpointFound(id: String, info: DiscoveredEndpointInfo) { if (peers.size < 20) { peers[id] = info.endpointName.take(40); onPeers(peers.toMap()) } }
             override fun onEndpointLost(id: String) { peers.remove(id); onPeers(peers.toMap()) }
         }, DiscoveryOptions.Builder().setStrategy(Strategy.P2P_POINT_TO_POINT).build()).await()
-        onState(if (advertise) "Visible nearby as $temporaryName for one minute" else "Looking for nearby Saathi for one minute")
+        onState(if (automatic) "Visible and looking nearby for one minute" else if (advertise) "Visible nearby as $temporaryName for one minute" else "Looking for nearby Swarm for one minute")
         window = scope.launch { delay(60000); stopScan(); if (!connected && pending == null) onState("Search finished. Search again when another person is ready.") }
     }
     suspend fun connect(id: String) { require(peers.containsKey(id)); client.requestConnection(temporaryName, id, lifecycle).await() }

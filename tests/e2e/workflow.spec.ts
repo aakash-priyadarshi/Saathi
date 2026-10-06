@@ -21,7 +21,7 @@ test('public browsing, filtering, verification and responsive layout', async ({ 
     true,
   );
   await page.getByRole('link', { name: 'Verify', exact: true }).click();
-  await page.getByLabel('Request ID or Saathi link').fill('SAA-2A6D19');
+  await page.getByLabel('Request ID or Swarm link').fill('SAA-2A6D19');
   await page.getByRole('button', { name: 'Check request' }).click();
   await expect(page.getByText('This need has been fulfilled', { exact: true })).toBeVisible();
   await expect(page.getByText('Do not send additional supplies.', { exact: false })).toBeVisible();

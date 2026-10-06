@@ -1,0 +1,50 @@
+{
+  "recordedAt": "2026-10-06",
+  "artifact": {
+    "package": "org.saathi.android.dev",
+    "version": "1.0.0-dev",
+    "apkSha256": "ed7cc9933ed36fee5ebd1595039c37da586807c8899f95967e1a56ffd2b3d687",
+    "bytes": 76301488,
+    "certificateSha256": "bfccf64b1323649f43c8dc2db8ff05aee9c71856ef1f0a60221768718a992310"
+  },
+  "fixture": {
+    "privateStores": "Isolated UUID-named fictional test stores, removed after testing",
+    "startupNetworkServices": false,
+    "appAndTestApks": "Installed together from a completed build",
+    "classes": ["ChatStoreTest", "SecureStoreTest", "ChatReadUiTest"],
+    "readAssertions": [
+      "Latest incoming message opens visibly and becomes locally read",
+      "Offscreen older history remains unread",
+      "Incoming message does not displace deliberate history scrolling and stays unread",
+      "Latest messages action displays the new message and saves exactly one signed READ receipt",
+      "Own send remains visible",
+      "Nearby-only connection status uses measured persistence wording"
+    ],
+    "directReadFallback": false
+  },
+  "runs": [
+    {
+      "model": "Samsung SM-X510",
+      "android": "16",
+      "api": 36,
+      "tests": 5,
+      "result": "PASS",
+      "seconds": 21.515
+    },
+    {
+      "model": "Android Studio emulator",
+      "android": "API 37 image",
+      "api": 37,
+      "tests": 5,
+      "result": "PASS",
+      "seconds": 14.595
+    }
+  ],
+  "limits": [
+    "S24 disconnected before final viewport validation; earlier four storage cases passed there",
+    "Store close/reopen is not physical reboot or process-death coverage",
+    "Fictional connection-state screenshot is not radio evidence",
+    "This run does not certify cryptography, calls, nearby transport, production readiness or all supported Android versions",
+    "Earlier physical chat and call/relay proof artifacts retain their separately recorded hashes and scope"
+  ]
+}

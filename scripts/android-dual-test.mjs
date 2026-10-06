@@ -11,12 +11,15 @@ import { join } from 'node:path';
 import { parse } from 'dotenv';
 
 // Explicitly opt in with two approved model names; never select somebody's phone implicitly.
-const [authorModel, carrierModel, transport = 'nearby', extraPeer] = process.argv.slice(2);
+const [authorModel, carrierModel, transport = 'nearby', fixture] = process.argv.slice(2);
+const chatFixture = fixture === 'chat';
+const extraPeer = fixture === 'browser' ? fixture : null;
 if (!authorModel || !carrierModel || !['nearby', 'wifi'].includes(transport))
   throw new Error(
     'Usage: node scripts/android-dual-test.mjs AUTHOR_MODEL CARRIER_MODEL nearby|wifi',
   );
-if (extraPeer && (extraPeer !== 'browser' || transport !== 'wifi'))
+if (fixture && !['chat', 'browser'].includes(fixture)) throw new Error('Unknown fixture.');
+if (extraPeer && transport !== 'wifi')
   throw new Error('The optional browser third peer requires wifi mode.');
 const adb = join(
   process.env.ANDROID_HOME || join(process.env.LOCALAPPDATA, 'Android', 'Sdk'),
@@ -41,6 +44,9 @@ if (selected.some((x) => !x) || selected[0] === selected[1])
 const password = parse(readFileSync('.env', 'utf8')).SEED_PASSWORD;
 if (!password)
   throw new Error('Set a development fixture password locally; never put it in an APK.');
+const testedAppHash = createHash('sha256')
+  .update(readFileSync('apps/android/app/build/outputs/apk/debug/app-debug.apk'))
+  .digest('hex');
 const token = randomBytes(24).toString('hex');
 const pending = new Map(),
   measurements = [];
@@ -134,9 +140,12 @@ const server = createServer(async (req, res) => {
     }
     if (step.roles[input.role]) throw new Error('Duplicate fixture barrier.');
     step.roles[input.role] = { value: input.value, res };
-    const timer = setTimeout(() => {
-      if (!res.writableEnded) res.writeHead(504).end('{}');
-    }, 140000);
+    const timer = setTimeout(
+      () => {
+        if (!res.writableEnded) res.writeHead(504).end('{}');
+      },
+      chatFixture ? 300000 : 140000,
+    );
     res.on('close', () => clearTimeout(timer));
     if (step.roles.author && step.roles.carrier) {
       const browserReply = await thirdPeerStep(req.url, step.roles.carrier.value);
@@ -223,7 +232,7 @@ try {
         '-w',
         '-e',
         'class',
-        'org.saathi.android.NativeDualTest',
+        chatFixture ? 'org.saathi.android.NativeChatDualTest' : 'org.saathi.android.NativeDualTest',
         '-e',
         'dualFixture',
         'true',
@@ -249,7 +258,7 @@ try {
     let output = '';
     child.stdout.on('data', (x) => (output += x));
     child.stderr.on('data', (x) => (output += x));
-    const timer = setTimeout(() => child.kill(), 600000);
+    const timer = setTimeout(() => child.kill(), chatFixture ? 900000 : 600000);
     processes.push(
       new Promise((resolve) =>
         child.once('close', (code) => {
@@ -271,7 +280,7 @@ try {
   await browser?.close();
   mkdirSync('.data/android-measurements', { recursive: true });
   writeFileSync(
-    `.data/android-measurements/dual-${transport}${extraPeer ? '-browser' : ''}.json`,
+    `.data/android-measurements/${chatFixture ? 'chat' : 'dual'}-${transport}${extraPeer ? '-browser' : ''}.json`,
     JSON.stringify(
       {
         testedAt: new Date().toISOString(),
@@ -279,6 +288,7 @@ try {
         transport,
         thirdPeer: extraPeer ? 'Windows Chromium' : null,
         completed,
+        appSha256: testedAppHash,
         steps: measurements,
       },
       null,

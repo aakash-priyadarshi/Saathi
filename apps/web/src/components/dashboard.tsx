@@ -172,7 +172,7 @@ export function DashboardFrame({
                 await clearPrivate();
               } catch {
                 window.alert(
-                  'Signed out. Browser storage could not be cleared; remove Saathi’s site data in browser settings on this shared phone.',
+                  'Signed out. Browser storage could not be cleared; remove Swarm’s site data in browser settings on this shared phone.',
                 );
               }
               router.push('/login');

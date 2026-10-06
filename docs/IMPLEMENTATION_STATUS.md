@@ -1,12 +1,32 @@
 # Implementation status
 
+## CJP Swarm communication milestone — 6 October 2026
+
+Official app name **CJP Swarm**; display **SWARM by CJP**. The native communication preview extends the existing product from `d60cdaf`, preserving package IDs, encrypted storage, signed relief events, Nearby/local-Wi-Fi adapters and the public web/API workflows. Release builds disable private chat pending independent cryptographic review. No hosted staging or production deployment is claimed.
+
+- [x] Separate Updates, Chats, Nearby, Needs and More; familiar direct/channel rows, unread/mute, truthful message states, contextual Back and adaptive native navigation.
+- [x] Stable participant-key DM identity across radio/server delivery; encrypted private payloads, signed Delivered/Read, deduplication, durable drafts/history and local search.
+- [x] Explicit channel creation, bounded opt-in discovery, owner-approved open joins, signed recipient-only invitations with link/share/size-bounded QR, versioned membership, removal/leave/deletion and epoch history authorization.
+- [x] Durable photo/video/voice/file representations, private encryption/consent/hash/resume, bounded database ciphertext upload/download and preserved urgent-event priority. Actual video attachment transfer remains unverified.
+- [x] Structured mentions and batched foreground notices; participant blocks, conversation mute and bounded reports. Background/push notifications are not implemented.
+- [x] Needs/Updates discussion destinations and a chat-to-Need review draft; approved volunteer preparation and existing server RBAC still govern official creation.
+- [x] Capability-gated 1:1 native local-Wi-Fi calls; finite Compose Swarm formation and Remove animations path. Huddles/group video remain disabled.
+- [x] Physical two-device chat pairing, stable encrypted DM, signed receipts, open/private channel joins/messages, invite replay, interrupted encrypted 4 MiB transfer, server upload/download, member removal and blocking.
+- [x] Final-build legacy local-Wi-Fi data, hardware audio/video and S24 → tablet → Windows Chromium → API relay with reverse receipt regression.
+- [x] Nine native JVM, 26 shared/API unit, 45 real PostgreSQL integration and all 14 browser cases passed locally; new chat store-close/reopen and existing encrypted-storage tests passed on both devices and emulator.
+- [ ] Three-native-peer chat relay: only two authorized Android devices available. Logical three-participant server authorization/history is tested; legacy Windows third-peer relay does not establish new private-chat interoperability.
+- [ ] Full internet → offline nearby → internet transition for new chat, range/battery/lock/reboot/permission tests, actual voice recording, video attachment transfer and no-internet calls. Current chat run had validated internet at each checkpoint.
+- [ ] Independent cryptographic/security review, hosted QA trust/TLS/signer, production provider/restore/load verification and broader platform compatibility.
+
+[Chat architecture](chat-channel-architecture.md), [Android verification](android-testing.md), [chat measurements](benchmarks/android-chat-nearby.json) and [engineering handoff](android-handoff.md) record the implementation and exact limits. Historical sections below describe earlier milestones at their stated dates; their smaller test counts are not current totals.
+
 ## Android production milestone — in progress, 5 October 2026
 
 `apps/android` is a native Kotlin/Compose product, separate from the research probe. Receipt rotation, signed endpoint configuration, fail-closed hosted signing, encrypted native work/Keystore identity, durable ordinary-write retry keys, public-read isolation, carrier observations, a leased media worker and explicit guarded orphan maintenance are implemented. Five native protocol tests, 17 shared/API unit tests, 33 PostgreSQL integration tests and all 14 browser cases pass. Both physical Samsung devices passed three secure-storage tests plus native signed API and lost-response/idempotent-retry tests; an emulator draft survived actual process death.
 
 The physical S24/tablet product passed offline native Nearby pairing, bidirectional durable messages, interrupted 4 MiB file resume/hash verification, urgent original-event priority, author-absent carrier publication and signed receipt return. The physical local-Wi-Fi fixture also passed both hardware audio/video receipt checks and the data/relay scenarios. Tablet-to-Windows-browser pairing, bidirectional 1 MiB files/messages, original event and reconnect passed. S24 → tablet → Windows Chromium → API also passed at two peer hops with the author disconnected and the signed receipt returning to the S24. Same-account recovery preserves the device identity/draft; same-email replacement identities are rejected. The native finish reviewer scored all four named fixes resolved, at that limited scope. Both native and web/API CI passed for `264d405`; follow-up corrections need a final run. Hosted QA, real provider/TLS/restore proof and broader lifecycle/range/battery tests remain incomplete. [Detailed evidence](android-testing.md), [architecture](android-architecture.md), [trust ADR](adr/0003-signed-service-configuration.md) and [release gates](deployment-resilience.md) state the limits precisely.
 
-Updated 5 October 2026. Platform name: **Saathi**. The online web workflow, durable offline PWA and browser nearby preview are operational on this development host with real PostgreSQL persistence. Checkmarks mean implemented and locally verified; they do not imply a live deployment, physical-phone compatibility or completed production certification.
+Earlier milestone recorded 5 October 2026 under the former **Saathi** name. The online web workflow, durable offline PWA and browser nearby preview are operational on this development host with real PostgreSQL persistence. Checkmarks mean implemented and locally verified; they do not imply a live deployment, physical-phone compatibility or completed production certification.
 
 ## Phase 1 — core web milestone
 

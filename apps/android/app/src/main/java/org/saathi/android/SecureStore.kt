@@ -55,6 +55,7 @@ class SecureStore(context: Context, private val storageScope: String = BuildConf
     }
     @Synchronized fun remove(bucket: String, id: String) { writableDatabase.delete("records", "bucket=? AND id=?", arrayOf(bucket, id)) }
     fun signingAlias(account: String) = "saathi.$storageScope.author.$account"
+    fun hasIdentity(account: String) = keyStore.containsAlias(signingAlias(account))
     fun ensureIdentity(account: String) {
         val alias = signingAlias(account)
         if (keyStore.containsAlias(alias)) return

@@ -1,4 +1,4 @@
-# Saathi
+# CJP Swarm
 
 <!-- impeccable:product-schema 1 -->
 
@@ -14,7 +14,7 @@ Web and service stack: TypeScript, pnpm, Turborepo, Next.js, NestJS, PostgreSQL/
 
 ## Users
 
-Public donors find verified needs without signing up. Verified volunteers request supplies and report deliveries. Coordinators approve volunteers and moderate their organization; admins manage organizations.
+Public donors find verified needs without signing up. Verified volunteers request supplies and report deliveries. Coordinators approve volunteers and moderate their organization; admins manage organizations. Nearby participants can communicate in the development/QA preview without gaining humanitarian authority.
 
 ## Product Purpose
 
@@ -30,7 +30,7 @@ Partial reservations, anonymous private donor tracking, verified field updates, 
 
 ## Brand Commitments
 
-The name is Saathi. Calm, credible, humane, accessible, politically neutral. Light and dark themes. No flashy startup presentation or gamification.
+Official app/store name: CJP Swarm. Display: SWARM, with by CJP as the endorsement and “Connect nearby. Coordinate together.” as the subtitle. Full Cockroach Janta Party credit belongs in About/footer. Branding is configurable; existing Saathi protocol, repository and storage identifiers remain compatible. Calm, credible, humane, accessible, politically neutral. Light and dark themes. No flashy startup presentation or gamification.
 
 ## Evidence on Hand
 

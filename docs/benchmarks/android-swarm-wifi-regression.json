@@ -1,0 +1,182 @@
+{
+  "testedAt": "2026-10-06T00:02:03.439Z",
+  "models": ["SM-S921B", "SM-X510"],
+  "transport": "wifi",
+  "thirdPeer": "Windows Chromium",
+  "completed": true,
+  "appSha256": "f1f74826fc3ed6edeb514106c117a10cf1eff326815afdaef34dccfd7a26bbb8",
+  "steps": [
+    {
+      "step": "prepared",
+      "milliseconds": 1267,
+      "authorInternetValidated": true,
+      "carrierInternetValidated": true
+    },
+    {
+      "step": "pair-ready-1",
+      "milliseconds": 7
+    },
+    {
+      "step": "offer-1",
+      "milliseconds": 261
+    },
+    {
+      "step": "reply-1",
+      "milliseconds": 331
+    },
+    {
+      "step": "code-1",
+      "milliseconds": 22
+    },
+    {
+      "step": "connected-1",
+      "milliseconds": 5,
+      "authorInternetValidated": true,
+      "carrierInternetValidated": true
+    },
+    {
+      "step": "messages-acknowledged",
+      "milliseconds": 70
+    },
+    {
+      "step": "payload-ready",
+      "milliseconds": 3525
+    },
+    {
+      "step": "partial-file-persisted",
+      "milliseconds": 1961
+    },
+    {
+      "step": "interrupted",
+      "milliseconds": 40
+    },
+    {
+      "step": "pair-ready-2",
+      "milliseconds": 3
+    },
+    {
+      "step": "offer-2",
+      "milliseconds": 464
+    },
+    {
+      "step": "reply-2",
+      "milliseconds": 156
+    },
+    {
+      "step": "code-2",
+      "milliseconds": 56
+    },
+    {
+      "step": "connected-2",
+      "milliseconds": 7,
+      "authorInternetValidated": true,
+      "carrierInternetValidated": true
+    },
+    {
+      "step": "urgent-event-before-file",
+      "milliseconds": 576
+    },
+    {
+      "step": "resumed-file-hash-verified",
+      "milliseconds": 87
+    },
+    {
+      "step": "call-ready-false",
+      "milliseconds": 2
+    },
+    {
+      "step": "call-media-false",
+      "milliseconds": 143,
+      "authorAudioBytes": 113724,
+      "authorVideoFrames": 0,
+      "carrierAudioBytes": 107922,
+      "carrierVideoFrames": 0
+    },
+    {
+      "step": "call-ended-false",
+      "milliseconds": 9
+    },
+    {
+      "step": "call-ready-true",
+      "milliseconds": 0
+    },
+    {
+      "step": "call-media-true",
+      "milliseconds": 222,
+      "authorAudioBytes": 144278,
+      "authorVideoFrames": 98,
+      "carrierAudioBytes": 137946,
+      "carrierVideoFrames": 94
+    },
+    {
+      "step": "call-ended-true",
+      "milliseconds": 92
+    },
+    {
+      "step": "author-disconnected",
+      "milliseconds": 229
+    },
+    {
+      "step": "browser-offer-event",
+      "milliseconds": 1521
+    },
+    {
+      "step": "browser-code-event",
+      "milliseconds": 156
+    },
+    {
+      "step": "browser-original-event",
+      "milliseconds": 408
+    },
+    {
+      "step": "browser-offer-receipt",
+      "milliseconds": 699
+    },
+    {
+      "step": "browser-code-receipt",
+      "milliseconds": 161
+    },
+    {
+      "step": "browser-share-receipt",
+      "milliseconds": 56
+    },
+    {
+      "step": "browser-receipt-returned",
+      "milliseconds": 163
+    },
+    {
+      "step": "carrier-published-original-signature",
+      "milliseconds": 4
+    },
+    {
+      "step": "pair-ready-3",
+      "milliseconds": 15
+    },
+    {
+      "step": "offer-3",
+      "milliseconds": 313
+    },
+    {
+      "step": "reply-3",
+      "milliseconds": 396
+    },
+    {
+      "step": "code-3",
+      "milliseconds": 5
+    },
+    {
+      "step": "connected-3",
+      "milliseconds": 4,
+      "authorInternetValidated": true,
+      "carrierInternetValidated": true
+    },
+    {
+      "step": "receipt-returned-to-author",
+      "milliseconds": 101
+    },
+    {
+      "step": "complete",
+      "milliseconds": 8
+    }
+  ]
+}

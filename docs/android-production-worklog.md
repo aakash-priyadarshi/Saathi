@@ -1,5 +1,23 @@
 # Android product milestone work record
 
+## Communication extension — 6 October 2026
+
+Continued from current `main` source `d60cdaf` after finishing the earlier physical transport/call/browser work. Adopted the user's final CJP Swarm / SWARM by CJP branding while preserving repository/package/storage/protocol IDs. The existing native Compose product, encrypted relief work and radio adapters remain; no application/runtime rebuild or duplicate backend was introduced.
+
+Added stable DMs and explicit open/invite-only channels, separately signed profiles/policies/joins/invites/receipts, standard JOSE private encryption, bounded authorized history/relay, seven-day retention and scoped PostgreSQL synchronization. Owner policy/epoch prevents new delivery to removed members after revocation propagates; it cannot erase old copies or give instantaneous disconnected revocation. Added bounded ciphertext-only attachment storage, resume and author-signed manifests, separated from public field-media moderation. Strict signed request replay uses cached exact responses and timestamp high-water marks so old requests cannot undo membership/blocks. Public API deployments omit chat handlers.
+
+Native navigation separates Updates/Chats/Nearby/Needs/More, with familiar conversation lists, private draft composer, bounded media/voice actions, references, mentions, local search, mute/block/report, signed recipient-bound invite sharing and capability-gated calls. Create Need copies private text into an approved volunteer's review draft; server RBAC remains authoritative. A finite two-node Compose animation reflects one actual confirmed path, with Remove animations support. Huddles remain unavailable, push/background notifications unimplemented, and release private chat gated for independent review.
+
+26 shared/API unit, 45 PostgreSQL integration and all 14 browser regression cases passed locally; native assemble/lint and nine JVM protocol cases pass. Initial private-chat synchronization exposed transaction acquisition pressure and redundant encrypted-file validation during long uploads. A bounded 15-second acquisition wait, once-per-transfer ciphertext validation and bounded fixture coordination corrected the failures. The complete physical Nearby chat/media run then passed on both Samsung Android 16 devices: stable encrypted DM/read receipts, duplicate suppression, open joins, recipient invite/replay, private messages, generated PNG/synthetic AAC and interrupted 4 MiB resume, encrypted server upload/download, removal and block. Both devices had validated internet; this is radio/server continuity, not a full internet-loss transition.
+
+The later refinement build passed the retained Wi-Fi data/call/browser relay test on both devices in 81.451/80.830 seconds, including eight-second hardware audio/video receipt checks and unchanged original-author event at two peer hops with reverse signed receipt. ChatStoreTest actually closes/reopens encrypted SQLite and refuses missing-key identity reset; this differs from chat process-death/reboot evidence. Final NativeSyncTest + SecureStore passed on both physical devices in 4.710/4.402 seconds, covering account recovery, revocation and lost-reservation-response retry. [Android testing](android-testing.md) and sanitized benchmark files record artifact hashes and precise scope.
+
+The first visual batch exposed excessive conversation chrome at 2x text and duplicate keyboard clearance. One correction batch compacted conversation chrome/search, consumed Scaffold insets and preserved the composer above the keyboard. A fresh finish reviewer evaluates the final captured phone/tablet/emulator and web brand scope separately from transport/security. [Native design](android-design.md) records its final verdict after correction.
+
+Three-native-peer chat, full internet-loss transition, actual recording/video transfer, physical range/battery/lock/reboot and permissions are deferred under the owner's instruction to skip tests needing their presence. Railway deployment still needs the previously pending approval; no hosted QA or production claim is made. Device-awake changes are temporary and must be restored at handoff; the scoped Windows UDP rule still requires an administrator disable command.
+
+## Earlier foundation work — 5 October 2026
+
 Started 5 October 2026 from `main` commit `f0bd84e`; pull was up to date. This record describes completed engineering and remaining gates; it is not a production certification.
 
 ## Decisions

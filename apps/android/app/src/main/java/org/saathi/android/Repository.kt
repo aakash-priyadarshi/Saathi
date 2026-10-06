@@ -48,7 +48,7 @@ class Repository(context: Context, storageScope: String = BuildConfig.ENVIRONMEN
         val version = store.get("trust", "version")?.optLong("version", 1) ?: 1
         val now = clock()
         val sources = (BuildConfig.BOOTSTRAP.split(',').filter { it.isNotBlank() } + (cached?.getJSONObject("body")?.getJSONArray("apiEndpoints")?.strings() ?: emptyList()).map { it.trimEnd('/') + "/api/v1/sync/service-config" }).distinct().take(6)
-        var failure = "Saathi service information is not provisioned for this build."
+        var failure = "Swarm service information is not provisioned for this build."
         for (source in sources) {
             try {
                 require(source.startsWith("https://") || (environment == "development" && (source.startsWith("http://127.0.0.1:") || source.startsWith("http://localhost:"))))
@@ -57,7 +57,7 @@ class Repository(context: Context, storageScope: String = BuildConfig.ENVIRONMEN
                 store.put("public", "configuration", value, false)
                 store.put("trust", "version", obj("version" to value.getJSONObject("body").getLong("version")))
                 return@withContext
-            } catch (e: Exception) { failure = if (e is java.io.IOException) "Saathi service information could not be reached. Saved work is safe. Reconnect and try again." else e.message ?: "Service information is unavailable." }
+            } catch (e: Exception) { failure = if (e is java.io.IOException) "Swarm service information could not be reached. Saved work is safe. Reconnect and try again." else e.message ?: "Service information is unavailable." }
         }
         if (cached != null) {
             configuration = ServiceConfiguration.verify(cached, root, environment, BuildConfig.VERSION_CODE, cached, version, now)
@@ -66,7 +66,7 @@ class Repository(context: Context, storageScope: String = BuildConfig.ENVIRONMEN
         error(failure)
     }
     private fun fetch(url: String, body: JSONObject?, authenticated: Boolean, limit: Int = 2 * 1024 * 1024, method: String = if (body == null) "GET" else "POST", idempotencyKey: String? = null): String {
-        val request = Request.Builder().url(url).header("Accept", "application/json").header("X-Saathi-App-Version", BuildConfig.VERSION_NAME)
+        val request = Request.Builder().url(url).header("Accept", "application/json").header("X-Swarm-App-Version", BuildConfig.VERSION_NAME)
         if (body != null) {
             request.method(method, body.toString().toRequestBody("application/json".toMediaType()))
             configuration?.getJSONObject("body")?.getString("webOrigin")?.let { request.header("Origin", it) }
@@ -77,8 +77,8 @@ class Repository(context: Context, storageScope: String = BuildConfig.ENVIRONMEN
             request.header("Cookie", saved.getString("cookies")); request.header("X-CSRF-Token", saved.getString("csrf"))
         }
         client.newCall(request.build()).execute().use { response ->
-            val responseBody = response.body ?: error("Saathi returned an empty response.")
-            require(responseBody.contentLength() <= limit) { "Saathi returned too much information." }
+            val responseBody = response.body ?: error("Swarm returned an empty response.")
+            require(responseBody.contentLength() <= limit) { "Swarm returned too much information." }
             val buffer = ByteArrayOutputStream().apply {
                 responseBody.byteStream().use { input ->
                     val chunk = ByteArray(8192)
@@ -88,7 +88,7 @@ class Repository(context: Context, storageScope: String = BuildConfig.ENVIRONMEN
             require(buffer.size <= limit)
             if (!response.isSuccessful) {
                 if (authenticated && response.code in listOf(401, 403)) store.remove("credentials", "session")
-                val message = runCatching { JSONObject(String(buffer)).get("message").toString().take(300) }.getOrDefault("Saathi could not complete this action (${response.code}).")
+                val message = runCatching { JSONObject(String(buffer)).get("message").toString().take(300) }.getOrDefault("Swarm could not complete this action (${response.code}).")
                 throw ApiFailure(response.code, message)
             }
             if (url.endsWith("/auth/login")) {
@@ -110,10 +110,10 @@ class Repository(context: Context, storageScope: String = BuildConfig.ENVIRONMEN
             try { return@withContext fetch(endpoint.trimEnd('/') + "/api/v1" + path, body, authenticated, method = method, idempotencyKey = idempotencyKey).also { reachable = true; lastChecked = Instant.now().toString() } }
             catch (e: Exception) {
                 if (e is ApiFailure) { reachable = true; lastChecked = Instant.now().toString(); throw e }
-                failure = if (e is java.io.IOException) IllegalStateException("Saathi could not be reached. Saved work is safe. Reconnect and retry the original action.", e) else e; if (body != null) break /* Signed event retries are explicit; ordinary writes never guess across endpoints. */
+                failure = if (e is java.io.IOException) IllegalStateException("Swarm could not be reached. Saved work is safe. Reconnect and retry the original action.", e) else e; if (body != null) break /* Signed event retries are explicit; ordinary writes never guess across endpoints. */
             }
         }
-        reachable = false; throw failure ?: IllegalStateException("Saathi is unavailable.")
+        reachable = false; throw failure ?: IllegalStateException("Swarm is unavailable.")
     }
     suspend fun refresh() {
         refreshConfiguration()
@@ -199,8 +199,8 @@ class Repository(context: Context, storageScope: String = BuildConfig.ENVIRONMEN
     }
     fun acceptReceipt(receipt: JSONObject) {
         val id = receipt.getJSONObject("body").getString("eventId"); val event = store.get("events", id) ?: return
-        val keys = configuration?.getJSONObject("body")?.getJSONArray("receiptKeys") ?: error("Reconnect to verify Saathi’s confirmation.")
-        require(Protocol.validReceipt(receipt, event.getJSONObject("envelope"), keys)) { "Saathi’s confirmation could not be checked." }
+        val keys = configuration?.getJSONObject("body")?.getJSONArray("receiptKeys") ?: error("Reconnect to verify Swarm’s confirmation.")
+        require(Protocol.validReceipt(receipt, event.getJSONObject("envelope"), keys)) { "Swarm’s confirmation could not be checked." }
         val old = event.optJSONObject("receipt")
         if (old != null && Instant.parse(old.getJSONObject("body").getString("recordedAt")) > Instant.parse(receipt.getJSONObject("body").getString("recordedAt"))) return
         event.put("receipt", receipt); event.remove("error"); store.put("events", id, event)

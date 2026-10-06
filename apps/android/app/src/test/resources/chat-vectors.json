@@ -1,0 +1,336 @@
+{
+  "note": "PUBLIC THROWAWAY TEST KEYS. Not a user identity or deployment credential.",
+  "now": "2026-10-05T18:24:38.719Z",
+  "recipientPrivateJwk": {
+    "key_ops": [
+      "deriveBits"
+    ],
+    "ext": true,
+    "kty": "EC",
+    "x": "_W1gOB-zuf6fsUYDM211H4SikXcW7St-kkLvyqFNJBw",
+    "y": "IW9kc5SoMyZG01Tk8ASLsoU_qyQCpQaNeTlJWEwlOq0",
+    "crv": "P-256",
+    "d": "vh-8_L30usYKTo7JF9pGfCslk9JOlRo56EGPGuwXz0w"
+  },
+  "dm": {
+    "body": {
+      "v": 1,
+      "kind": "CHAT_MESSAGE",
+      "id": "3ef4f3aa-c00e-4698-ac67-19fe846efb5d",
+      "conversationId": "dm:a8524aa1a06ca4b0d032cb7347600cabdcab8333b57efe85a055255922087787",
+      "author": {
+        "body": {
+          "v": 1,
+          "kind": "CHAT_PROFILE",
+          "id": "0586ee0021479ef9c9a5a13a241b21fe9862c744617ac62c6d170705385e387c",
+          "name": "Public test Alice",
+          "publicKey": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "9LM0Ts8Jsn-n47V_eS-a2iip7pNGN4AnwhduaX28qts",
+            "y": "_1nrqkkoljwT-xzX7MXtQEuxuJWbgEDYfp_SNcN1K4M"
+          },
+          "encryptionKey": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "-nM8Pnqj0dlLpNP6_x8aGBWGI3EBgZTc_NXGisZSN3E",
+            "y": "SP8GGzpWAd5hMGyqfCRMjyTwiGmiGRmm58qfdiAgGAY"
+          },
+          "updatedAt": "2026-10-05T18:24:38.698Z"
+        },
+        "signature": "hJalcmnQkqV7-CU_XdD7qhhGTyauxm5ltiRC6-ESAyHixJYMgBMHtN7NqkQ1E3aUiSaQEnWmzhKU2-THa1ln8Q"
+      },
+      "recipientId": "5f5dec5227374cfce12c6dffe3da1084d9d78acfb9dce85ece4e11583a423708",
+      "policyHash": null,
+      "channelVersion": 0,
+      "epoch": null,
+      "sequence": 1,
+      "createdAt": "2026-10-05T18:24:38.718Z",
+      "expiresAt": "2026-10-06T18:24:38.718Z",
+      "format": "TEXT",
+      "encrypted": true,
+      "content": "eyJhbGciOiJFQ0RILUVTIiwiZW5jIjoiQTI1NkdDTSIsInR5cCI6IlNXQVJNX0NIQVRfVjEiLCJraWQiOiJkbTpkbTphODUyNGFhMWEwNmNhNGIwZDAzMmNiNzM0NzYwMGNhYmRjYWI4MzMzYjU3ZWZlODVhMDU1MjU1OTIyMDg3Nzg3OjNlZjRmM2FhLWMwMGUtNDY5OC1hYzY3LTE5ZmU4NDZlZmI1ZDo1ZjVkZWM1MjI3Mzc0Y2ZjZTEyYzZkZmZlM2RhMTA4NGQ5ZDc4YWNmYjlkY2U4NWVjZTRlMTE1ODNhNDIzNzA4IiwiZXBrIjp7IngiOiJsWW9CWENGWV9ZTDVGSVhmb3BXblhwa25LMHprR2R5bzJWblhpQ2otWEFzIiwiY3J2IjoiUC0yNTYiLCJrdHkiOiJFQyIsInkiOiJoc1FMcURUZ2JOMEFKdnpNQ3dFUGVMT0tPdUxSMG5TMVRRd1MwNGZPMi04In19..9hcefBMM1BncBg6F.jIkYa2fg1wwwBXqziORDCNGduY-FU7mP_tLH.bpH3Szct5Kw6rlDxBiF2Hw"
+    },
+    "signature": "stuWLLXIgukvh7tKMovLlkntEgSy0W8idFtMYp2oYaLrvqx-hhi_prcazncuffXHyX82RGe1Gqud3rSwJ0ZpWA"
+  },
+  "privateChannel": {
+    "body": {
+      "v": 1,
+      "kind": "CHAT_CHANNEL",
+      "id": "e2a775a3-844c-4bc0-b770-928eb84177cc",
+      "name": "Medical Help",
+      "visibility": "INVITE",
+      "owner": {
+        "body": {
+          "v": 1,
+          "kind": "CHAT_PROFILE",
+          "id": "0586ee0021479ef9c9a5a13a241b21fe9862c744617ac62c6d170705385e387c",
+          "name": "Public test Alice",
+          "publicKey": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "9LM0Ts8Jsn-n47V_eS-a2iip7pNGN4AnwhduaX28qts",
+            "y": "_1nrqkkoljwT-xzX7MXtQEuxuJWbgEDYfp_SNcN1K4M"
+          },
+          "encryptionKey": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "-nM8Pnqj0dlLpNP6_x8aGBWGI3EBgZTc_NXGisZSN3E",
+            "y": "SP8GGzpWAd5hMGyqfCRMjyTwiGmiGRmm58qfdiAgGAY"
+          },
+          "updatedAt": "2026-10-05T18:24:38.698Z"
+        },
+        "signature": "hJalcmnQkqV7-CU_XdD7qhhGTyauxm5ltiRC6-ESAyHixJYMgBMHtN7NqkQ1E3aUiSaQEnWmzhKU2-THa1ln8Q"
+      },
+      "version": 1,
+      "epoch": "4749f06f-c20b-4555-a679-913fa408cc7c",
+      "issuedAt": "2026-10-05T18:24:37.716Z",
+      "expiresAt": "2026-10-05T19:24:38.716Z",
+      "deleted": false,
+      "members": [
+        {
+          "profile": {
+            "body": {
+              "v": 1,
+              "kind": "CHAT_PROFILE",
+              "id": "0586ee0021479ef9c9a5a13a241b21fe9862c744617ac62c6d170705385e387c",
+              "name": "Public test Alice",
+              "publicKey": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "9LM0Ts8Jsn-n47V_eS-a2iip7pNGN4AnwhduaX28qts",
+                "y": "_1nrqkkoljwT-xzX7MXtQEuxuJWbgEDYfp_SNcN1K4M"
+              },
+              "encryptionKey": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "-nM8Pnqj0dlLpNP6_x8aGBWGI3EBgZTc_NXGisZSN3E",
+                "y": "SP8GGzpWAd5hMGyqfCRMjyTwiGmiGRmm58qfdiAgGAY"
+              },
+              "updatedAt": "2026-10-05T18:24:38.698Z"
+            },
+            "signature": "hJalcmnQkqV7-CU_XdD7qhhGTyauxm5ltiRC6-ESAyHixJYMgBMHtN7NqkQ1E3aUiSaQEnWmzhKU2-THa1ln8Q"
+          },
+          "role": "OWNER",
+          "joinedAt": "2026-10-05T18:24:37.716Z",
+          "removedAt": null
+        },
+        {
+          "profile": {
+            "body": {
+              "v": 1,
+              "kind": "CHAT_PROFILE",
+              "id": "5f5dec5227374cfce12c6dffe3da1084d9d78acfb9dce85ece4e11583a423708",
+              "name": "Public test Bob",
+              "publicKey": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "A2SYFxMtsII7IMc1Zwj90FFVcB_gtZUQT6wXOg71Ptc",
+                "y": "mM9-PHXsgOrEskijtg8Tq8EzcsTE6PVnz6UoK5C0iAY"
+              },
+              "encryptionKey": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "_W1gOB-zuf6fsUYDM211H4SikXcW7St-kkLvyqFNJBw",
+                "y": "IW9kc5SoMyZG01Tk8ASLsoU_qyQCpQaNeTlJWEwlOq0"
+              },
+              "updatedAt": "2026-10-05T18:24:38.710Z"
+            },
+            "signature": "eSk7kDXfLfbY9we8vK6ZI5fOb2y1b4_PA_vJs3KuUCLTHKA2HK0jrrj1NxzJvKbfMtWy7nhIzSzEluuuL5VgSw"
+          },
+          "role": "MEMBER",
+          "joinedAt": "2026-10-05T18:24:37.716Z",
+          "removedAt": null
+        }
+      ],
+      "keys": [
+        {
+          "participantId": "0586ee0021479ef9c9a5a13a241b21fe9862c744617ac62c6d170705385e387c",
+          "jwe": "eyJhbGciOiJFQ0RILUVTIiwiZW5jIjoiQTI1NkdDTSIsInR5cCI6IlNXQVJNX0NIQVRfVjEiLCJraWQiOiJjaGFubmVsOmUyYTc3NWEzLTg0NGMtNGJjMC1iNzcwLTkyOGViODQxNzdjYzo0NzQ5ZjA2Zi1jMjBiLTQ1NTUtYTY3OS05MTNmYTQwOGNjN2M6MDU4NmVlMDAyMTQ3OWVmOWM5YTVhMTNhMjQxYjIxZmU5ODYyYzc0NDYxN2FjNjJjNmQxNzA3MDUzODVlMzg3YyIsImVwayI6eyJ4IjoicmhrVUs4MkxNVjh6azFVU0VIMTF5YVRySWI4SF96LXNqSlN3THRRQXRwNCIsImNydiI6IlAtMjU2Iiwia3R5IjoiRUMiLCJ5IjoiTGpubFVkWUJpZ2VHSGF5NS15QVVQTGRYZXJ0TDhES21kTzlSeGYwa1FYRSJ9fQ..EYlXDTtBKLgba8ZS.UkqxtDva17DnbqyTnwkv23-KZfMdUShLooKeI8VuhHR1HwDW5rJZL9wwMu0btlQOOer5g6U.s5Bxqa0cOqKfOFRlYTFl6Q"
+        },
+        {
+          "participantId": "5f5dec5227374cfce12c6dffe3da1084d9d78acfb9dce85ece4e11583a423708",
+          "jwe": "eyJhbGciOiJFQ0RILUVTIiwiZW5jIjoiQTI1NkdDTSIsInR5cCI6IlNXQVJNX0NIQVRfVjEiLCJraWQiOiJjaGFubmVsOmUyYTc3NWEzLTg0NGMtNGJjMC1iNzcwLTkyOGViODQxNzdjYzo0NzQ5ZjA2Zi1jMjBiLTQ1NTUtYTY3OS05MTNmYTQwOGNjN2M6NWY1ZGVjNTIyNzM3NGNmY2UxMmM2ZGZmZTNkYTEwODRkOWQ3OGFjZmI5ZGNlODVlY2U0ZTExNTgzYTQyMzcwOCIsImVwayI6eyJ4IjoiVnhEQUpDemphTVk3SmlJeElDSjNGSjliWFZ5c2JKYkFxNHpiRTg1WTdOYyIsImNydiI6IlAtMjU2Iiwia3R5IjoiRUMiLCJ5IjoickRFMTNDZGtVb1ZNSUlyWmpRbnJYREJkeVc2LVBfOGFuVDNkcng1M29DNCJ9fQ..5ykhbw3XKGyhJLtx.mJATOt7OIp4tluAuNXtcESGddkCvIyHJaCIxrvmVDJdjZL-vseIfOMAGQDBi4Vsg3M-msRE.3Rh_o2PyYfgAfv0dL_G3JQ"
+        }
+      ]
+    },
+    "signature": "np1L1j7fnSe851Z4aBGm7om-0FlJE4NTRwBcUnRwavyzP6tis8mPnQrbAzn-utGNIyvsDeinzNG86FPT2knkUw"
+  },
+  "privateMessage": {
+    "body": {
+      "v": 1,
+      "kind": "CHAT_MESSAGE",
+      "id": "8ce829bd-1ead-4fdb-90c5-8b6ffaad4955",
+      "conversationId": "e2a775a3-844c-4bc0-b770-928eb84177cc",
+      "author": {
+        "body": {
+          "v": 1,
+          "kind": "CHAT_PROFILE",
+          "id": "0586ee0021479ef9c9a5a13a241b21fe9862c744617ac62c6d170705385e387c",
+          "name": "Public test Alice",
+          "publicKey": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "9LM0Ts8Jsn-n47V_eS-a2iip7pNGN4AnwhduaX28qts",
+            "y": "_1nrqkkoljwT-xzX7MXtQEuxuJWbgEDYfp_SNcN1K4M"
+          },
+          "encryptionKey": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "-nM8Pnqj0dlLpNP6_x8aGBWGI3EBgZTc_NXGisZSN3E",
+            "y": "SP8GGzpWAd5hMGyqfCRMjyTwiGmiGRmm58qfdiAgGAY"
+          },
+          "updatedAt": "2026-10-05T18:24:38.698Z"
+        },
+        "signature": "hJalcmnQkqV7-CU_XdD7qhhGTyauxm5ltiRC6-ESAyHixJYMgBMHtN7NqkQ1E3aUiSaQEnWmzhKU2-THa1ln8Q"
+      },
+      "recipientId": null,
+      "policyHash": "fb501a3fe2972da924f66af33b41d258a26cbccaf8ad33b3d9c742e1b56f1de5",
+      "channelVersion": 1,
+      "epoch": "4749f06f-c20b-4555-a679-913fa408cc7c",
+      "sequence": 1,
+      "createdAt": "2026-10-05T18:24:38.718Z",
+      "expiresAt": "2026-10-06T18:24:38.718Z",
+      "format": "TEXT",
+      "encrypted": true,
+      "content": "eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIiwidHlwIjoiU1dBUk1fQ0hBVF9WMSIsImtpZCI6ImNoYW5uZWw6ZTJhNzc1YTMtODQ0Yy00YmMwLWI3NzAtOTI4ZWI4NDE3N2NjOjQ3NDlmMDZmLWMyMGItNDU1NS1hNjc5LTkxM2ZhNDA4Y2M3Yzo4Y2U4MjliZC0xZWFkLTRmZGItOTBjNS04YjZmZmFhZDQ5NTUifQ..vfjDVwDCv_mDLLJ3.48OP-ZMIU_W028mjlSogzgsB1os-KZy4mFbL.cqkNNtIZ4PFYWSMX-2lNnA"
+    },
+    "signature": "jIe6UfTBuUG-8-klFwKwA_hpT9ejXw7j5Ix_x0uhMIf-KD0Dvx8JEjepWW0bvu55Oo2esThI27g2NtWIf2fqow"
+  },
+  "openChannel": {
+    "body": {
+      "v": 1,
+      "kind": "CHAT_CHANNEL",
+      "id": "ba851310-4d5b-482f-8be5-8f84c8a5d7e9",
+      "name": "Medical Help",
+      "visibility": "OPEN",
+      "owner": {
+        "body": {
+          "v": 1,
+          "kind": "CHAT_PROFILE",
+          "id": "0586ee0021479ef9c9a5a13a241b21fe9862c744617ac62c6d170705385e387c",
+          "name": "Public test Alice",
+          "publicKey": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "9LM0Ts8Jsn-n47V_eS-a2iip7pNGN4AnwhduaX28qts",
+            "y": "_1nrqkkoljwT-xzX7MXtQEuxuJWbgEDYfp_SNcN1K4M"
+          },
+          "encryptionKey": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "-nM8Pnqj0dlLpNP6_x8aGBWGI3EBgZTc_NXGisZSN3E",
+            "y": "SP8GGzpWAd5hMGyqfCRMjyTwiGmiGRmm58qfdiAgGAY"
+          },
+          "updatedAt": "2026-10-05T18:24:38.698Z"
+        },
+        "signature": "hJalcmnQkqV7-CU_XdD7qhhGTyauxm5ltiRC6-ESAyHixJYMgBMHtN7NqkQ1E3aUiSaQEnWmzhKU2-THa1ln8Q"
+      },
+      "version": 1,
+      "epoch": "85f81263-4ae1-4b12-874b-f7816cffeabf",
+      "issuedAt": "2026-10-05T18:24:37.717Z",
+      "expiresAt": "2026-10-05T19:24:38.717Z",
+      "deleted": false,
+      "members": [
+        {
+          "profile": {
+            "body": {
+              "v": 1,
+              "kind": "CHAT_PROFILE",
+              "id": "0586ee0021479ef9c9a5a13a241b21fe9862c744617ac62c6d170705385e387c",
+              "name": "Public test Alice",
+              "publicKey": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "9LM0Ts8Jsn-n47V_eS-a2iip7pNGN4AnwhduaX28qts",
+                "y": "_1nrqkkoljwT-xzX7MXtQEuxuJWbgEDYfp_SNcN1K4M"
+              },
+              "encryptionKey": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "-nM8Pnqj0dlLpNP6_x8aGBWGI3EBgZTc_NXGisZSN3E",
+                "y": "SP8GGzpWAd5hMGyqfCRMjyTwiGmiGRmm58qfdiAgGAY"
+              },
+              "updatedAt": "2026-10-05T18:24:38.698Z"
+            },
+            "signature": "hJalcmnQkqV7-CU_XdD7qhhGTyauxm5ltiRC6-ESAyHixJYMgBMHtN7NqkQ1E3aUiSaQEnWmzhKU2-THa1ln8Q"
+          },
+          "role": "OWNER",
+          "joinedAt": "2026-10-05T18:24:37.717Z",
+          "removedAt": null
+        },
+        {
+          "profile": {
+            "body": {
+              "v": 1,
+              "kind": "CHAT_PROFILE",
+              "id": "5f5dec5227374cfce12c6dffe3da1084d9d78acfb9dce85ece4e11583a423708",
+              "name": "Public test Bob",
+              "publicKey": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "A2SYFxMtsII7IMc1Zwj90FFVcB_gtZUQT6wXOg71Ptc",
+                "y": "mM9-PHXsgOrEskijtg8Tq8EzcsTE6PVnz6UoK5C0iAY"
+              },
+              "encryptionKey": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "_W1gOB-zuf6fsUYDM211H4SikXcW7St-kkLvyqFNJBw",
+                "y": "IW9kc5SoMyZG01Tk8ASLsoU_qyQCpQaNeTlJWEwlOq0"
+              },
+              "updatedAt": "2026-10-05T18:24:38.710Z"
+            },
+            "signature": "eSk7kDXfLfbY9we8vK6ZI5fOb2y1b4_PA_vJs3KuUCLTHKA2HK0jrrj1NxzJvKbfMtWy7nhIzSzEluuuL5VgSw"
+          },
+          "role": "MEMBER",
+          "joinedAt": "2026-10-05T18:24:37.717Z",
+          "removedAt": null
+        }
+      ],
+      "keys": []
+    },
+    "signature": "sqK4NsDCWc1I2pKMAgDAfAj-QypZbNieaBmRmqLptkkt6b4C_p627pOwnPClk_-ld0a1I9djBzyQe8vxJNtssw"
+  },
+  "openMessage": {
+    "body": {
+      "v": 1,
+      "kind": "CHAT_MESSAGE",
+      "id": "eb4ba14f-dd61-4e2f-84eb-2b5f264079f5",
+      "conversationId": "ba851310-4d5b-482f-8be5-8f84c8a5d7e9",
+      "author": {
+        "body": {
+          "v": 1,
+          "kind": "CHAT_PROFILE",
+          "id": "0586ee0021479ef9c9a5a13a241b21fe9862c744617ac62c6d170705385e387c",
+          "name": "Public test Alice",
+          "publicKey": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "9LM0Ts8Jsn-n47V_eS-a2iip7pNGN4AnwhduaX28qts",
+            "y": "_1nrqkkoljwT-xzX7MXtQEuxuJWbgEDYfp_SNcN1K4M"
+          },
+          "encryptionKey": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "-nM8Pnqj0dlLpNP6_x8aGBWGI3EBgZTc_NXGisZSN3E",
+            "y": "SP8GGzpWAd5hMGyqfCRMjyTwiGmiGRmm58qfdiAgGAY"
+          },
+          "updatedAt": "2026-10-05T18:24:38.698Z"
+        },
+        "signature": "hJalcmnQkqV7-CU_XdD7qhhGTyauxm5ltiRC6-ESAyHixJYMgBMHtN7NqkQ1E3aUiSaQEnWmzhKU2-THa1ln8Q"
+      },
+      "recipientId": null,
+      "policyHash": "204652d2df38868ea17c18f9662284b51ad248849ae1e8c33953162a1004ef2a",
+      "channelVersion": 1,
+      "epoch": "85f81263-4ae1-4b12-874b-f7816cffeabf",
+      "sequence": 1,
+      "createdAt": "2026-10-05T18:24:38.719Z",
+      "expiresAt": "2026-10-06T18:24:38.719Z",
+      "format": "TEXT",
+      "encrypted": false,
+      "content": "{\"text\":\"Where is Gate 2?\"}"
+    },
+    "signature": "IkBLyuJ-50MTG8n18nUj4ZwSiOLh1N5RnysewLlA5Ny6Z7izfKbhD_grjhOCD6Oa76aF7rSiJzOJr9ggmknCjw"
+  },
+  "key": "-jJWi8al3VdiLCvgCppm2v7sP-mavQ04fGUbnrxixuI"
+}

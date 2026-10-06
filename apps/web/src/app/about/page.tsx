@@ -4,7 +4,7 @@ export default function Page() {
     <div className="page-wrap narrow prose">
       <h1>Here for each other.</h1>
       <p>
-        Saathi connects community support with verified humanitarian needs. Anyone can browse needs
+        Swarm connects community support with verified humanitarian needs. Anyone can browse needs
         or offer supplies without creating an account.
       </p>
       <h2>Find a need. Give what you can.</h2>

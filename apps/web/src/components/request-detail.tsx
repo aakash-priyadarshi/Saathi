@@ -215,12 +215,12 @@ export function RequestDetail({ id }: { id: string }) {
             <>
               <h2>Please check before buying.</h2>
               <p>
-                The last time Saathi checked, this location needed {count(r.remainingQuantity)}{' '}
+                The last time Swarm checked, this location needed {count(r.remainingQuantity)}{' '}
                 {r.unit}.{savedAt && ` Checked ${formatDate(savedAt)}.`} Things may have changed.
                 Reconnect before reserving or placing an order.
               </p>
               <button className="button secondary" onClick={() => void refresh()}>
-                Check with Saathi again
+                Check with Swarm again
               </button>
             </>
           ) : !r.organization.verified ? (

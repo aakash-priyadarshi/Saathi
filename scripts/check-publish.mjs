@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { Buffer } from 'node:buffer';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { parse } from 'dotenv';
 
 const listing = spawnSync('git', ['ls-files', '-z'], { encoding: 'utf8' });
@@ -27,11 +28,22 @@ for (const path of paths) {
   )
     failures.push(`${path}: private/generated file`);
   const bytes = readFileSync(path);
+  // Exactly this public, generated throwaway JOSE vector is needed to test native decryption.
+  // Pin its complete normalized contents; any replacement requires explicit review here.
+  const publicTestVector =
+    path === 'apps/android/app/src/test/resources/chat-vectors.json' &&
+    createHash('sha256').update(bytes.toString('utf8').replaceAll('\r\n', '\n')).digest('hex') ===
+      '83e5775009e890c51efeffa17140bcb36a61c0d415ff0313d8b8f6dcd925e3aa';
   if (secrets.some((secret) => bytes.includes(secret)))
     failures.push(`${path}: local credential detected`);
   if (/github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{30,}/.test(bytes.toString('utf8')))
     failures.push(`${path}: GitHub credential pattern detected`);
-  if (/-----BEGIN (?:EC |RSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----|"d"\s*:\s*"[A-Za-z0-9_-]{40,}"/.test(bytes.toString('utf8')))
+  if (
+    !publicTestVector &&
+    /-----BEGIN (?:EC |RSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----|"d"\s*:\s*"[A-Za-z0-9_-]{40,}"/.test(
+      bytes.toString('utf8'),
+    )
+  )
     failures.push(`${path}: private signing material pattern detected`);
 }
 if (failures.length) {

@@ -322,3 +322,129 @@ model LoginAttempt {
   lockedUntil DateTime?
   updatedAt DateTime @updatedAt
 }
+model ChatParticipant {
+  id String @id
+  profile Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastSyncAt DateTime?
+  messages ChatMessage[]
+  memberships ChatMembership[]
+}
+
+model ChatConversation {
+  id String @id
+  visibility String
+  ownerId String?
+  version Int @default(0)
+  policy Json?
+  deleted Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  memberships ChatMembership[]
+  messages ChatMessage[]
+  joins ChatJoinRequest[]
+  policies ChatPolicy[]
+}
+model ChatPolicy {
+  id String @id
+  conversationId String
+  version Int
+  policy Json
+  conversation ChatConversation @relation(fields:[conversationId],references:[id],onDelete:Cascade)
+  @@unique([conversationId,version])
+}
+
+model ChatMembership {
+  conversationId String
+  participantId String
+  role String
+  joinedAt DateTime
+  removedAt DateTime?
+  conversation ChatConversation @relation(fields:[conversationId], references:[id], onDelete:Cascade)
+  participant ChatParticipant @relation(fields:[participantId], references:[id], onDelete:Cascade)
+  @@id([conversationId, participantId])
+  @@index([participantId,removedAt])
+}
+
+model ChatMessage {
+  id String @id
+  conversationId String
+  authorId String
+  envelope Json
+  envelopeHash String
+  receivedAt DateTime @default(now())
+  expiresAt DateTime
+  conversation ChatConversation @relation(fields:[conversationId], references:[id], onDelete:Cascade)
+  author ChatParticipant @relation(fields:[authorId], references:[id])
+  receipts ChatDeliveryReceipt[]
+  @@index([conversationId,receivedAt,id])
+  @@index([expiresAt])
+}
+
+// Opaque encrypted attachment bytes; never enter the public media pipeline.
+model ChatAttachment {
+  id String @id @db.Uuid
+  messageId String @unique @db.Uuid
+  ownerId String
+  manifest Json
+  size Int
+  hash String
+  expiresAt DateTime
+  chunks ChatAttachmentChunk[]
+  @@index([expiresAt])
+  @@index([ownerId])
+}
+
+model ChatAttachmentChunk {
+  attachmentId String @db.Uuid
+  part Int
+  bytes Bytes
+  attachment ChatAttachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+  @@id([attachmentId, part])
+}
+
+model ChatDeliveryReceipt {
+  messageId String
+  participantId String
+  status String
+  receipt Json
+  message ChatMessage @relation(fields:[messageId], references:[id], onDelete:Cascade)
+  @@id([messageId,participantId,status])
+}
+
+model ChatJoinRequest {
+  id String @id
+  conversationId String
+  participantId String
+  profile Json
+  fulfilled Boolean @default(false)
+  action String @default("JOIN")
+  createdAt DateTime @default(now())
+  conversation ChatConversation @relation(fields:[conversationId], references:[id], onDelete:Cascade)
+  @@unique([conversationId,participantId])
+}
+
+model ChatBlock {
+  participantId String
+  blockedId String
+  createdAt DateTime @default(now())
+  @@id([participantId,blockedId])
+}
+
+model ChatReport {
+  id String @id
+  participantId String
+  messageId String
+  reason String
+  createdAt DateTime @default(now())
+}
+
+model ChatSyncNonce {
+  id String @id
+  participantId String
+  hash String
+  expiresAt DateTime
+  response Json?
+  @@index([expiresAt])
+}

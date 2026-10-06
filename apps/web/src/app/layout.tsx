@@ -4,7 +4,7 @@ import '@fontsource-variable/lora';
 import './globals.css';
 import { Shell } from '../components/shell';
 import { ConnectionProvider } from '../components/connectivity-provider';
-const name = process.env.NEXT_PUBLIC_PLATFORM_NAME ?? 'Saathi';
+const name = process.env.NEXT_PUBLIC_PLATFORM_NAME ?? 'CJP Swarm';
 export const metadata: Metadata = {
   title: { default: `${name} — Here for each other`, template: `%s · ${name}` },
   description:

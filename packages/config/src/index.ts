@@ -10,7 +10,7 @@ const schema = z.object({
   API_PORT: z.coerce.number().default(4000),
   WEB_ORIGIN: z.string().url().default('http://localhost:3000'),
   PUBLIC_URL: z.string().url().default('http://localhost:3000'),
-  PLATFORM_NAME: z.string().default('Saathi'),
+  PLATFORM_NAME: z.string().default('CJP Swarm'),
   APP_ENV: z
     .enum(['development', 'staging', 'production'])
     .default(process.env.NODE_ENV === 'production' ? 'production' : 'development'),

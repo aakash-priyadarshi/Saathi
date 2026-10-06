@@ -82,6 +82,7 @@ export class Jobs implements OnModuleInit, OnModuleDestroy {
     this.busy = true;
     try {
       await this.donations.sweep();
+      await this.db.chatAttachment.deleteMany({where:{expiresAt:{lte:new Date()}}});
       await this.flush();
     } finally {
       this.busy = false;

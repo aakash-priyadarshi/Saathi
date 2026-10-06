@@ -28,6 +28,8 @@ import { S3Storage } from './media/storage';
 import { SyncService } from './sync/sync.service';
 import { SyncController } from './sync/sync.controller';
 import { PublicReadModule } from './public/public.module';
+import { ChatController } from './chat/chat.controller';
+import { ChatService } from './chat/chat.service';
 import {
   PublicController,
   AuthController,
@@ -67,6 +69,7 @@ class Errors implements ExceptionFilter {
     ThrottlerModule.forRoot([{ ttl: 60000, limit: env.NODE_ENV === 'test' ? 10000 : 120 }]),
   ],
   controllers: [
+    ChatController,
     SyncController,
     PublicController,
     AuthController,
@@ -75,6 +78,7 @@ class Errors implements ExceptionFilter {
     ManagementController,
   ],
   providers: [
+    { provide: ChatService, useFactory: (db: Database) => new ChatService(db), inject: [Database] },
     {
       provide: SyncService,
       useFactory: (

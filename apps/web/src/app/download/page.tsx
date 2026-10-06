@@ -1,12 +1,12 @@
 import Link from 'next/link';
 import { Download, Smartphone } from 'lucide-react';
-export const metadata = { title: 'Saathi for Android' };
+export const metadata = { title: 'Swarm for Android' };
 export default function Page() {
   const configured = process.env.ANDROID_QA_APK_URL;
   const url = configured && /^https:\/\//.test(configured) ? configured : undefined;
   return (
     <div className="page-wrap prose-page">
-      <h1>Take Saathi with you</h1>
+      <h1>Take Swarm with you</h1>
       <p className="lead">
         Relief needs, protected drafts and nearby conversations in a native Android app.
       </p>
@@ -22,7 +22,7 @@ export default function Page() {
         {url ? (
           <a className="button" href={url}>
             <Download size={18} />
-            Download Saathi QA APK
+            Download Swarm QA APK
           </a>
         ) : (
           <p>
@@ -34,7 +34,7 @@ export default function Page() {
           </p>
         )}
         <p>
-          Install only a build from the Saathi repository or your verified team. Check its published
+          Install only a build from the Swarm repository or your verified team. Check its published
           checksum and environment before signing in. Production distribution is awaiting release
           verification.
         </p>

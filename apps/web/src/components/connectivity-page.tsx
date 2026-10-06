@@ -37,7 +37,7 @@ export function EventStatus({ event }: { event: SavedEvent }) {
         Saved on this phone
       </span>
       <span>{event.sharedAt ? <Check size={14} /> : <Minus size={14} />}Reached another phone</span>
-      <span>{event.receipt ? <Check size={14} /> : <Minus size={14} />}Reached Saathi</span>
+      <span>{event.receipt ? <Check size={14} /> : <Minus size={14} />}Reached Swarm</span>
       <span>
         {event.receipt?.body.status === 'PUBLISHED' ? <Check size={14} /> : <Minus size={14} />}
         Published
@@ -137,8 +137,8 @@ export function ConnectivityPage() {
     await setSetting('offline-prepared', new Date().toISOString());
     setNotice(
       persistent
-        ? 'Saathi is ready to open offline. Your browser granted protected storage.'
-        : 'Saathi is ready to open offline. Export important work: this browser may remove stored data when space is low.',
+        ? 'Swarm is ready to open offline. Your browser granted protected storage.'
+        : 'Swarm is ready to open offline. Export important work: this browser may remove stored data when space is low.',
     );
   }
   const storageUsable = local.storage && !c.storageError;
@@ -147,9 +147,9 @@ export function ConnectivityPage() {
     ...(storageUsable ? ['Write and save request drafts, field updates and messages'] : []),
     ...(c.internet ? ['Check current website information'] : []),
     ...(c.internet && storageUsable && local.prepared
-      ? ['Send prepared relief updates to Saathi']
+      ? ['Send prepared relief updates to Swarm']
       : c.internet && storageUsable && local.events.some((event) => !event.receipt)
-        ? ['Carry signed relief updates received nearby to Saathi']
+        ? ['Carry signed relief updates received nearby to Swarm']
         : []),
     ...(c.nearby && storageUsable
       ? [
@@ -184,7 +184,7 @@ export function ConnectivityPage() {
     <div className="page-wrap connectivity-wrap">
       <h1>What works right now?</h1>
       <p className="page-intro">
-        Your connection can change. Your saved work stays separate from what has reached Saathi.
+        Your connection can change. Your saved work stays separate from what has reached Swarm.
       </p>
       <div className="connect-actions">
         <Link className="button" href="/offline">
@@ -196,7 +196,7 @@ export function ConnectivityPage() {
       </div>
       <dl className="connection-details">
         <div>
-          <dt>Internet / Saathi</dt>
+          <dt>Internet / Swarm</dt>
           <dd>
             {!c.checked
               ? 'Checking…'
@@ -208,7 +208,7 @@ export function ConnectivityPage() {
           </dd>
         </div>
         <div>
-          <dt>Nearby Saathi</dt>
+          <dt>Nearby Swarm</dt>
           <dd>{c.nearby ? 'One paired person is connected' : 'No paired person connected'}</dd>
         </div>
         <div>
@@ -231,7 +231,7 @@ export function ConnectivityPage() {
           </dd>
         </div>
         <div>
-          <dt>Last connected to Saathi</dt>
+          <dt>Last connected to Swarm</dt>
           <dd>
             {c.lastConnected ? formatDate(c.lastConnected) : 'No successful connection recorded'}
           </dd>
@@ -264,8 +264,8 @@ export function ConnectivityPage() {
       <section className="offline-preparation">
         <h2>Prepare before you lose internet</h2>
         <p>
-          Open Saathi once while connected. Save the app for offline opening, then prepare
-          publishing if you are an approved volunteer. Removing Saathi or clearing browser data
+          Open Swarm once while connected. Save the app for offline opening, then prepare
+          publishing if you are an approved volunteer. Removing Swarm or clearing browser data
           removes local work and keys.
         </p>
         <div className="connect-actions">
@@ -290,7 +290,7 @@ export function ConnectivityPage() {
           </button>
         </div>
         <p className="form-hint">
-          On Android, use your browser menu to install Saathi. On iPhone, use Share → Add to Home
+          On Android, use your browser menu to install Swarm. On iPhone, use Share → Add to Home
           Screen. Installation does not grant radio permissions.
         </p>
       </section>
@@ -302,7 +302,7 @@ export function ConnectivityPage() {
             checked={local.gateway}
             onChange={(e) => void setSetting('gateway-consent', e.target.checked)}
           />
-          Allow this phone to send eligible public relief updates to Saathi when it reconnects,
+          Allow this phone to send eligible public relief updates to Swarm when it reconnects,
           including updates received nearby.
         </label>
         <p className="form-hint">
@@ -316,7 +316,7 @@ export function ConnectivityPage() {
             void run(async () => {
               await syncEvents();
               setNotice(
-                'Saved relief updates were checked with Saathi. See their individual results in Saved work.',
+                'Saved relief updates were checked with Swarm. See their individual results in Saved work.',
               );
             })
           }

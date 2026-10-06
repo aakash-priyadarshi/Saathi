@@ -80,7 +80,7 @@ export function OfflineWorkspace() {
       setEditing(id);
       changed();
       if (!send) {
-        setNotice('Saved on this phone. It has not reached anyone else or appeared on Saathi.');
+        setNotice('Saved on this phone. It has not reached anyone else or appeared on Swarm.');
         return;
       }
       const point = preparation?.points.find((p) => p.id === values.reliefPointId);
@@ -145,7 +145,7 @@ export function OfflineWorkspace() {
     setError('');
     setNotice('');
     try {
-      if (!c.internet) throw new Error('Reconnect to Saathi to send private media.');
+      if (!c.internet) throw new Error('Reconnect to Swarm to send private media.');
       const author = await api<{ id: string }>('/auth/me');
       const event = (await events()).find((e) => e.id === draft.values.relatedEventId);
       if (!event || event.envelope.body.authorId !== author.id)
@@ -156,7 +156,7 @@ export function OfflineWorkspace() {
         !accepted?.receipt?.body.fieldId ||
         !['PUBLISHED', 'ACCEPTED'].includes(accepted.receipt.body.status)
       )
-        throw new Error('The relief text must be accepted by Saathi before its media can be sent.');
+        throw new Error('The relief text must be accepted by Swarm before its media can be sent.');
       const database = await db(),
         ids: string[] = JSON.parse(draft.values.uploadedIds ?? '[]');
       for (let index = ids.length; index < (draft.media?.length ?? 0); index++) {
@@ -184,7 +184,7 @@ export function OfflineWorkspace() {
       }
       changed();
       setNotice(
-        'Media reached Saathi and is waiting for moderation. The original field post is used.',
+        'Media reached Swarm and is waiting for moderation. The original field post is used.',
       );
     } catch (e) {
       setError(
@@ -212,7 +212,7 @@ export function OfflineWorkspace() {
           </h2>
           <p className="form-hint">
             {preparation
-              ? `Prepared for ${preparation.user.displayName}. Saathi rechecks approval when an update arrives.`
+              ? `Prepared for ${preparation.user.displayName}. Swarm rechecks approval when an update arrives.`
               : 'Anyone can save a draft. Approved volunteers prepare publishing while connected first.'}
           </p>
           <form
@@ -282,7 +282,7 @@ export function OfflineWorkspace() {
                 {files.length > 0 && (
                   <p className="form-hint">
                     {files.length} originals stay privately on this phone. Text can travel first.
-                    Media still needs Saathi’s sanitization and moderation.
+                    Media still needs Swarm’s sanitization and moderation.
                   </p>
                 )}
               </>
@@ -404,7 +404,7 @@ export function OfflineWorkspace() {
               </button>
             </div>
             <p className="form-hint">
-              Donor reservations and purchases require a current connection to Saathi. Nearby
+              Donor reservations and purchases require a current connection to Swarm. Nearby
               delivery does not make an update public.
             </p>
           </form>
@@ -467,7 +467,7 @@ export function OfflineWorkspace() {
                   disabled={busy || !c.internet}
                   onClick={() => void sendMedia(d)}
                 >
-                  Send private media to Saathi
+                  Send private media to Swarm
                 </button>
               ) : null}
             </article>
@@ -486,7 +486,7 @@ export function OfflineWorkspace() {
                 <p>
                   {event.own
                     ? 'Your update'
-                    : 'Received nearby · Saathi checks the author when this arrives online'}
+                    : 'Received nearby · Swarm checks the author when this arrives online'}
                 </p>
                 <EventStatus event={event} />
                 {(event.receipt?.body.publicId ||

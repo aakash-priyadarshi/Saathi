@@ -15,6 +15,9 @@ export type {
   ConfigPolicy,
 } from './service-config';
 export * from './crypto';
+export * from './chat';
+export * from './chat-encryption';
+export * from './chat-attachments';
 import { publicKeySchema, bytes, hash, sign, verify, exportPublic, type PublicKey } from './crypto';
 export const MAX_EVENT_BYTES = 65536;
 const common = {

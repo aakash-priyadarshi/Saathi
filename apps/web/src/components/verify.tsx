@@ -40,7 +40,7 @@ export function VerifyPage() {
         screenshots can keep circulating after a need is met.
       </p>
       <form className="verify-form" onSubmit={verify}>
-        <label htmlFor="request-id">Request ID or Saathi link</label>
+        <label htmlFor="request-id">Request ID or Swarm link</label>
         <div>
           <input
             id="request-id"

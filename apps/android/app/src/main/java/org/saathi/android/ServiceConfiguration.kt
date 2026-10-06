@@ -17,7 +17,7 @@ object ServiceConfiguration {
         require(previous == null || version > previous.getJSONObject("body").getLong("version") || Protocol.hash(value) == Protocol.hash(previous)) { "Conflicting service information was refused." }
         val issued = Instant.parse(body.getString("issuedAt")); val expiry = Instant.parse(body.getString("expiresAt"))
         require(issued <= now.plusSeconds(300) && expiry > now && expiry > issued && expiry <= issued.plusSeconds(31 * 86400)) { "Service information has expired or the phone clock needs attention. Saved work is safe." }
-        require(body.getJSONArray("protocolVersions").length() == 1 && body.getJSONArray("protocolVersions").getInt(0) == 1 && body.getInt("minimumAndroidVersionCode") in 1..versionCode) { "Update Saathi to use this service." }
+        require(body.getJSONArray("protocolVersions").length() == 1 && body.getJSONArray("protocolVersions").getInt(0) == 1 && body.getInt("minimumAndroidVersionCode") in 1..versionCode) { "Update Swarm to use this service." }
         val endpoints = body.getJSONArray("apiEndpoints").strings(); require(endpoints.size in 1..3 && endpoints.distinct().size == endpoints.size)
         (endpoints + body.getString("publicUrl") + body.getString("webOrigin")).forEach {
             val url = URI(it); require(it.length <= 300 && url.host != null && url.userInfo == null && url.query == null && url.fragment == null)

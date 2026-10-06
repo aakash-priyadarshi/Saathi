@@ -192,13 +192,13 @@ export function NearbyPage() {
         Messages and calls can travel directly while you stay within a reachable local connection.
       </p>
       <p className="status-notice closed">
-        Phone testing preview. Both people must keep Saathi open and join the same reachable Wi-Fi
+        Phone testing preview. Both people must keep Swarm open and join the same reachable Wi-Fi
         or hotspot. Internet is not needed for a successful nearby session. This browser cannot turn
         on radios or automatically discover phones. Some networks block direct connections.
       </p>
       {!supported ? (
         <p className="status-notice closed">
-          This browser cannot start nearby connections here. Use an updated browser on Saathi’s
+          This browser cannot start nearby connections here. Use an updated browser on Swarm’s
           secure website. Saved work is still available.
         </p>
       ) : (
@@ -247,7 +247,7 @@ export function NearbyPage() {
                   {outgoing && (
                     <div className="pairing-output">
                       {qr ? (
-                        <img src={qr} alt="Saathi nearby pairing code" width={320} height={320} />
+                        <img src={qr} alt="Swarm nearby pairing code" width={320} height={320} />
                       ) : (
                         <p>
                           This invitation is too large for one scan. Use the pairing file or copy it
@@ -550,7 +550,7 @@ export function NearbyPage() {
               )}
               <p className="form-hint">
                 Up to 1 MB. The other person chooses whether to receive it. Larger field media waits
-                for a direct upload to Saathi.
+                for a direct upload to Swarm.
               </p>
               {offers.map((offer) => (
                 <div className="saved-item" key={offer.id}>

@@ -25,6 +25,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
     private data class Received(val generation: Long, val frame: JSONObject)
     private val incoming = Channel<Received>(64)
     @Volatile private var generation = 0L
+    val connectionGeneration get() = generation
     var callInProgress = false
     private val wake = Channel<Unit>(Channel.CONFLATED)
     private data class Queued(val priority: Int, val order: Long, val generation: Long, val transport: PeerTransport, val frame: JSONObject, val result: CompletableDeferred<Unit>)
@@ -44,8 +45,13 @@ class PeerSession(private val context: Context, private val repository: Reposito
     var onCall: (Boolean) -> Unit = {}
     var onAccepted: () -> Unit = {}
     var onEnded: () -> Unit = {}
+    var onChatFrame: suspend (JSONObject, Long) -> Unit = { _, _ -> }
+    var onChatConnected: suspend () -> Unit = {}
+    var onChatReset: () -> Unit = {}
+    var chatFileAllowed: (String,String) -> Boolean = { _,_->false }
+    var onChatFileComplete: suspend (String) -> Unit = {}
     init {
-        scope.launch { for (item in incoming) if (item.generation == generation) runCatching { receive(item.frame) }.onFailure { onError(it.message ?: "This nearby update could not be saved.") } }
+        scope.launch { for (item in incoming) if (item.generation == generation) runCatching { receive(item.frame, item.generation) }.onFailure { onError(it.message ?: "This nearby update could not be saved.") } }
         scope.launch {
             for (signal in wake) while (true) {
                 val item = synchronized(queue) { queue.poll() } ?: break
@@ -55,6 +61,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
     }
     fun incoming(frame: JSONObject) { if (!incoming.trySend(Received(generation, frame)).isSuccess) onError("Too much nearby information. Reconnect to retry saved work.") }
     fun reset() {
+        onChatReset()
         generation++; callInProgress = false; confirmed = false; remoteMedia = false; remoteLarge = false; shared.clear(); transmitted.clear(); requested.clear(); offered.clear(); accepted.clear(); fragments.clear()
         sendingFiles.values.forEach { it.cancel() }; sendingFiles.clear()
         synchronized(queue) { while (queue.isNotEmpty()) queue.poll()?.result?.completeExceptionally(IllegalStateException("Connection changed. Saved work is safe.")) }
@@ -72,6 +79,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
         send("HELLO", obj("protocol" to 1, "maxFrame" to 24000, "media" to (transport?.mediaAvailable == true && repository.featureFlags?.optBoolean("localCalls") == true), "files" to true))
         // Protocol extension is ignored by version-1 browsers; their 1 MiB limit remains unchanged.
         send("NATIVE_CAPS", obj("largeFiles" to (repository.featureFlags?.optBoolean("largeFiles") == true)))
+        onChatConnected()
     }
     suspend fun confirm() { require(transport?.connected == true); confirmed = true; announce(); onChange() }
     suspend fun message(text: String) {
@@ -94,7 +102,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
         shared.clear(); shared.addAll(events.map { it.getString("id") }); requested.clear()
         send("INVENTORY", JSONArray(shared.toList()))
     }
-    private suspend fun receive(frame: JSONObject) {
+    private suspend fun receive(frame: JSONObject, receivedGeneration: Long) {
         frame.exact("v", "kind", "id", "value"); require(frame.getInt("v") == 1); UUID.fromString(frame.getString("id"))
         val kind = frame.getString("kind")
         if (kind == "HELLO") {
@@ -103,6 +111,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
         }
         if (kind == "NATIVE_CAPS") { remoteLarge = frame.getJSONObject("value").optBoolean("largeFiles"); return }
         if (!confirmed || transport?.connected != true) return
+        if (kind.startsWith("CHAT_")) { onChatFrame(frame, receivedGeneration); return }
         when (kind) {
             "MESSAGE" -> {
                 val value = frame.getJSONObject("value"); value.exact("text", "createdAt"); require(value.getString("text").length in 1..4000); Instant.parse(value.getString("createdAt"))
@@ -159,7 +168,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
                 require(!callInProgress) { "End the call before receiving a file. Messages and requests still work." }
                 val value = frame.getJSONObject("value"); value.exact("id", "name", "mime", "size", "hash"); UUID.fromString(value.getString("id"))
                 require(value.getString("name").length in 1..100 && value.getString("hash").matches(Regex("[a-f0-9]{64}")))
-                require(value.getLong("size") in 1..maximumFile().toLong() && value.getString("mime") in allowedMime)
+                require(value.getLong("size") in 1..maximumFile().toLong() && (value.getString("mime") in allowedMime || value.getString("mime")=="application/octet-stream" && chatFileAllowed(value.getString("id"),value.getString("hash"))))
                 onFile(value)
             }
             "FILE_ACCEPT" -> {
@@ -188,6 +197,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
                 val hash = MessageDigest.getInstance("SHA-256"); for (index in 0 until chunks(file)) hash.update(readChunk(id, index))
                 require(hash.digest().joinToString("") { "%02x".format(it) } == file.getString("hash")) { "This file could not be verified." }
                 file.put("complete", true); repository.store.put("attachments", id, file); accepted.remove(id); send("ACK", obj("id" to id)); onChange()
+                if(file.getString("mime")=="application/octet-stream")onChatFileComplete(id)
             }
             "FILE_CANCEL" -> { val id = frame.getJSONObject("value").getString("id"); accepted.remove(id); sendingFiles.remove(id)?.cancel(); onChange() }
         }
@@ -197,7 +207,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
     private suspend fun fileReady(size: Long) {
         require(confirmed && !callInProgress) { "Confirm the nearby person and end any call before sharing a file." }
         if (size > 1048576 && repository.featureFlags?.optBoolean("largeFiles") == true) withTimeoutOrNull(3000) { while (!remoteLarge && transport?.connected == true) delay(50) }
-        require(size <= maximumFile()) { "This connection supports files up to ${maximumFile() / 1048576} MB. Choose a smaller file or reconnect to another native Saathi app." }
+        require(size <= maximumFile()) { "This connection supports files up to ${maximumFile() / 1048576} MB. Choose a smaller file or reconnect to another native Swarm app." }
     }
     private fun checkSpace(size: Int) {
         require(StatFs(context.filesDir.path).availableBytes > size.toLong() * 2 + 64 * 1024 * 1024) { "Free more phone storage before receiving this file." }
@@ -225,7 +235,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
             repository.store.put("attachments", id, file); withContext(Dispatchers.Main.immediate) { offerSaved(file); onChange() }
         } catch (e: Exception) { (0 until index).forEach { chunkFile(id, it).delete() }; throw e }
     }
-    suspend fun offerSaved(file: JSONObject) { fileReady(file.getLong("size")); offered.add(file.getString("id")); send("FILE_OFFER", obj("id" to file.getString("id"), "name" to file.getString("name"), "mime" to file.getString("mime"), "size" to file.getInt("size"), "hash" to file.getString("hash"))) }
+    suspend fun offerSaved(file: JSONObject) { fileReady(file.getLong("size")); if(file.optBoolean("chatOnly")) require(chatFileAllowed(file.getString("id"),file.getString("hash"))) { "Connect to an authorized chat member to share this attachment." }; offered.add(file.getString("id")); send("FILE_OFFER", obj("id" to file.getString("id"), "name" to file.getString("name"), "mime" to file.getString("mime"), "size" to file.getInt("size"), "hash" to file.getString("hash"))) }
     suspend fun acceptFile(offer: JSONObject) {
         require(confirmed && !callInProgress && offer.getInt("size") <= maximumFile() && accepted.size < 2)
         checkSpace(offer.getInt("size")); val id = offer.getString("id"); val previous = repository.store.get("attachments", id)
@@ -235,6 +245,40 @@ class PeerSession(private val context: Context, private val repository: Reposito
         val missing = (0 until chunks(file)).filter { !file.getJSONArray("received").optBoolean(it) }; send("FILE_ACCEPT", obj("id" to id, "missing" to JSONArray(missing))); onChange()
     }
     suspend fun cancelFile(id: String) { accepted.remove(id); sendingFiles.remove(id)?.cancel(); send("FILE_CANCEL", obj("id" to id)); onChange() }
+    suspend fun saveChatBytes(id:String,bytes:ByteArray)=withContext(Dispatchers.IO) {
+        UUID.fromString(id); require(bytes.size in 29..16777216 && repository.store.all("attachments").size<50);checkSpace(bytes.size)
+        var index=0
+        try {
+            var offset=0;while(offset<bytes.size){val end=minOf(bytes.size,offset+8192);writeChunk(id,index++,bytes.copyOfRange(offset,end));offset=end}
+            obj("id" to id,"name" to "Encrypted attachment","mime" to "application/octet-stream","size" to bytes.size,"hash" to Protocol.digest(bytes),"direction" to "OUT","complete" to true,"chatOnly" to true).also { repository.store.put("attachments",id,it) }
+        }catch(e:Exception){(0 until index).forEach { chunkFile(id,it).delete() };throw e}
+    }
+    suspend fun readSavedBytes(id:String)=withContext(Dispatchers.IO) {
+        val file=repository.store.get("attachments",id)?:error("Attachment is unavailable.");require(file.getBoolean("complete") && file.getInt("size")<=16777216)
+        val bytes=ByteArray(file.getInt("size"));for(index in 0 until chunks(file))readChunk(id,index).copyInto(bytes,index*8192)
+        require(Protocol.digest(bytes)==file.getString("hash")) { "Attachment verification failed." };bytes
+    }
+    suspend fun saveServerChatChunks(id:String,size:Int,hash:String,parts:List<Pair<Int,ByteArray>>) = withContext(Dispatchers.IO) {
+        UUID.fromString(id); require(size in 29..16777216 && hash.matches(Regex("[a-f0-9]{64}")))
+        val old=repository.store.get("attachments",id)
+        require(old==null || old.getInt("size")==size && old.getString("hash")==hash)
+        if(old?.optBoolean("complete")==true)return@withContext
+        if(old==null){require(repository.store.all("attachments").size<50);checkSpace(size)}
+        val count=(size+8191)/8192
+        val file=old?:obj("id" to id,"name" to "Encrypted attachment","mime" to "application/octet-stream","size" to size,"hash" to hash,"direction" to "IN","complete" to false,"chatOnly" to true,"received" to JSONArray(List(count){false}))
+        val received=file.getJSONArray("received")
+        for((part,bytes) in parts){require(part in 0 until count && bytes.size==minOf(8192,size-part*8192));writeChunk(id,part,bytes);received.put(part,true)}
+        repository.store.put("attachments",id,file)
+        if((0 until count).all{received.optBoolean(it)}){
+            val digest=MessageDigest.getInstance("SHA-256");for(part in 0 until count)digest.update(readChunk(id,part))
+            if(digest.digest().joinToString(""){"%02x".format(it)}!=hash){
+                file.put("received",JSONArray(List(count){false}));repository.store.put("attachments",id,file)
+                error("Encrypted attachment verification failed. Retry to replace the invalid chunks.")
+            }
+            file.put("complete",true);repository.store.put("attachments",id,file)
+        }
+        onChange()
+    }
     suspend fun pauseTransfersForCall() { callInProgress = true; (accepted.toList() + sendingFiles.keys.toList()).distinct().forEach { cancelFile(it) } }
     suspend fun exportFile(id: String, destination: Uri) = withContext(Dispatchers.IO) {
         val file = repository.store.get("attachments", id) ?: error("Saved file is unavailable.")

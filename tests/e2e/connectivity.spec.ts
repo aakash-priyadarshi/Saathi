@@ -28,7 +28,7 @@ async function prepareApp(page: Page) {
   await page.goto('/connectivity');
   await expect(page.getByRole('button', { name: 'Save app for offline opening' })).toBeEnabled();
   await page.getByRole('button', { name: 'Save app for offline opening' }).click();
-  await expect(page.getByText('Saathi is ready to open offline.', { exact: false })).toBeVisible();
+  await expect(page.getByText('Swarm is ready to open offline.', { exact: false })).toBeVisible();
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
 }
 async function pair(a: Page, b: Page) {
@@ -71,7 +71,7 @@ test('offline cold opening preserves public information and drafts without cachi
   await prepareApp(page);
   await expect(page.getByText('Relief information last saved', { exact: false })).toBeVisible();
   await expect(
-    page.getByText('Send prepared relief updates to Saathi', { exact: true }),
+    page.getByText('Send prepared relief updates to Swarm', { exact: true }),
   ).toHaveCount(0);
   await expect(
     page.getByText('Write and save request drafts, field updates and messages', { exact: true }),

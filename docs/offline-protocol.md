@@ -1,6 +1,6 @@
 # Offline and nearby protocol v1
 
-This document describes the implemented browser foundation and its boundaries. See [current research and capability matrix](nearby-connectivity-research.md), [architecture](nearby-connectivity-architecture.md), [ADR](adr/0001-durable-events-and-local-peer-sessions.md), and [physical-device worksheet](nearby-connectivity-device-tests.md). Production native radio transports are not implemented or physically verified; the isolated [Android instrument](../spikes/android/README.md) uses synthetic data for future measurements.
+This document describes the browser version-1 foundation. The real native product now has separately measured Nearby/local-Wi-Fi adapters; see [Android evidence](android-testing.md). The experimental conversation extension is documented in [chat/channel architecture](chat-channel-architecture.md). Existing event signatures, protocol identifiers, package names and installed storage remain compatible after CJP Swarm branding. See also [capability research](nearby-connectivity-research.md), [architecture](nearby-connectivity-architecture.md), and [ADR](adr/0001-durable-events-and-local-peer-sessions.md).
 
 ## Local persistence
 
