@@ -1,26 +1,44 @@
 package org.saathi.android
 
 import android.content.Context
+import android.net.wifi.WifiManager
+import android.bluetooth.BluetoothManager
+import android.util.Log
+import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.GoogleApiAvailability
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.nearby.Nearby
 import com.google.android.gms.nearby.connection.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
+import java.security.MessageDigest
 import java.util.UUID
 
 interface PeerTransport {
     val mediaAvailable: Boolean
     val connected: Boolean
     val session: String
+    val maximumFrameBytes: Int get() = 24000
+    val supportsFiles: Boolean get() = true
+    val capabilities: Set<TransportCapability> get() = TransportCapabilities.of(mediaAvailable, supportsFiles)
     suspend fun send(frame: JSONObject)
     fun disconnect()
 }
 
 class NearbyTransport(context: Context, private val scope: CoroutineScope) : PeerTransport {
-    private val client = Nearby.getConnectionsClient(context)
-    val available = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(context) == ConnectionResult.SUCCESS
+    private val appContext = context.applicationContext
+    private val client = Nearby.getConnectionsClient(appContext)
+    private val lifecycleMutex = Mutex()
+    @Volatile private var generation = 0L
+    @Volatile private var cleanupJob: Job? = null
+    private var lifecycle = Lifecycle.IDLE
+    private var accepting = false
+    private var activeAdvertise = false
+    private var activeAutomatic = false
+    val available = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(appContext) == ConnectionResult.SUCCESS
     override val mediaAvailable = false
     override var connected = false; private set
     override var session = UUID.randomUUID().toString(); private set
@@ -28,56 +46,224 @@ class NearbyTransport(context: Context, private val scope: CoroutineScope) : Pee
     private var pending: String? = null
     private var window: Job? = null
     private var lastScan = 0L
-    private var temporaryName = "Swarm " + UUID.randomUUID().toString().take(4).uppercase()
+    private var temporaryName = newEndpointName()
     var onState: (String) -> Unit = {}
     var onPeers: (Map<String, String>) -> Unit = {}
     var onPair: (String?) -> Unit = {}
     var onFrame: (JSONObject) -> Unit = {}
     var onError: (String) -> Unit = {}
+    var onConnectionLost: ((advertise: Boolean, automatic: Boolean) -> Unit)? = null
     private val peers = linkedMapOf<String, String>()
     private val service = "org.saathi.nearby.v1.${BuildConfig.ENVIRONMENT}"
-    private val payloads = object : PayloadCallback() {
-        override fun onPayloadReceived(from: String, payload: Payload) {
-            if (!connected || from != endpoint || payload.type != Payload.Type.BYTES) return
-            val raw = payload.asBytes() ?: return
-            if (raw.size > 24000) return
-            runCatching { onFrame(JSONObject(String(raw))) }.onFailure { onError("A nearby message could not be read.") }
-        }
-        override fun onPayloadTransferUpdate(from: String, update: PayloadTransferUpdate) {}
+    private enum class Lifecycle { IDLE, STARTING, ADVERTISING, DISCOVERING, CONNECTING, PAIRING, CONNECTED, STOPPING }
+    private fun log(event: String, detail: String = "") {
+        if (!BuildConfig.DEBUG) return
+        val wifi = runCatching { appContext.getSystemService(WifiManager::class.java)?.isWifiEnabled }.getOrNull()
+        val bluetooth = runCatching { appContext.getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled }.getOrNull()
+        Log.d("SwarmNearby", "$event state=$lifecycle generation=$generation wifi=$wifi bluetooth=$bluetooth $detail")
     }
-    private val lifecycle = object : ConnectionLifecycleCallback() {
+    private fun endpointTag(id: String) = MessageDigest.getInstance("SHA-256").digest(id.toByteArray()).take(4).joinToString("") { "%02x".format(it) }
+    private fun statusCode(error: Throwable): Int? = generateSequence(error) { it.cause }.filterIsInstance<ApiException>().firstOrNull()?.statusCode
+    private fun newEndpointName() = "Swarm " + UUID.randomUUID().toString().take(4).uppercase()
+    private fun isCurrent(token: Long) = token == generation
+    private fun setLifecycle(next: Lifecycle, detail: String = "") { lifecycle = next; log("state", "name=$next $detail") }
+
+    private fun payloads(token: Long) = object : PayloadCallback() {
+        override fun onPayloadReceived(from: String, payload: Payload) {
+            if (!isCurrent(token) || !connected || from != endpoint || payload.type != Payload.Type.BYTES) return
+            val raw = payload.asBytes() ?: return
+            if (raw.size > maximumFrameBytes) { onError("A nearby message exceeded the safe size limit."); return }
+            runCatching { onFrame(JSONObject(String(raw, Charsets.UTF_8))) }.onFailure { onError("A nearby message could not be read.") }
+        }
+        override fun onPayloadTransferUpdate(from: String, update: PayloadTransferUpdate) { if (isCurrent(token)) log("payload-transfer", "peer=${endpointTag(from)} status=${update.status}") }
+    }
+
+    private fun lifecycleCallback(token: Long) = object : ConnectionLifecycleCallback() {
         override fun onConnectionInitiated(id: String, info: ConnectionInfo) {
-            if (pending != null || connected) { client.rejectConnection(id); return }
-            pending = id; onPair(info.authenticationDigits); onState("Compare the code on both devices")
-            scope.launch { delay(60000); if (pending == id) confirm(false) }
+            if (!isCurrent(token)) return
+            if (pending != null || connected || lifecycle == Lifecycle.PAIRING) { log("connection-rejected-busy", "peer=${endpointTag(id)}"); return }
+            pending = id; accepting = false; setLifecycle(Lifecycle.PAIRING, "peer=${endpointTag(id)}")
+            onPair(info.authenticationDigits); onState("Compare the code on both devices")
+            scope.launch { delay(60000); if (isCurrent(token) && pending == id && !accepting) confirm(false) }
         }
         override fun onConnectionResult(id: String, result: ConnectionResolution) {
-            if (id != pending) return
-            onPair(null); pending = null
+            if (!isCurrent(token) || id != pending) return
+            log("connection-result", "peer=${endpointTag(id)} status=${result.status.statusCode} success=${result.status.isSuccess}")
+            onPair(null); pending = null; accepting = false
             if (result.status.isSuccess) {
-                endpoint = id; connected = true; stopScan(); onState("Connected nearby")
-            } else { connected = false; endpoint = null; onState("Pairing was declined. Try again when you are ready.") }
+                endpoint = id; connected = true; setLifecycle(Lifecycle.CONNECTED); stopScan(); onState("Connected nearby")
+            } else { connected = false; endpoint = null; setLifecycle(if (activeAdvertise || activeAutomatic) Lifecycle.ADVERTISING else Lifecycle.DISCOVERING); onState("Pairing was declined or interrupted. Choose the person again when ready.") }
         }
         override fun onDisconnected(id: String) {
-            if (pending == id) { pending = null; onPair(null) }
-            if (endpoint == id) { endpoint = null; connected = false; onState("Nearby connection lost. Saved work is safe. Move closer or reconnect.") }
+            if (!isCurrent(token)) return
+            log("endpoint-disconnected", "peer=${endpointTag(id)}")
+            if (pending == id) { pending = null; accepting = false; onPair(null) }
+            if (endpoint == id) {
+                val wasAdvertising = activeAdvertise
+                val wasAutomatic = activeAutomatic
+                endpoint = null; connected = false; setLifecycle(Lifecycle.IDLE); session = UUID.randomUUID().toString()
+                onConnectionLost?.invoke(wasAdvertising, wasAutomatic)
+                onState("Nearby connection lost. Your saved work is safe. Reconnect when ready.")
+            }
         }
     }
     suspend fun scan(advertise: Boolean, automatic:Boolean=false) {
         require(available) { "Use local Wi-Fi pairing on this phone." }
-        require(System.currentTimeMillis() - lastScan > 10000) { "Wait a moment before searching again to save battery." }
-        disconnect(); lastScan = System.currentTimeMillis(); peers.clear(); onPeers(peers.toMap()); temporaryName = "Swarm " + UUID.randomUUID().toString().take(4).uppercase()
-        if (advertise || automatic) client.startAdvertising(temporaryName, service, lifecycle, AdvertisingOptions.Builder().setStrategy(Strategy.P2P_POINT_TO_POINT).setConnectionType(ConnectionType.BALANCED).build()).await()
-        if (!advertise || automatic) client.startDiscovery(service, object : EndpointDiscoveryCallback() {
-            override fun onEndpointFound(id: String, info: DiscoveredEndpointInfo) { if (peers.size < 20) { peers[id] = info.endpointName.take(40); onPeers(peers.toMap()) } }
-            override fun onEndpointLost(id: String) { peers.remove(id); onPeers(peers.toMap()) }
-        }, DiscoveryOptions.Builder().setStrategy(Strategy.P2P_POINT_TO_POINT).build()).await()
-        onState(if (automatic) "Visible and looking nearby for one minute" else if (advertise) "Visible nearby as $temporaryName for one minute" else "Looking for nearby Swarm for one minute")
-        window = scope.launch { delay(60000); stopScan(); if (!connected && pending == null) onState("Search finished. Search again when another person is ready.") }
+        while (true) {
+            val cleanup = cleanupJob
+            cleanup?.join()
+            var started = false
+            lifecycleMutex.withLock {
+                if (cleanupJob !== cleanup) return@withLock
+                val token = ++generation
+                require(System.currentTimeMillis() - lastScan > 10000) { "Wait a moment before searching again to save battery." }
+                lastScan = System.currentTimeMillis(); peers.clear(); onPeers(emptyMap()); onPair(null)
+                activeAdvertise = advertise; activeAutomatic = automatic; accepting = false
+                temporaryName = newEndpointName()
+                stopOperations("replace-session")
+                var attempt = 0
+                while (true) {
+                    if (!isCurrent(token)) return@withLock
+                    try {
+                        setLifecycle(Lifecycle.STARTING)
+                        if (advertise || automatic) {
+                            client.startAdvertising(temporaryName, service, lifecycleCallback(token), AdvertisingOptions.Builder().setStrategy(Strategy.P2P_POINT_TO_POINT).setConnectionType(ConnectionType.BALANCED).build()).await()
+                            if (!isCurrent(token)) return@withLock
+                            setLifecycle(Lifecycle.ADVERTISING, "name=$temporaryName")
+                            log("advertising-started")
+                        }
+                        if (!advertise || automatic) {
+                            client.startDiscovery(service, discoveryCallback(token), DiscoveryOptions.Builder().setStrategy(Strategy.P2P_POINT_TO_POINT).build()).await()
+                            if (!isCurrent(token)) return@withLock
+                            setLifecycle(Lifecycle.DISCOVERING)
+                            log("discovery-started")
+                        }
+                        onState(if (automatic) "Visible and looking nearby for one minute" else if (advertise) "Visible nearby as $temporaryName for one minute" else "Looking for nearby Swarm for one minute")
+                        window?.cancel()
+                        window = scope.launch { delay(60000); if (isCurrent(token)) { stopScan(); if (!connected && pending == null) { setLifecycle(Lifecycle.IDLE); onState("Search finished. Search again when another person is ready.") } } }
+                        started = true
+                        return@withLock
+                    } catch (error: Exception) {
+                        if (error is CancellationException) throw error
+                        log("start-failed", "status=${statusCode(error)} type=${error.javaClass.simpleName}")
+                        stopOperations("start-recovery")
+                        if (!isCurrent(token)) return@withLock
+                        if (statusCode(error) != ConnectionsStatusCodes.STATUS_OUT_OF_ORDER_API_CALL || attempt++ >= 1) {
+                            setLifecycle(Lifecycle.IDLE)
+                            onError("Nearby could not start. Your saved work is safe; try again in a moment.")
+                            throw error
+                        }
+                        log("out-of-order-recovery", "attempt=$attempt")
+                        delay(500)
+                    }
+                }
+            }
+            if (started) return
+        }
     }
-    suspend fun connect(id: String) { require(peers.containsKey(id)); client.requestConnection(temporaryName, id, lifecycle).await() }
-    fun confirm(match: Boolean) { val id = pending ?: return; if (match) client.acceptConnection(id, payloads).addOnFailureListener { onError("Could not accept this connection.") } else { client.rejectConnection(id); pending = null; onPair(null) } }
-    fun stopScan() { window?.cancel(); client.stopDiscovery(); client.stopAdvertising() }
-    override suspend fun send(frame: JSONObject) { require(connected); val raw = frame.toString().toByteArray(); require(raw.size <= 24000); client.sendPayload(endpoint!!, Payload.fromBytes(raw)).await() }
-    override fun disconnect() { stopScan(); client.stopAllEndpoints(); connected = false; endpoint = null; pending = null; onPair(null); session = UUID.randomUUID().toString(); onState("Ready to connect nearby") }
+    private fun discoveryCallback(token: Long) = object : EndpointDiscoveryCallback() {
+        override fun onEndpointFound(id: String, info: DiscoveredEndpointInfo) {
+            if (!isCurrent(token) || connected) return
+            if (peers.size < 20) { peers[id] = info.endpointName.take(40); log("endpoint-found", "peer=${endpointTag(id)}"); onPeers(peers.toMap()) }
+        }
+        override fun onEndpointLost(id: String) {
+            if (!isCurrent(token)) return
+            peers.remove(id); log("endpoint-lost", "peer=${endpointTag(id)}"); onPeers(peers.toMap())
+        }
+    }
+
+    suspend fun connect(id: String) = lifecycleMutex.withLock {
+        require(peers.containsKey(id)) { "This nearby device is no longer available. Search again." }
+        require(lifecycle == Lifecycle.DISCOVERING || lifecycle == Lifecycle.ADVERTISING) { "Start nearby discovery before connecting." }
+        require(pending == null && endpoint == null && lifecycle != Lifecycle.CONNECTING) { "A nearby connection is already in progress." }
+        val token = generation
+        setLifecycle(Lifecycle.CONNECTING)
+        log("request-connection", "peer=${endpointTag(id)}")
+        try {
+            client.requestConnection(temporaryName, id, lifecycleCallback(token)).await()
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            log("request-connection-failed", "peer=${endpointTag(id)} status=${statusCode(error)}")
+            if (isCurrent(token) && statusCode(error) == ConnectionsStatusCodes.STATUS_OUT_OF_ORDER_API_CALL) {
+                val advertise = activeAdvertise
+                val automatic = activeAutomatic
+                generation++
+                stopOperations("request-recovery")
+                // Re-establish discovery once. The peer list is refreshed and the user can choose again.
+                lastScan = 0L
+                onError("Nearby was safely reset after an out-of-order radio call. Choose the person again.")
+                scope.launch {
+                    delay(500)
+                    runCatching { scan(advertise, automatic) }
+                        .onFailure { if (it !is CancellationException) onError("Nearby recovery did not finish. Search again when ready.") }
+                }
+            } else {
+                if (isCurrent(token)) setLifecycle(Lifecycle.DISCOVERING)
+                throw error
+            }
+        }
+    }
+
+    fun confirm(match: Boolean) {
+        val id = pending ?: return
+        if (accepting || lifecycle != Lifecycle.PAIRING) return
+        accepting = true
+        val token = generation
+        onPair(null)
+        log(if (match) "pair-accepted" else "pair-rejected", "peer=${endpointTag(id)}")
+        val task = if (match) client.acceptConnection(id, payloads(token)) else client.rejectConnection(id)
+        task.addOnFailureListener { error ->
+            if (!isCurrent(token)) return@addOnFailureListener
+            log("pair-decision-failed", "peer=${endpointTag(id)} status=${statusCode(error)}")
+            if (pending == id) { pending = null; accepting = false }
+            setLifecycle(Lifecycle.IDLE)
+            onError("The nearby connection could not be accepted. Your saved work is safe.")
+        }
+    }
+
+    private suspend fun stopOperations(reason: String) {
+        window?.cancel(); window = null
+        setLifecycle(Lifecycle.STOPPING, "reason=$reason")
+        log("stop-discovery", "reason=$reason"); client.stopDiscovery()
+        log("stop-advertising", "reason=$reason"); client.stopAdvertising()
+        log("stop-all-endpoints", "reason=$reason"); client.stopAllEndpoints()
+        connected = false; endpoint = null; pending = null; accepting = false
+        delay(350)
+    }
+
+    fun stopScan() {
+        window?.cancel(); window = null; log("stop-scan")
+        val previous = cleanupJob
+        cleanupJob = scope.launch {
+            previous?.join()
+            lifecycleMutex.withLock {
+                runCatching { client.stopDiscovery() }
+                runCatching { client.stopAdvertising() }
+            }
+        }
+    }
+
+    override suspend fun send(frame: JSONObject) {
+        require(connected) { "Connect nearby first." }
+        val target = endpoint ?: error("Nearby connection ended. Your saved work is safe.")
+        val raw = frame.toString().toByteArray(Charsets.UTF_8)
+        require(raw.size <= maximumFrameBytes)
+        log("payload-send", "peer=${endpointTag(target)} bytes=${raw.size}")
+        client.sendPayload(target, Payload.fromBytes(raw)).await()
+    }
+
+    override fun disconnect() {
+        generation++
+        window?.cancel(); window = null
+        connected = false; endpoint = null; pending = null; accepting = false; peers.clear(); onPeers(emptyMap()); onPair(null)
+        session = UUID.randomUUID().toString(); setLifecycle(Lifecycle.STOPPING, "reason=disconnect"); onState("Ready to connect nearby")
+        val previous = cleanupJob
+        cleanupJob = scope.launch {
+            previous?.join()
+            lifecycleMutex.withLock {
+                stopOperations("disconnect")
+                setLifecycle(Lifecycle.IDLE)
+            }
+        }
+    }
 }

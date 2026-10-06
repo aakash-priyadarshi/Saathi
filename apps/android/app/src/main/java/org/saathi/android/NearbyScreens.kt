@@ -17,7 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import org.webrtc.SurfaceViewRenderer
 
-@Composable fun NearbyScreen(vm: SaathiViewModel, state: AppState, discover: (Boolean) -> Unit, call: (Boolean, Boolean) -> Unit, modifier: Modifier) {
+@Composable fun NearbyScreen(vm: SaathiViewModel, state: AppState, discover: (Boolean) -> Unit, discoverBle: (Boolean) -> Unit, call: (Boolean, Boolean) -> Unit, modifier: Modifier) {
     var pairing by rememberSaveable { mutableStateOf("") }; var message by rememberSaveable { mutableStateOf("") }
     val clipboard = LocalClipboardManager.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) vm.offerFile(uri) }
@@ -30,6 +30,8 @@ import org.webrtc.SurfaceViewRenderer
                     Text("Find another Android", style = MaterialTheme.typography.titleMedium)
                     Text("Turn on Wi-Fi and Bluetooth. Swarm uses a temporary name and asks Android for nearby access when you start.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = { discover(false) }, enabled = vm.nearby.available && !state.busy) { Text("Find Swarm") }; OutlinedButton(onClick = { discover(true) }, enabled = vm.nearby.available && !state.busy) { Text("Make visible") } }
+                    Text("Bluetooth-only fallback works with Wi-Fi off. One person finds while the other makes their phone visible.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = { discoverBle(false) }, enabled = vm.ble.available && !state.busy) { Text("Find by Bluetooth") }; OutlinedButton(onClick = { discoverBle(true) }, enabled = vm.ble.available && !state.busy) { Text("Make Bluetooth visible") } }
                     if (!vm.nearby.available) Text("Nearby discovery is unavailable. Use local Wi-Fi pairing below.", style = MaterialTheme.typography.bodySmall)
                 }
             }
@@ -48,10 +50,11 @@ import org.webrtc.SurfaceViewRenderer
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("What works right now", style = MaterialTheme.typography.titleMedium)
-                    Capability("Messages", true); Capability("Share signed requests and updates", true); Capability("Files", true)
+                    Capability("Messages", true); Capability("Share signed requests and updates", true); Capability("Files", vm.session.transport?.supportsFiles == true)
                     Capability("Voice and video calls", state.media)
                     if (!state.media) Text("Calls need a local Wi-Fi connection that supports media. Reconnect using local pairing to try calling.", style = MaterialTheme.typography.bodySmall)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedButton(onClick = { vm.share() }, enabled = !state.busy) { Text("Share saved updates") }; OutlinedButton(onClick = { picker.launch(arrayOf("image/jpeg", "image/png", "image/webp", "text/plain", "audio/*", "video/mp4", "video/webm")) }, enabled = !state.busy) { Text("Share a file") } }
+                    if (vm.session.transport?.supportsFiles != true) Text("Photos, files, and calls stay saved or waiting until you reconnect using local Wi-Fi. This Bluetooth link carries messages and small updates.", style = MaterialTheme.typography.bodySmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedButton(onClick = { vm.share() }, enabled = !state.busy) { Text("Share saved updates") }; OutlinedButton(onClick = { picker.launch(arrayOf("image/jpeg", "image/png", "image/webp", "text/plain", "audio/*", "video/mp4", "video/webm")) }, enabled = !state.busy) { Text(if (vm.session.transport?.supportsFiles == true) "Share a file" else "Save file for Wi-Fi") } }
                     if (state.media && !state.calling) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = { call(false, false) }) { Icon(Icons.Outlined.Call, null); Spacer(Modifier.width(6.dp)); Text("Voice call") }; OutlinedButton(onClick = { call(true, false) }) { Icon(Icons.Outlined.Videocam, null); Spacer(Modifier.width(6.dp)); Text("Video call") } }
                 }
             }
@@ -113,7 +116,7 @@ import org.webrtc.SurfaceViewRenderer
         items(state.donations, key = { it.getString("id") }) { donation -> DonationFollowUp(vm, donation); HorizontalDivider() }
         if (state.donations.isEmpty()) item { Text("No saved contributions", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         item { Text("Files", style = MaterialTheme.typography.titleLarge) }
-        items(state.files.filter{it.getString("mime")!="application/octet-stream"}, key = { it.getString("id") }) { file -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(file.getString("name"), style = MaterialTheme.typography.titleMedium); Text("${fileSize(file.getLong("size"))} · " + if (file.optBoolean("complete")) "Saved and hash checked" else "Transfer paused or incomplete", style = MaterialTheme.typography.bodySmall); if (file.optString("direction") == "OUT" && state.confirmed) TextButton(onClick = { vm.action { vm.session.offerSaved(file) } }) { Text("Offer again to resume") }; if (!file.optBoolean("complete") && state.confirmed) TextButton(onClick = { vm.action { vm.session.cancelFile(file.getString("id")) } }) { Text("Pause transfer") }; if (file.optBoolean("complete")) TextButton(onClick = { exportId = file.getString("id"); exporter.launch(file.getString("name")) }, enabled = !state.busy) { Text("Export verified file") }; TextButton(onClick = { removal = obj("bucket" to "attachments", "id" to file.getString("id")) }) { Text("Remove file from this phone") }; HorizontalDivider() } }
+        items(state.files.filter{it.getString("mime")!="application/octet-stream"}, key = { it.getString("id") }) { file -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(file.getString("name"), style = MaterialTheme.typography.titleMedium); Text("${fileSize(file.getLong("size"))} · " + if (file.optBoolean("waitingForStrongerTransport")) "Saved · waiting for Wi-Fi transfer" else if (file.optBoolean("complete")) "Saved and hash checked" else "Transfer paused or incomplete", style = MaterialTheme.typography.bodySmall); if (file.optString("direction") == "OUT" && state.confirmed) TextButton(onClick = { vm.action { vm.session.offerSaved(file) } }) { Text(if(vm.session.transport?.supportsFiles==true) "Offer again to resume" else "Keep waiting for Wi-Fi") }; if (!file.optBoolean("complete") && state.confirmed && vm.session.transport?.supportsFiles == true) TextButton(onClick = { vm.action { vm.session.cancelFile(file.getString("id")) } }) { Text("Pause transfer") }; if (file.optBoolean("complete")) TextButton(onClick = { exportId = file.getString("id"); exporter.launch(file.getString("name")) }, enabled = !state.busy) { Text("Export verified file") }; TextButton(onClick = { removal = obj("bucket" to "attachments", "id" to file.getString("id")) }) { Text("Remove file from this phone") }; HorizontalDivider() } }
         item { Text("Saved messages", style = MaterialTheme.typography.titleLarge) }
         items(state.messages.sortedByDescending { it.getString("createdAt") }, key = { "message/" + it.getString("id") }) { message -> Column { Text(message.getString("text")); TextButton(onClick = { removal = obj("bucket" to "messages", "id" to message.getString("id")) }) { Text("Remove saved message") } } }
     }

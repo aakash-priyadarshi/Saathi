@@ -40,6 +40,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     private val localRefreshes=Channel<Unit>(Channel.CONFLATED)
     val state = mutable.asStateFlow()
     val nearby = NearbyTransport(application, viewModelScope)
+    val ble = BleTransport(application, viewModelScope)
     private val wifiDelegate = lazy { LocalWifiTransport(application, viewModelScope).apply {
         onState = { status -> mutable.update { it.copy(nearbyStatus = status, connected = connected) }; if (!connected) { this@SaathiViewModel.session.reset(); endMedia() }; refreshLocal() }
         onCode = { code -> mutable.update { it.copy(localCode = code) } }
@@ -71,7 +72,17 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         // One reader snapshots encrypted storage off the UI thread. A burst of frame callbacks
         // must not start competing readers or repeat Keystore work inside StateFlow CAS retries.
         viewModelScope.launch(Dispatchers.IO) { for (ignored in localRefreshes) loadLocalSnapshot() }
-        session.onChatConnected = { if(BuildConfig.CHAT_ENABLED){chat.announce();community.announce()} }; session.onChatFrame = { frame, generation -> if(BuildConfig.CHAT_ENABLED)chat.receive(frame,generation) }; session.onChatReset = { chat.reset() }; chat.onChange = { refreshLocal() }; chat.onInvite = { receiveInvite(it) }
+        session.currentPeerIdentity = { chat.peer?.let { ChatProtocol.participant(it) } }
+        session.onPeerIdentityVerified = { identity -> session.retryPendingMessagesFor(identity); if(BuildConfig.CHAT_ENABLED) community.announce() }
+        session.onChatConnected = {
+            if(BuildConfig.CHAT_ENABLED) { chat.announce(); if(chat.peer!=null)community.announce() }
+            else session.send("CHAT_PROFILE", chat.profile())
+        }
+        session.onChatFrame = { frame, generation ->
+            if (BuildConfig.CHAT_ENABLED) chat.receive(frame,generation)
+            else if (frame.optString("kind") == "CHAT_PROFILE") chat.verifyTransportPeer(frame.getJSONObject("value")).also { session.onPeerIdentityVerified(it) }
+        }
+        session.onChatReset = { chat.reset() }; chat.onChange = { refreshLocal() }; chat.onInvite = { receiveInvite(it) }
         session.onCommunityFrame={frame,generation->if(BuildConfig.CHAT_ENABLED)community.frame(frame,generation)};community.onChange={refreshLocal()};session.publicFileAllowed={id,hash->community.fileAllowed(id,hash)};session.onPublicFileComplete={community.completeFile(it)}
         session.chatFileAllowed = { id,hash -> chat.fileAllowed(id,hash) }; session.onChatFileComplete = { chat.completeFile(it) }
         chat.onIncoming={batchChatNotice(it)}
@@ -89,6 +100,30 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         nearby.onPeers = { peers -> mutable.update { it.copy(peers = peers) } }
         nearby.onPair = { code -> mutable.update { it.copy(pairCode = code) } }
         nearby.onFrame = { session.incoming(it) }; nearby.onError = { notice(it) }
+        nearby.onConnectionLost = { advertise, automatic ->
+            chat.peer?.let { session.requireSamePeer(ChatProtocol.participant(it)) }
+            viewModelScope.launch {
+                var waited = 0
+                while (state.value.busy && waited < 5000) { delay(100); waited += 100 }
+                if (state.value.busy || !preferences().optBoolean("nearbyVisible", true) || !ble.available || session.transport !== nearby) {
+                    if (!ble.available) notice("Nearby connection changed. Messages are saved; Bluetooth is unavailable on this phone.")
+                    return@launch
+                }
+                action {
+                    activate(ble, preservePeerIdentity = true)
+                    notice("Nearby connection changed. Looking for the same person by Bluetooth…")
+                    ble.start(advertise = if (automatic) false else advertise, auto = automatic)
+                }
+            }
+        }
+        ble.onState = { status ->
+            mutable.update { it.copy(nearbyStatus = status, connected = ble.connected) }
+            if (ble.connected) action { session.confirm() } else session.reset()
+            refreshLocal()
+        }
+        ble.onPeers = { peers -> mutable.update { it.copy(peers = peers) } }
+        ble.onPair = { code -> mutable.update { it.copy(pairCode = code) } }
+        ble.onFrame = { session.incoming(it) }; ble.onError = { notice(it) }
         refreshLocal(); if(startServices){refresh(); foregroundActive()}
     }
     fun notice(text: String?) { mutable.update { it.copy(notice = text) } }
@@ -217,13 +252,15 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     fun logout(revoke: Boolean) = action { disconnect(); repository.logout(revoke); session.clearFiles(); mutable.update { it.copy(dashboard = null) }; notice("Signed out. Private saved work and this phone’s signing identity were cleared.") }
     fun listDevices() = action { mutable.update { it.copy(devices = org.json.JSONArray(repository.api("/sync/devices", authenticated = true)).objects()) } }
     fun revokeDevice(id: String) = action { repository.api("/sync/devices/$id/revoke", obj(), true); mutable.update { it.copy(devices = org.json.JSONArray(repository.api("/sync/devices", authenticated = true)).objects()) }; notice("Phone revoked by Swarm. Unsent events signed by that phone may be rejected.") }
-    private fun activate(transport: PeerTransport) { session.transport?.disconnect(); session.reset(); session.transport = transport; mutable.update { it.copy(invitation = "", localCode = "", media = false, connected = false, callActive = false, calling = false) } }
+    private fun activate(transport: PeerTransport, preservePeerIdentity: Boolean = false) { if (!preservePeerIdentity) session.clearPeerRequirement(); session.transport?.disconnect(); session.reset(); session.transport = transport; mutable.update { it.copy(invitation = "", localCode = "", pairCode = null, peers = emptyMap(), media = false, connected = false, callActive = false, calling = false) } }
     fun scan(advertise: Boolean,automatic:Boolean=false) = action { require(preferences().optBoolean("nearbyVisible",true)){"Enable Nearby visibility in More before searching."};require(repository.featureFlags?.optBoolean("nearby") == true) { "Nearby discovery is not enabled for this environment. Local pairing remains available when configured." }; activate(nearby); nearby.scan(advertise,automatic) }
-    fun connect(id: String) = action { nearby.connect(id) }
+    fun scanBle(advertise: Boolean) = action { require(preferences().optBoolean("nearbyVisible",true)){"Enable Nearby visibility in More before searching."}; activate(ble); ble.start(advertise) }
+    fun connect(id: String) = action { if (session.transport === ble) ble.connect(id) else nearby.connect(id) }
+    fun confirmPair(match: Boolean) { if (session.transport === ble) ble.confirm(match) else nearby.confirm(match) }
     fun offer() = action { activate(wifi); mutable.update { it.copy(invitation = wifi.offer()) } }
     fun accept(text: String) = action { if (session.transport !== wifi) activate(wifi); val reply = wifi.accept(text); mutable.update { it.copy(invitation = reply) } }
     fun confirmLocal() = action { session.confirm(); mutable.update { it.copy(localCode = "") } }
-    fun disconnect() { session.transport?.disconnect(); session.reset(); endMedia(); mutable.update { it.copy(connected = false, confirmed = false, media = false, invitation = "", localCode = "") } }
+    fun disconnect() { session.clearPeerRequirement(); session.transport?.disconnect(); session.reset(); endMedia(); mutable.update { it.copy(connected = false, confirmed = false, media = false, invitation = "", localCode = "") } }
     fun sendMessage(text: String) = action { session.message(text) }
     fun share() = action { session.shareEvents(); notice("Sharing eligible signed updates. They remain pending until Swarm confirms them.") }
     fun offerFile(uri: Uri) = action { session.offerFile(uri) }
@@ -242,6 +279,6 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         healthCheck?.cancel()
         healthCheck = viewModelScope.launch { while (isActive) { delay(30000); repository.checkReachability(); if(BuildConfig.CHAT_ENABLED){if(repository.reachable){runCatching {chat.sync();chat.autoMedia()};runCatching{community.sync()}}; if(session.confirmed){runCatching {chat.announce()};runCatching{community.announce()}}}; mutable.update { it.copy(reachable = repository.reachable) } } }
     }
-    fun foregroundLost() { attachmentSync?.cancel();healthCheck?.cancel(); nearby.stopScan();cancelVoice(); if (state.value.calling) hangup() }
+    fun foregroundLost() { attachmentSync?.cancel();healthCheck?.cancel(); nearby.stopScan();ble.stopScan();cancelVoice(); if (state.value.calling) hangup() }
     override fun onCleared() { disconnect(); if (wifiDelegate.isInitialized()) wifi.release(); repository.store.close() }
 }

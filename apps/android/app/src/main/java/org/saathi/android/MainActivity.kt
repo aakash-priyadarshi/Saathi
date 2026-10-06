@@ -83,6 +83,12 @@ private val tabs = listOf(Triple("Updates", Icons.Outlined.Feed, "Public field u
         val needed = buildList { if (Build.VERSION.SDK_INT >= 31) addAll(listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE)); if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.NEARBY_WIFI_DEVICES) else addAll(listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)) }
         permissions.launch(needed.toTypedArray())
     }
+    val askBle: (Boolean) -> Unit = { advertise ->
+        pendingPermission = { vm.scanBle(advertise) }
+        val needed = if (Build.VERSION.SDK_INT >= 31) listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE)
+            else listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+        permissions.launch(needed.toTypedArray())
+    }
     val askCall: (Boolean, Boolean) -> Unit = { video, incoming -> pendingPermission = { vm.call(video, incoming) }; permissions.launch((if (video) arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA) else arrayOf(Manifest.permission.RECORD_AUDIO))) }
     val askRecord:()->Unit={pendingPermission={vm.startVoice()};permissions.launch(arrayOf(Manifest.permission.RECORD_AUDIO))}
     val navigateBack: () -> Unit = { if (form != null) form = null else if (detail != null) detail = null else if(conversation!=null)conversation=null else page = "Chats" }
@@ -122,7 +128,7 @@ private val tabs = listOf(Triple("Updates", Icons.Outlined.Feed, "Public field u
                             page == "Updates" -> UpdatesHub(vm,state,content,{page="Team";form="field"},{post->vm.discuss(obj("type" to "UPDATE","id" to post.getString("id"),"title" to post.getString("caption").take(120)),openChat)})
                             page == "Chats" -> ChatsScreen(vm,state,openChat,{page="Nearby"},{createChannel=true},content)
                             page == "Nearby" -> NearbyPeopleScreen(vm,state,askNearby,openChat,{createChannel=true},{invite=true},{page="Connection"},content)
-                            page == "Connection" -> NearbyScreen(vm, state, askNearby, askCall, content)
+                            page == "Connection" -> NearbyScreen(vm, state, askNearby, askBle, askCall, content)
                             page == "More" -> MoreScreen(vm,state,{page="Team"},{page="Saved"},{page="Connection"},content)
                             page == "Saved" -> SavedScreen(vm, state, { form = it }, content)
                             else -> TeamScreen(vm, state, { form = it }, { logout = true }, content)
@@ -134,7 +140,7 @@ private val tabs = listOf(Triple("Updates", Icons.Outlined.Feed, "Public field u
     }
     if(createChannel)ChannelCreate({name,visibility,mode,admission->vm.createChannel(name,visibility,mode,admission){createChannel=false;openChat(it)}},{createChannel=false},state.busy)
     if(invite || state.incomingInvite!=null)JoinInvite(vm,state.incomingInvite?:"",{link->vm.joinInvite(link){invite=false;vm.dismissInvite();openChat(it)}},{invite=false;vm.dismissInvite()},state.busy)
-    state.pairCode?.let { code -> AlertDialog(onDismissRequest = { vm.nearby.confirm(false) }, title = { Text("Compare both device codes") }, text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { Text(code, style = MaterialTheme.typography.headlineMedium); Text("Accept only when the other device shows this same code. A connection does not verify volunteer identity.") } }, confirmButton = { TextButton(onClick = { vm.nearby.confirm(true) }) { Text("Codes match") } }, dismissButton = { TextButton(onClick = { vm.nearby.confirm(false) }) { Text("Decline") } }) }
+    state.pairCode?.let { code -> AlertDialog(onDismissRequest = { vm.confirmPair(false) }, title = { Text("Compare both device codes") }, text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { Text(code, style = MaterialTheme.typography.headlineMedium); Text("Accept only when the other device shows this same code. A connection does not verify volunteer identity.") } }, confirmButton = { TextButton(onClick = { vm.confirmPair(true) }) { Text("Codes match") } }, dismissButton = { TextButton(onClick = { vm.confirmPair(false) }) { Text("Decline") } }) }
     if (state.localCode.isNotBlank() && !state.confirmed) AlertDialog(onDismissRequest = { vm.disconnect() }, title = { Text("Compare both device codes") }, text = { Column { Text(state.localCode, style = MaterialTheme.typography.headlineMedium); Text("Confirm this same code with the other person before sharing.") } }, confirmButton = { TextButton(onClick = { vm.confirmLocal() }) { Text("Codes match") } }, dismissButton = { TextButton(onClick = { vm.disconnect() }) { Text("Decline") } })
     state.fileOffer?.let { offer -> AlertDialog(onDismissRequest = { vm.declineFile() }, title = { Text("Receive a nearby file?") }, text = { Text("${offer.getString("name")} · ${fileSize(offer.getLong("size"))}\n\nOnly accept files from someone you trust. Received files stay private on this phone.") }, confirmButton = { TextButton(onClick = { vm.acceptFile() }) { Text("Receive") } }, dismissButton = { TextButton(onClick = { vm.declineFile() }) { Text("Decline") } }) }
     state.incomingCall?.let { video -> AlertDialog(onDismissRequest = { vm.hangup() }, title = { Text(if (video) "Nearby video call" else "Nearby voice call") }, text = { Text("The connected person would like to call. Microphone${if (video) " and camera" else ""} access starts only when you accept.") }, confirmButton = { TextButton(onClick = { askCall(video, true) }) { Text("Accept") } }, dismissButton = { TextButton(onClick = { vm.hangup() }) { Text("Decline") } }) }

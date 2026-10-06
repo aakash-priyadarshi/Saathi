@@ -8,7 +8,7 @@ Native needs/completed/field/verification, contributions, volunteer preparation,
 
 Updates, Chats, Nearby, Needs and More now separate conversation from authoritative relief publishing. Stable DMs, open/invite-only channels, signed membership/invites/receipts, durable encrypted attachments, authorized history/sync, references, foreground mentions/notices and mute/block/report extend the existing transports. Familiar native calls appear only on a compatible live DM path; huddles remain unavailable. The [chat architecture](chat-channel-architecture.md) explains the static-key encryption, bounded retention/quotas and revocation limits. Chat membership confers no relief RBAC authority.
 
-Verified-volunteer coordinator/admin management remains in the web portal. Ordinary participant field-photo/video authoring, temporary Nearby Help and consented public-media forwarding are now native; reports stay unverified and pending approval. Direct BLE/Direct/Aware/iOS and background relaying/calls are unsupported. Physical range, sustained battery, degraded-network and lock/reboot behavior remain unverified.
+Verified-volunteer coordinator/admin management remains in the web portal. Ordinary participant field-photo/video authoring, temporary Nearby Help and consented public-media forwarding are now native; reports stay unverified and pending approval. Direct Android BLE/GATT now carries small foreground messages and structured updates, and passed code-confirmed, Wi-Fi-off bidirectional message checks on the S24 and Tab S9. Automatic failover/identity continuity, Direct/Aware/iOS and background relaying/calls are not established. Physical range, sustained battery, degraded-network and lock/reboot behavior remain unverified; see [Android product verification](android-testing.md).
 
 ## Installed artifact
 
@@ -19,10 +19,12 @@ Verified-volunteer coordinator/admin management remains in the web portal. Ordin
 | Android floor/target | min SDK 26 / target SDK 36; compile SDK 37.0                                                                |
 | Architecture         | Kotlin/Compose, Material 3, Android Keystore, encrypted SQLite records, native transport adapters           |
 | APK                  | `C:\project-bussiness\Saathi\apps\android\app\build\outputs\apk\debug\app-debug.apk`                        |
-| Size                 | 77,215,868 bytes                                                                                            |
-| APK SHA-256          | `cb98308fe909ba2d80329f3808ab90113e5fd9e8da1fa7a8cb7563beed1539c2`                                          |
+| Size                 | 77,289,877 bytes                                                                                            |
+| APK SHA-256          | `d7a40d98897fe49a224fa575a56012860147ee55343a75ef182d64feb7a30cd8`                                          |
 | Certificate SHA-256  | `bfccf64b1323649f43c8dc2db8ff05aee9c71856ef1f0a60221768718a992310`                                          |
 | Environment          | Separate fictional development schema; API at `127.0.0.1:4000` through USB reverse; web at `localhost:3000` |
+
+The S24 and Tab S9 had this exact APK installed and passed direct BLE/GATT message tests with Wi-Fi disabled. Their matching installed APK hashes and the scoped result are recorded in [Android product verification](android-testing.md). This build's BLE test does not qualify automatic transport recovery or range/battery behavior.
 
 From the repository root:
 

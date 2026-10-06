@@ -1,22 +1,6 @@
 import type { NextConfig } from 'next';
 const config: NextConfig = {
   transpilePackages: ['@saathi/types', '@saathi/ui', '@saathi/protocol', '@saathi/validation'],
-  async rewrites() {
-    return [
-      {
-        source: '/api/v1/public/reports',
-        destination: `${process.env.API_INTERNAL_URL ?? 'http://localhost:4000'}/api/v1/public/reports`,
-      },
-      {
-        source: '/api/v1/public/:path*',
-        destination: `${process.env.PUBLIC_API_INTERNAL_URL ?? process.env.API_INTERNAL_URL ?? 'http://localhost:4000'}/api/v1/public/:path*`,
-      },
-      {
-        source: '/api/:path*',
-        destination: `${process.env.API_INTERNAL_URL ?? 'http://localhost:4000'}/api/:path*`,
-      },
-    ];
-  },
   async headers() {
     return [
       {

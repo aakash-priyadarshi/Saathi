@@ -64,6 +64,17 @@ class ChatRepository(private val context: Context, private val repository: Repos
     fun policies()=store.all("chat-policies").map { it.getJSONObject("policy") }
     fun blocked(id:String)=store.get("chat-blocks",id)!=null
     fun reset(){ peer=null; discovery=emptyList(); onChange() }
+    fun verifyTransportPeer(profile: JSONObject): String {
+        val verified = ChatProtocol.profile(profile,now())
+        val participant = ChatProtocol.participant(verified)
+        val previous = peer
+        require(previous == null || ChatProtocol.participant(previous) == participant) { "Nearby identity changed. Reconnect and compare the codes." }
+        session.verifyPeer(participant)
+        remember(verified)
+        peerGeneration=session.connectionGeneration;peer=verified
+        onChange()
+        return participant
+    }
     private fun remember(profile:JSONObject) {
         ChatProtocol.profile(profile,now()); val id=ChatProtocol.participant(profile)
         val old=store.get("chat-contacts",id)?.getJSONObject("profile")
@@ -390,13 +401,12 @@ class ChatRepository(private val context: Context, private val repository: Repos
         val p=current(id)?:error("Channel is unavailable."); val b=p.getJSONObject("body")
         if(ChatProtocol.participant(b.getJSONObject("owner"))==self()) {
             val members=JSONArray(b.getJSONArray("members").toString())
-            if(personId!=null){ require(personId!=self()); members.objects().first { ChatProtocol.participant(it.getJSONObject("profile"))==personId }.put("removedAt",now().toString()) }
             val next=revised(p,b.getString("name"),b.getString("visibility"),members,delete)
             applyPolicy(next,true)
             // A removed member must receive the signed revocation, even though future history is denied.
             if(session.confirmed && peer?.let{ChatProtocol.member(p,ChatProtocol.participant(it))}==true)session.send("CHAT_POLICY",next)
         }else{
-            require(personId==null && !delete); val request=makeJoin(id,"LEAVE"); save("chat-joins",id,obj("id" to id,"request" to request))
+            require(!delete); val request=makeJoin(id,"LEAVE"); save("chat-joins",id,obj("id" to id,"request" to request))
             val c=store.get("chat-conversations",id)!!; c.put("joined",false); save("chat-conversations",id,c)
             if(session.confirmed) session.send("CHAT_JOIN",request)
         }
@@ -527,8 +537,10 @@ class ChatRepository(private val context: Context, private val repository: Repos
         if(generation!=session.connectionGeneration || !session.confirmed)return@withLock
         val kind=frame.getString("kind")
         if(kind=="CHAT_PROFILE"){
-            val profile=frame.getJSONObject("value");remember(profile);val first=peer==null;require(first || ChatProtocol.participant(peer!!)==ChatProtocol.participant(profile)) { "Nearby identity changed. Reconnect and compare the codes." };peerGeneration=generation;peer=profile
-            if(first)announceUnlocked(); onChange();return@withLock
+            val profile=frame.getJSONObject("value");val first=peer==null
+            require(generation==session.connectionGeneration)
+            val participant=verifyTransportPeer(profile)
+            if(first)announceUnlocked(); onChange();session.onPeerIdentityVerified(participant);return@withLock
         }
         val person=peer?.let { ChatProtocol.participant(it) }?:return@withLock
         if(blocked(person))return@withLock
