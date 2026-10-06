@@ -60,9 +60,13 @@ services:
     environment:
       NODE_ENV: production
       APP_ENV: staging
+      SERVICE_ROLE: seed
       DATABASE_URL: postgresql://saathi:${POSTGRES_PASSWORD}@postgres:5432/saathi?schema=public
       DEMO_MODE: 'true'
+      STAGING_SEED_ALLOWED: 'true'
       SEED_PASSWORD: ${SEED_PASSWORD:?Set SEED_PASSWORD in .env}
+      WEB_ORIGIN: https://${WEB_HOST:?Set WEB_HOST in .env}
+      PUBLIC_URL: https://${WEB_HOST:?Set WEB_HOST in .env}
     depends_on:
       postgres:
         condition: service_healthy

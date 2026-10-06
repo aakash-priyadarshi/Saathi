@@ -15,7 +15,7 @@ const schema = z.object({
     .enum(['development', 'staging', 'production'])
     .default(process.env.NODE_ENV === 'production' ? 'production' : 'development'),
   API_PLANE: z.enum(['combined', 'public', 'operational']).default('combined'),
-  SERVICE_ROLE: z.enum(['api', 'media-worker']).default('api'),
+  SERVICE_ROLE: z.enum(['api', 'media-worker', 'seed']).default('api'),
   MEDIA_PROCESSING_MODE: z.enum(['inline', 'worker']).default('inline'),
   SYNC_SIGNING_PRIVATE_JWK: z.string().optional(),
   SYNC_RECEIPT_KEYRING_JSON: z.string().optional(),
