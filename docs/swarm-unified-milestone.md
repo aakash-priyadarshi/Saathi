@@ -20,6 +20,8 @@ Current local verification passed 33 shared/API unit cases, 54 PostgreSQL integr
 
 Raw signed protocol cases cover permission bypass, stale/demoted authority, conflicting actions, thread-start versus reply permission, key exclusion, admission/replay, Help lifecycle/limits, altered public media and competing-gateway deduplication. Browser regression retains Needs, donations and offline relief behavior. Viewport emulation is not a physical browser test.
 
+The first hosted verification exposed migration ordering on a fresh database: `0012_community` preceded the dated base-table migrations. Its byte-identical SQL now lives at `202610050006_community`, after those foundations. A new isolated local schema applied all 12 migrations and passed all 54 integration cases. Existing isolated schemas were reconciled by verifying the completed legacy migration checksum and marking the new name applied; their data was preserved. See the [migration compatibility notes](swarm-community-architecture.md#database-migration-compatibility).
+
 ## Physical evidence and corrections
 
 S24 (SM-S921B) and tablet (SM-X510), both Android 16, are explicitly approved. Thirteen storage/viewport/governance/community cases passed on each on the final build (S24 49.879 seconds; tablet 31.065 seconds). These include local QR image encode/decode, approval key delivery, identity/theme persistence, photo orientation/metadata removal and a two-second video remux. A real duration defect was corrected by preserving its final sample duration; selected original files remain unchanged.

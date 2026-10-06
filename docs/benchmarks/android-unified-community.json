@@ -18,7 +18,9 @@
     "postgresIntegration": 54,
     "browser": 14,
     "nativeJvm": 16,
-    "buildLint": true
+    "buildLint": true,
+    "freshDatabaseMigrations": 12,
+    "freshDatabaseIntegration": 54
   },
   "physicalStore": [
     {
@@ -93,5 +95,13 @@
     "fixtureOnlyReversePortsRemoved": true,
     "ordinaryDevelopmentScopeReopened": true,
     "temporaryWindowsUdpRule": "Still enabled; owner must run Disable in Administrator PowerShell."
+  },
+  "migrationCorrection": {
+    "oldName": "0012_community",
+    "currentName": "202610050006_community",
+    "sqlUnchanged": true,
+    "freshSchemaPassed": true,
+    "existingIsolatedSchemasReconciledByChecksum": true,
+    "dataReset": false
   }
 }

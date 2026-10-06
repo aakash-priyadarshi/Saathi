@@ -151,3 +151,9 @@ See [group crypto/scale ADR](adr/0010-group-crypto-and-announcement-scale.md),
 [milestone evidence](swarm-unified-milestone.md) and the existing offline/private
 chat threat models for release limits. Physical radio evidence and synthetic
 layout captures must remain explicitly distinguishable.
+
+# Database migration compatibility
+
+The community migration is `202610050006_community`, which follows the dated foundation migrations on a fresh database. Its SQL is unchanged from the short-lived `0012_community` name in commit `4c33f8d`; the earlier name sorted before the base `FieldUpdate` table on fresh installations. Fresh-schema migration plus all 54 integration cases now pass locally.
+
+For an existing development schema that successfully applied `0012_community`, verify its completed migration checksum matches the new file and verify the schema already contains its changes before using `pnpm --filter @saathi/database exec prisma migrate resolve --applied 202610050006_community`. This records the new name without repeating DDL; [Prisma documents the mark-as-applied recovery flow](https://www.prisma.io/docs/orm/prisma-migrate/workflows/patching-and-hotfixing). Both approved local isolated schemas were reconciled this way, then `migrate deploy` reported no pending migrations. No database reset was performed. Failed or partially applied histories require inspection and the documented failed-migration recovery first; they must not be marked applied blindly. Railway staging remains undeployed.
