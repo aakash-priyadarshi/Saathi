@@ -26,7 +26,7 @@ pnpm build
 docker build -t saathi:release .
 ```
 
-Run schema migration with a dedicated migrator role before deploying the runtime. Run separate web and API containers from the image, overriding the web command to `pnpm --filter @saathi/web start`. The API defaults to `pnpm --filter @saathi/api start`. Allow graceful shutdown and sufficient health-check startup time. Restrict `/api/docs` at ingress if internal API discovery is undesirable. `/health` is process liveness; `/ready` checks the database. `/metrics` requires an authenticated admin and should be scraped through a restricted credential/session integration.
+Run schema migration with a dedicated migrator role before deploying the runtime. Run separate web and API containers from the image, overriding the web command to `pnpm --filter @saathi/web start`. The API defaults to `pnpm --filter @saathi/api start`. Allow graceful shutdown and sufficient health-check startup time. Swagger documentation is enabled only in development; hosted staging/production API services do not register `/api/docs`. `/health` is process liveness; `/ready` checks the database. `/metrics` requires an authenticated admin and should be scraped through a restricted credential/session integration.
 
 The production application DB role must not own schemas or tables, disable triggers, truncate history, or run migrations. Grant it SELECT/INSERT/UPDATE on operational tables, SELECT/INSERT on AuditEvent, and no DELETE on ReliefRequest. Test its permissions explicitly after provisioning. Audit triggers supplement least privilege; they cannot protect history from a superuser.
 

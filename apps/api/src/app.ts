@@ -28,6 +28,7 @@ import { S3Storage } from './media/storage';
 import { SyncService } from './sync/sync.service';
 import { SyncController } from './sync/sync.controller';
 import { PublicReadModule } from './public/public.module';
+import { shouldExposeApiDocs } from './api-docs-policy';
 import { ChatController } from './chat/chat.controller';
 import { ChatService } from './chat/chat.service';
 import { CommunityController } from './community/community.controller';
@@ -246,7 +247,7 @@ export async function createApp(plane: typeof env.API_PLANE = env.API_PLANE) {
       res.sendStatus(401);
     }
   });
-  if (plane !== 'public') {
+  if (shouldExposeApiDocs(env.APP_ENV, plane)) {
     const doc = SwaggerModule.createDocument(
       app,
       new DocumentBuilder()
