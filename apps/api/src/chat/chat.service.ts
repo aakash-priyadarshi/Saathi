@@ -10,6 +10,9 @@ import {
   validChatMessage,
   validChatReceipt,
   validChatJoin,
+  channelCapabilities,
+  validChatAction,
+  type ChatAction,
   chatAttachmentRequestSchema,
   validChatAttachmentManifest,
   type ChatProfile,
@@ -19,12 +22,180 @@ import {
 import { Database } from '../database';
 type Tx = Prisma.TransactionClient;
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
-const active = (policy: ChannelPolicy, id: string) =>
-  !policy.body.deleted && policy.body.members.some((m) => m.profile.body.id === id && !m.removedAt);
+const active = (policy: ChannelPolicy, id: string) => channelCapabilities(policy, id).canRead;
+const membershipActions = ['APPROVE_JOIN', 'REJECT_JOIN', 'REMOVE', 'BAN', 'UNBAN', 'SET_ROLE'];
 
 /** Operational plane only. Chat signatures confer no relief/account authority. */
 export class ChatService {
   constructor(private readonly db: Database) {}
+  private async pendingReports(tx: Tx, channelIds: string[]) {
+    if (!channelIds.length) return [];
+    const messages = await tx.chatMessage.findMany({
+      where: { conversationId: { in: channelIds }, expiresAt: { gt: new Date() } },
+      select: { id: true, conversationId: true },
+      take: 500,
+    });
+    const reports = await tx.chatReport.findMany({
+      where: { messageId: { in: messages.map((m) => m.id) } },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    const reviews = await tx.chatAction.findMany({
+      where: {
+        conversationId: { in: channelIds },
+        action: 'REVIEW_REPORT',
+        targetId: { in: reports.map((r) => r.messageId) },
+      },
+      select: { targetId: true, receivedAt: true },
+    });
+    return reports
+      .filter(
+        (r) => !reviews.some((a) => a.targetId === r.messageId && a.receivedAt >= r.createdAt),
+      )
+      .map((r) => ({
+        id: r.id,
+        messageId: r.messageId,
+        reason: r.reason,
+        createdAt: r.createdAt.toISOString(),
+        channelId: messages.find((m) => m.id === r.messageId)!.conversationId,
+      }));
+  }
+  private async pendingKeyChange(tx: Tx, policy: ChannelPolicy) {
+    return tx.chatAction.count({
+      where: {
+        conversationId: policy.body.id,
+        version: policy.body.version,
+        action: { in: ['REMOVE', 'BAN', 'SET_ROLE', 'APPROVE_JOIN'] },
+        id: { notIn: policy.body.appliedActions ?? [] },
+      },
+    });
+  }
+  private async applyAction(tx: Tx, action: ChatAction, now: number) {
+    const b = action.body,
+      old = await tx.chatAction.findUnique({ where: { id: b.id } });
+    const digest = await hash(action);
+    if (old) {
+      if (old.envelopeHash !== digest) throw new Error('Action identifier was reused.');
+      return;
+    }
+    const channel = await tx.chatConversation.findUnique({ where: { id: b.channelId } });
+    if (!channel?.policy || channel.deleted) throw new Error('Channel is unavailable.');
+    const current = channel.policy as unknown as ChannelPolicy;
+    if (
+      !current.body.appliedActions?.includes(b.id) &&
+      !['REACT', 'UNREACT', 'REVIEW_REPORT'].includes(b.action)
+    ) {
+      const family = membershipActions.includes(b.action)
+        ? membershipActions
+        : ['LOCK_THREAD', 'UNLOCK_THREAD'].includes(b.action)
+          ? ['LOCK_THREAD', 'UNLOCK_THREAD']
+          : ['HIDE_MESSAGE', 'RESTORE_MESSAGE'];
+      if (
+        await tx.chatAction.findFirst({
+          where: {
+            conversationId: b.channelId,
+            version: current.body.version,
+            targetId: b.targetId,
+            action: { in: family },
+            id: { notIn: current.body.appliedActions ?? [] },
+          },
+        })
+      )
+        throw new Error(
+          'A conflicting action is awaiting a fresh owner policy. Refresh before retrying.',
+        );
+    }
+    let policy = current;
+    if (b.policyHash !== (await hash(current)) && current.body.appliedActions?.includes(b.id)) {
+      const historic = await tx.chatPolicy.findUnique({ where: { id: b.policyHash } });
+      if (!historic || historic.conversationId !== b.channelId)
+        throw new Error('Action history is unavailable.');
+      policy = historic.policy as unknown as ChannelPolicy;
+      await validChatAction(action, policy, Date.parse(b.issuedAt));
+    } else {
+      await validChatAction(action, policy, now);
+      const membership = await tx.chatMembership.findUnique({
+        where: {
+          conversationId_participantId: {
+            conversationId: b.channelId,
+            participantId: b.actor.body.id,
+          },
+        },
+      });
+      if (!membership || membership.removedAt) throw new Error('Moderator authority was removed.');
+      const changed = await tx.chatAction.findFirst({
+        where: {
+          conversationId: b.channelId,
+          targetId: b.actor.body.id,
+          version: current.body.version,
+          action: 'SET_ROLE',
+        },
+        orderBy: [{ receivedAt: 'desc' }, { id: 'desc' }],
+      });
+      if (changed) throw new Error('Moderator role is changing. Refresh permissions.');
+    }
+    if (membershipActions.includes(b.action)) {
+      if (['APPROVE_JOIN', 'REJECT_JOIN'].includes(b.action)) {
+        const join = await tx.chatJoinRequest.findUnique({
+          where: {
+            conversationId_participantId: {
+              conversationId: b.channelId,
+              participantId: b.targetId,
+            },
+          },
+        });
+        if (
+          !current.body.appliedActions?.includes(b.id) &&
+          (!join ||
+            join.fulfilled ||
+            join.action !== 'JOIN' ||
+            current.body.bannedIds?.includes(b.targetId))
+        )
+          throw new Error('Pending request is unavailable.');
+        if (b.action === 'REJECT_JOIN' && join)
+          await tx.chatJoinRequest.update({
+            where: { id: join.id },
+            data: { fulfilled: true, decision: 'REJECTED' },
+          });
+        if (b.action === 'APPROVE_JOIN' && join)
+          await tx.chatJoinRequest.update({
+            where: { id: join.id },
+            data: { decision: 'APPROVED' },
+          });
+      } else if (
+        ['REMOVE', 'BAN', 'SET_ROLE'].includes(b.action) &&
+        !policy.body.members.some((m) => m.profile.body.id === b.targetId)
+      )
+        throw new Error('Member is unavailable.');
+    } else {
+      const target = await tx.chatMessage.findUnique({ where: { id: b.targetId } });
+      if (!target || target.conversationId !== b.channelId || target.expiresAt.getTime() <= now)
+        throw new Error('Message is unavailable.');
+      const m = target.envelope as unknown as ChatMessage;
+      if (['LOCK_THREAD', 'UNLOCK_THREAD'].includes(b.action) && m.body.threadRootId)
+        throw new Error('Choose a top-level thread.');
+    }
+    if ((await tx.chatAction.count({ where: { conversationId: b.channelId } })) >= 500)
+      throw new Error('Moderation history is full.');
+    await tx.chatAction.create({
+      data: {
+        id: b.id,
+        conversationId: b.channelId,
+        actorId: b.actor.body.id,
+        targetId: b.targetId,
+        action: b.action,
+        version: b.version,
+        envelope: json(action),
+        envelopeHash: digest,
+        expiresAt: new Date(now + 7 * 86400000),
+      },
+    });
+    if (['REMOVE', 'BAN'].includes(b.action))
+      await tx.chatMembership.updateMany({
+        where: { conversationId: b.channelId, participantId: b.targetId },
+        data: { removedAt: new Date(now) },
+      });
+  }
   async attachment(input: unknown) {
     const request = chatAttachmentRequestSchema.parse(input),
       b = request.body,
@@ -87,6 +258,8 @@ export class ChatService {
           const policy = conversation.policy as unknown as ChannelPolicy;
           if (Date.parse(policy.body.expiresAt) <= now || !active(policy, id))
             throw new ForbiddenException('Refresh channel membership first.');
+          if (b.chunks.length && (await this.pendingKeyChange(tx, policy)))
+            throw new ForbiddenException('Private membership is changing. Wait for fresh keys.');
           const history = await tx.chatPolicy.findUnique({
             where: { id: message.body.policyHash! },
           });
@@ -223,6 +396,7 @@ export class ChatService {
           ...body.policies.map((p) => 'conv:' + p.body.id),
           ...body.messages.map((m) => 'conv:' + m.body.conversationId),
           ...body.joins.map((j) => 'conv:' + j.body.channelId),
+          ...(body.actions ?? []).map((a) => 'conv:' + a.body.channelId),
           ...body.messages.map((m) => 'message:' + m.body.id),
           ...[
             body.profile,
@@ -247,6 +421,8 @@ export class ChatService {
           rejected: { id: string; reason: string }[] = [],
           acceptedReceipts: string[] = [],
           acceptedPolicies: string[] = [];
+        const acceptedActions: string[] = [],
+          rejectedActions: { id: string; reason: string }[] = [];
         for (const policy of body.policies) {
           const p = policy.body,
             old = await tx.chatConversation.findUnique({ where: { id: p.id } });
@@ -261,6 +437,40 @@ export class ChatService {
           if (same && same.id !== policyHash)
             throw new ConflictException('Conflicting channel version.');
           if (old && (p.version < old.version || (old.deleted && !p.deleted))) continue;
+          if (old && p.version > old.version) {
+            const pending = await tx.chatAction.findMany({
+              where: {
+                conversationId: p.id,
+                version: old.version,
+                action: { notIn: ['REACT', 'UNREACT', 'REVIEW_REPORT'] },
+                id: { notIn: (old.policy as unknown as ChannelPolicy).body.appliedActions ?? [] },
+              },
+            });
+            for (const row of pending) {
+              const a = (row.envelope as unknown as ChatAction).body;
+              const member = p.members.find((m) => m.profile.body.id === a.targetId);
+              if (
+                !p.appliedActions?.includes(a.id) ||
+                (['REMOVE', 'BAN', 'REJECT_JOIN'].includes(a.action) &&
+                  member &&
+                  !member.removedAt) ||
+                (a.action === 'BAN' && !p.bannedIds?.includes(a.targetId)) ||
+                (a.action === 'UNBAN' && p.bannedIds?.includes(a.targetId)) ||
+                (a.action === 'APPROVE_JOIN' && (!member || member.removedAt)) ||
+                (a.action === 'SET_ROLE' && member?.role !== a.role) ||
+                (a.action === 'LOCK_THREAD' && !p.moderation?.lockedThreads.includes(a.targetId)) ||
+                (a.action === 'UNLOCK_THREAD' &&
+                  p.moderation?.lockedThreads.includes(a.targetId)) ||
+                (a.action === 'HIDE_MESSAGE' &&
+                  !p.moderation?.hiddenMessages.includes(a.targetId)) ||
+                (a.action === 'RESTORE_MESSAGE' &&
+                  p.moderation?.hiddenMessages.includes(a.targetId))
+              )
+                throw new ConflictException(
+                  'Refresh and incorporate accepted moderation before changing channel state.',
+                );
+            }
+          }
           for (const member of p.members) await this.profile(tx, member.profile);
           await tx.chatConversation.upsert({
             where: { id: p.id },
@@ -329,10 +539,7 @@ export class ChatService {
           const j = join.body,
             c = await tx.chatConversation.findUnique({ where: { id: j.channelId } });
           if (!c || c.deleted) continue;
-          if (j.participant.body.id !== id && c.ownerId !== id)
-            throw new ForbiddenException('Membership request belongs to another person.');
-          if (j.action === 'JOIN' && c.visibility !== 'OPEN')
-            throw new ForbiddenException('This channel requires an owner-signed invitation.');
+          const policy = c.policy as unknown as ChannelPolicy;
           const membership = await tx.chatMembership.findUnique({
             where: {
               conversationId_participantId: {
@@ -341,7 +548,35 @@ export class ChatService {
               },
             },
           });
-          if (j.action === 'JOIN' && membership?.removedAt) continue;
+          const priorJoin = await tx.chatJoinRequest.findUnique({
+            where: {
+              conversationId_participantId: {
+                conversationId: j.channelId,
+                participantId: j.participant.body.id,
+              },
+            },
+          });
+          if (j.participant.body.id !== id && !channelCapabilities(policy, id).canManageMembers)
+            throw new ForbiddenException('Membership request belongs to another person.');
+          if (j.action === 'JOIN') {
+            if (policy.body.bannedIds?.includes(j.participant.body.id))
+              throw new ForbiddenException('This identity is banned from the channel.');
+            if (membership && !membership.removedAt) continue;
+            if (priorJoin && (await hash(priorJoin.profile)) === (await hash(join))) continue;
+            if (c.visibility !== 'OPEN') {
+              const invite = j.invitation?.body;
+              if (
+                !invite ||
+                invite.policyHash !== (await hash(policy)) ||
+                invite.owner.body.id !== c.ownerId ||
+                !channelCapabilities(policy, (invite.issuer ?? invite.owner).body.id).canInvite ||
+                invite.admission !== policy.body.settings?.admission
+              )
+                throw new ForbiddenException(
+                  'This channel requires a current authenticated invitation.',
+                );
+            }
+          }
           if (j.action === 'LEAVE' && c.ownerId === j.participant.body.id) continue;
           await this.profile(tx, j.participant);
           await tx.chatJoinRequest.upsert({
@@ -358,13 +593,29 @@ export class ChatService {
               profile: json(join),
               action: j.action,
             },
-            update: { profile: json(join), action: j.action, fulfilled: false },
+            update: {
+              profile: json(join),
+              action: j.action,
+              fulfilled: false,
+              decision: 'PENDING',
+            },
           });
           if (j.action === 'LEAVE')
             await tx.chatMembership.updateMany({
               where: { conversationId: j.channelId, participantId: j.participant.body.id },
               data: { removedAt: new Date(now) },
             });
+        }
+        for (const action of body.actions ?? []) {
+          try {
+            await this.applyAction(tx, action, now);
+            acceptedActions.push(action.body.id);
+          } catch (error) {
+            rejectedActions.push({
+              id: action.body.id,
+              reason: error instanceof Error ? error.message : 'Action rejected.',
+            });
+          }
         }
         await tx.chatBlock.deleteMany({ where: { participantId: id } });
         if (body.blocks.length)
@@ -445,6 +696,46 @@ export class ChatService {
                 update: {},
               });
           } else {
+            if (!policy || (await this.pendingKeyChange(tx, policy))) {
+              rejected.push({ id: m.id, reason: 'WAITING_FOR_FRESH_MEMBERSHIP' });
+              continue;
+            }
+            if (m.threadRootId) {
+              if (
+                !channelCapabilities(policy, m.author.body.id).canCreateThreads &&
+                !(await tx.chatMessage.findFirst({
+                  where: {
+                    conversationId: m.conversationId,
+                    envelope: { path: ['body', 'threadRootId'], equals: m.threadRootId },
+                  },
+                }))
+              ) {
+                rejected.push({ id: m.id, reason: 'THREAD_CREATION_NOT_PERMITTED' });
+                continue;
+              }
+              const root = await tx.chatMessage.findUnique({ where: { id: m.threadRootId } });
+              const rootMessage = root?.envelope as unknown as ChatMessage | undefined;
+              const latest = await tx.chatAction.findFirst({
+                where: {
+                  conversationId: m.conversationId,
+                  targetId: m.threadRootId,
+                  action: { in: ['LOCK_THREAD', 'UNLOCK_THREAD'] },
+                },
+                orderBy: [{ receivedAt: 'desc' }, { id: 'desc' }],
+              });
+              if (
+                !root ||
+                root.conversationId !== m.conversationId ||
+                root.expiresAt.getTime() <= now ||
+                rootMessage?.body.threadRootId ||
+                (latest
+                  ? latest.action === 'LOCK_THREAD'
+                  : policy.body.moderation?.lockedThreads.includes(m.threadRootId))
+              ) {
+                rejected.push({ id: m.id, reason: 'THREAD_UNAVAILABLE_OR_LOCKED' });
+                continue;
+              }
+            }
             const membership = await tx.chatMembership.findUnique({
               where: {
                 conversationId_participantId: {
@@ -591,8 +882,23 @@ export class ChatService {
           if (p) included.add(p.id);
         }
         for (const report of body.reports) {
+          if (report.personId) {
+            const known = await tx.chatParticipant.findUnique({ where: { id: report.personId } });
+            if (!known || report.personId === id) continue;
+            await tx.moderationReport.upsert({
+              where: { id: report.id },
+              create: {
+                id: report.id,
+                entityType: 'CHAT_USER',
+                entityId: report.personId,
+                reason: report.reason,
+              },
+              update: {},
+            });
+            continue;
+          }
           const held = await tx.chatMessage.findUnique({
-            where: { id: report.messageId },
+            where: { id: report.messageId! },
             include: {
               conversation: { include: { memberships: { where: { participantId: id } } } },
             },
@@ -602,12 +908,29 @@ export class ChatService {
           if (prior && prior.participantId !== id) continue;
           await tx.chatReport.upsert({
             where: { id: report.id },
-            create: { ...report, participantId: id },
+            create: {
+              id: report.id,
+              messageId: report.messageId!,
+              reason: report.reason,
+              participantId: id,
+            },
             update: {},
           });
         }
         const joins = await tx.chatJoinRequest.findMany({
-          where: { fulfilled: false, conversation: { ownerId: id, deleted: false } },
+          where: {
+            fulfilled: false,
+            conversationId: {
+              in: memberships
+                .filter(
+                  (m) =>
+                    m.conversation.policy &&
+                    channelCapabilities(m.conversation.policy as unknown as ChannelPolicy, id)
+                      .canManageMembers,
+                )
+                .map((m) => m.conversationId),
+            },
+          },
           take: 32,
           orderBy: { createdAt: 'asc' },
         });
@@ -628,11 +951,55 @@ export class ChatService {
           rejected,
           acceptedPolicies,
           acceptedReceipts,
+          acceptedActions,
+          rejectedActions,
+          acceptedReports: (
+            await tx.chatReport.findMany({
+              where: { id: { in: body.reports.map((r) => r.id) }, participantId: id },
+            })
+          )
+            .map((r) => r.id)
+            .concat(
+              (
+                await tx.moderationReport.findMany({
+                  where: {
+                    id: { in: body.reports.filter((r) => r.personId).map((r) => r.id) },
+                    entityType: 'CHAT_USER',
+                  },
+                })
+              ).map((r) => r.id),
+            ),
+          reports: await this.pendingReports(
+            tx,
+            memberships
+              .filter(
+                (m) =>
+                  m.conversation.policy &&
+                  channelCapabilities(m.conversation.policy as unknown as ChannelPolicy, id)
+                    .canModerate,
+              )
+              .map((m) => m.conversationId),
+          ),
+          actions: (
+            await tx.chatAction.findMany({
+              where: { conversationId: { in: allowed } },
+              orderBy: [{ receivedAt: 'desc' }, { id: 'desc' }],
+              take: 100,
+            })
+          )
+            .reverse()
+            .map((a) => a.envelope),
           policies: memberships.map((m) => m.conversation.policy).filter(Boolean),
           historyPolicies: policies.filter((p) => included.has(p.id)).map((p) => p.policy),
           messages: messages.map((m) => m.envelope),
           receipts: confirmations.map((r) => r.receipt),
           joins: joins.map((j) => j.profile),
+          joinStates: (
+            await tx.chatJoinRequest.findMany({
+              where: { participantId: id, conversationId: { in: wanted } },
+              take: 16,
+            })
+          ).map((j) => ({ channelId: j.conversationId, status: j.decision })),
           removed: memberships
             .filter((m) => m.removedAt || m.conversation.deleted)
             .map((m) => m.conversationId),

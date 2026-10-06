@@ -1,0 +1,7 @@
+# Supplied SWARM identity
+
+The user supplied the SWARM by CJP Brand Identity Board on 6 October 2026. The project asset is `apps/android/app/src/main/res/drawable-nodpi/swarm_lockup.png`; it preserves the cream network-ant, tricolor ribbons and stacked wordmark. The supplied board pins the brand direction. It does not authorize generative modification of factual field photographs.
+
+Built-in image generation was used in background-extraction edit mode, followed by one correction. Final prompt: “Keep this exact ant emblem and exact SWARM by CJP typography and saffron/cream/green palette completely unchanged. Remove ONLY every soft glow, shadow, hazy surrounding color, and all background pixels. Output a clean transparent cutout with fully transparent empty area and crisp flat edges. No gray/black backdrop. The cream strokes and letter faces remain opaque. Center the exact complete logo on transparency with a little padding.” The PNG has a genuine alpha channel; background RGB visible in some previews has zero alpha.
+
+Motion thesis: the shared emblem resolves into view, then the product promise settles underneath. Native Compose animates alpha, a six-percent scale change and eight-dp travel once over 650 ms. There is no repeating animation or network-dependent holding period. Tap or Back dismisses it immediately. Disabled animator duration or touch exploration skips the reveal; activity recreation does not replay it. Existing paper/forest themes resume immediately afterward.

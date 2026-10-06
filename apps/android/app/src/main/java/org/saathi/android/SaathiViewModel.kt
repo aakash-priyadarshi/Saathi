@@ -8,6 +8,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.channels.Channel
 import org.json.JSONObject
 import org.webrtc.VideoTrack
 import android.media.MediaRecorder
@@ -24,12 +25,19 @@ data class AppState(
     val fileOffer: JSONObject? = null, val incomingCall: Boolean? = null, val calling: Boolean = false, val callActive: Boolean = false,
     val video: Boolean = false, val remoteVideo: VideoTrack? = null, val quality: String = ""
     ,val chatProfile: JSONObject? = null, val chatContacts: List<JSONObject> = emptyList(), val conversations: List<JSONObject> = emptyList(), val chatMessages: List<JSONObject> = emptyList(),
-    val chatPeer: JSONObject? = null, val nearbyChannels: List<JSONObject> = emptyList(), val recording: Boolean = false, val incomingInvite:String?=null
+    val chatPeer: JSONObject? = null, val nearbyChannels: List<JSONObject> = emptyList(), val recording: Boolean = false, val incomingInvite:String?=null,
+    val chatActions: List<JSONObject> = emptyList(), val preferences:JSONObject = JSONObject(),
+    val localHelp:List<JSONObject> = emptyList(),val participantReports:List<JSONObject> = emptyList(),
+    val chatPolicies:List<JSONObject> = emptyList(),val chatBlocks:Set<String> = emptySet(),
+    val chatJoinInbox:List<JSONObject> = emptyList(),val chatReportInbox:List<JSONObject> = emptyList(),
+    val relayReservedBytes:Long = 0
 )
 
 class SaathiViewModel @JvmOverloads constructor(application: Application, storageScope:String=BuildConfig.ENVIRONMENT, startServices:Boolean=true) : AndroidViewModel(application) {
     val repository = Repository(application,storageScope)
-    private val mutable = MutableStateFlow(AppState())
+    private val mutable = MutableStateFlow(AppState(preferences=preferences()))
+    private val preferenceVersions=mutableMapOf<String,Long>()
+    private val localRefreshes=Channel<Unit>(Channel.CONFLATED)
     val state = mutable.asStateFlow()
     val nearby = NearbyTransport(application, viewModelScope)
     private val wifiDelegate = lazy { LocalWifiTransport(application, viewModelScope).apply {
@@ -42,6 +50,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     val wifi by wifiDelegate
     val session = PeerSession(application, repository, viewModelScope)
     val chat = ChatRepository(application,repository,session)
+    val community=CommunityRepository(application,repository,chat,session)
     private var recorder: MediaRecorder? = null
     private var voiceFile: File? = null
     private var voiceTimeout: Job? = null
@@ -59,7 +68,11 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         }}
     }
     init {
-        session.onChatConnected = { if(BuildConfig.CHAT_ENABLED)chat.announce() }; session.onChatFrame = { frame, generation -> if(BuildConfig.CHAT_ENABLED)chat.receive(frame,generation) }; session.onChatReset = { chat.reset() }; chat.onChange = { refreshLocal() }; chat.onInvite = { receiveInvite(it) }
+        // One reader snapshots encrypted storage off the UI thread. A burst of frame callbacks
+        // must not start competing readers or repeat Keystore work inside StateFlow CAS retries.
+        viewModelScope.launch(Dispatchers.IO) { for (ignored in localRefreshes) loadLocalSnapshot() }
+        session.onChatConnected = { if(BuildConfig.CHAT_ENABLED){chat.announce();community.announce()} }; session.onChatFrame = { frame, generation -> if(BuildConfig.CHAT_ENABLED)chat.receive(frame,generation) }; session.onChatReset = { chat.reset() }; chat.onChange = { refreshLocal() }; chat.onInvite = { receiveInvite(it) }
+        session.onCommunityFrame={frame,generation->if(BuildConfig.CHAT_ENABLED)community.frame(frame,generation)};community.onChange={refreshLocal()};session.publicFileAllowed={id,hash->community.fileAllowed(id,hash)};session.onPublicFileComplete={community.completeFile(it)}
         session.chatFileAllowed = { id,hash -> chat.fileAllowed(id,hash) }; session.onChatFileComplete = { chat.completeFile(it) }
         chat.onIncoming={batchChatNotice(it)}
         File(application.cacheDir,"voice").apply { mkdirs();listFiles()?.forEach { it.delete() } }
@@ -79,6 +92,14 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         refreshLocal(); if(startServices){refresh(); foregroundActive()}
     }
     fun notice(text: String?) { mutable.update { it.copy(notice = text) } }
+    fun preferences()=repository.store.get("preferences","local")?:obj("appearance" to "SYSTEM","relay" to "OFF","mediaRelay" to false,"dailyLimitMiB" to 50,"batteryMinimum" to 20,"nearbyVisible" to true)
+    fun preference(key:String,value:Any){
+        require(when(key){"appearance"->value in listOf("SYSTEM","LIGHT","DARK");"relay"->value in listOf("OFF","WIFI","ANY");"mediaRelay","nearbyVisible"->value is Boolean;"dailyLimitMiB"->value is Int && value in 1..500;"batteryMinimum"->value is Int && value in 10..80;else->false})
+        val next=JSONObject(state.value.preferences.toString()).put(key,value);mutable.update{it.copy(preferences=next)}
+        val version=synchronized(preferenceVersions){((preferenceVersions[key]?:0)+1).also{preferenceVersions[key]=it}}
+        viewModelScope.launch(Dispatchers.IO){synchronized(preferenceVersions){if(preferenceVersions[key]==version)synchronized(repository.store){repository.store.put("preferences","local",preferences().put(key,value))}}}
+        if(key=="nearbyVisible" && value==false){nearby.disconnect();session.reset();endMedia()}
+    }
     fun action(block: suspend () -> Unit) {
         if (state.value.busy) return
         mutable.update { it.copy(busy = true, notice = null) }
@@ -88,16 +109,43 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         }
     }
     fun refreshLocal() {
-        viewModelScope.launch(Dispatchers.IO) {
+        localRefreshes.trySend(Unit)
+    }
+    private fun loadLocalSnapshot() {
             try {
                 val store = repository.store
-                mutable.update { it.copy(requests = repository.requests(), completed = repository.requests(true), posts = repository.snapshot("feed"), savedAt = store.get("public", "freshness")?.optString("savedAt"), authenticated = store.get("credentials", "session") != null) }
-                mutable.update { it.copy(chatProfile = chat.profile(), chatContacts = chat.contacts(), conversations = chat.conversations(),chatMessages = chat.messages(),chatPeer = if(session.confirmed)chat.peer else null,nearbyChannels = if(session.confirmed)chat.discovery else emptyList()) }
-                mutable.update { it.copy(requests = repository.requests(), completed = repository.requests(true), posts = repository.snapshot("feed"), events = repository.events(), messages = store.all("messages"), files = store.all("attachments"), drafts = store.all("drafts"), donations = store.all("donations"), operations = store.all("operations"), preparation = repository.preparation, account = store.get("account", "user"), savedAt = store.get("public", "freshness")?.optString("savedAt"), confirmed = session.confirmed, media = session.confirmed && session.remoteMedia && session.transport?.mediaAvailable == true && repository.featureFlags?.optBoolean("localCalls") == true) }
+                val requests=repository.requests();val completed=repository.requests(true);val posts=repository.snapshot("feed")
+                val savedAt=store.get("public","freshness")?.optString("savedAt");val authenticated=store.get("credentials","session")!=null
+                val profile=chat.profile();val contacts=chat.contacts();val conversations=chat.conversations();val chatMessages=chat.messages()
+                val peer=if(session.confirmed)chat.peer else null;val channels=if(session.confirmed)chat.discovery else emptyList()
+                val actions=store.all("chat-actions");val help=community.helps();val reports=community.reports()
+                val policies=chat.policies();val blocks=store.all("chat-blocks").map{it.getString("id")}.toSet()
+                val joins=store.all("chat-join-inbox");val reportInbox=store.all("chat-report-inbox")
+                val reserved=store.get("relay-usage",java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString())?.optLong("bytes")?:0
+                val events=repository.events();val messages=store.all("messages");val files=store.all("attachments");val drafts=store.all("drafts")
+                val donations=store.all("donations");val operations=store.all("operations");val preparation=repository.preparation;val account=store.get("account","user")
+                val confirmed=session.confirmed;val media=confirmed&&session.remoteMedia&&session.transport?.mediaAvailable==true&&repository.featureFlags?.optBoolean("localCalls")==true
+                mutable.update { it.copy(requests=requests,completed=completed,posts=posts,savedAt=savedAt,authenticated=authenticated,
+                    chatProfile=profile,chatContacts=contacts,conversations=conversations,chatMessages=chatMessages,chatPeer=peer,nearbyChannels=channels,
+                    chatActions=actions,localHelp=help,participantReports=reports,chatPolicies=policies,chatBlocks=blocks,chatJoinInbox=joins,chatReportInbox=reportInbox,relayReservedBytes=reserved,
+                    events=events,messages=messages,files=files,drafts=drafts,donations=donations,operations=operations,preparation=preparation,account=account,confirmed=confirmed,media=media) }
             } catch (_: Exception) { notice("Saved information could not be unlocked. Do not clear app storage if you need to recover work.") }
-        }
     }
-    fun refresh() = action { repository.refresh(); if (repository.preparation != null) loadDashboard();if(BuildConfig.CHAT_ENABLED)runCatching {chat.sync()} }
+    fun refresh() = action { repository.refresh(); if (repository.preparation != null) loadDashboard();if(BuildConfig.CHAT_ENABLED){runCatching {chat.sync()};runCatching{community.sync()}} }
+    fun helpRequest(help:JSONObject,id:String?=null,saved:()->Unit={})=chatAction{community.saveHelp(help,id);saved();notice("Help saved on your phone. Sharing nearby when connected.");runCatching{community.sync()}}
+    fun offerHelp(id:String)=chatAction{community.offer(id);runCatching{community.sync()}}
+    fun checkHelpArea(area:String)=chatAction{require(CommunityProtocol.publicText(area,80)){"Choose an approximate public area without contact details."};repository.store.put("community-meta","area",obj("area" to area));community.sync()}
+    fun helpStatus(id:String,status:String,responder:String?=null)=chatAction{community.status(id,status,responder);runCatching{community.sync()}}
+    fun participantReport(caption:String,area:String,warning:Boolean,uri:Uri?,video:Boolean,saved:()->Unit)=chatAction{val derivative=uri?.let{notice(if(video)"Optimising video…"else"Preparing a private-metadata-free photo…");FieldMedia.prepare(getApplication(),it,video)};community.report(caption,area,warning,derivative);saved();notice("Report saved. Public publication requires review.");runCatching{community.sync()}.onFailure{notice(it.message)} }
+    fun withdrawReport(id:String)=chatAction{community.withdraw(id);runCatching{community.sync()}}
+    fun shareReportMedia(id:String)=chatAction{community.announce();community.shareMedia(id)}
+    fun flagStatement(id:String,reason:String)=chatAction{community.flag(id,reason);notice("Report saved for review. Offline review waits for a connection.")}
+    fun hideHelp(id:String)=action{repository.api("/community/moderation/$id/hide",JSONObject(),true);community.sync()}
+    fun aggregateHelp(category:String,area:String,rows:List<JSONObject>,open:(String)->Unit)=action{
+        require(repository.preparation!=null){"Prepare a verified relief account before creating an official need."};val id=java.util.UUID.randomUUID().toString();val quantity=rows.sumOf{it.getJSONObject("envelope").getJSONObject("body").getJSONObject("payload").getJSONObject("help").getInt("quantity")}
+        repository.store.put("drafts",id,obj("id" to id,"draftType" to "request","title" to "${category.replace('_',' ')} near $area".take(100),"description" to "Review ${rows.size} temporary participant requests near $area. Confirm quantity, area and current conditions before publishing.","quantity" to quantity.toString(),"unit" to if(category=="WATER")"bottles"else"items","category" to when(category){"FIRST_AID"->"MEDICAL";"CHARGING"->"POWER";"ACCESSIBILITY"->"OTHER";else->category},"priority" to "NORMAL","hours" to "24","fromHelp" to true));open("draft:"+id)
+    }
+    fun clearSafeMedia()=action{withContext(Dispatchers.IO){repository.store.all("attachments").filter{f->f.optBoolean("complete") && !f.optBoolean("chatOnly") && repository.store.all("community").none{r->r.getJSONObject("envelope").getJSONObject("body").getJSONObject("payload").optJSONObject("media")?.optString("id")==f.getString("id") && !r.optBoolean("mediaOnline")}}.forEach{session.removeFile(it.getString("id"))};getApplication<Application>().cacheDir.resolve("field-processing").listFiles()?.forEach{it.delete()}};notice("Reviewed public media caches cleared. Pending media and private chat files were kept.")}
     fun chatName(name:String)=chatAction { chat.rename(name) }
     fun receiveInvite(link:String?){ if(BuildConfig.CHAT_ENABLED&&link?.startsWith("cjpswarm://invite/")==true && link.length<=44000)mutable.update{it.copy(incomingInvite=link)} }
     fun dismissInvite(){mutable.update{it.copy(incomingInvite=null)}}
@@ -113,11 +161,13 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         else {val id=chat.create(reference.getString("title").take(48),"OPEN");repository.store.put("chat-discussions",key,obj("conversationId" to id));chat.send(id,obj("reference" to reference),"RELIEF");open(id);runCatching {chat.sync()}}
     }
     fun openChat(person:JSONObject,open:(String)->Unit)=chatAction { open(chat.direct(person)) }
-    fun createChannel(name:String,visibility:String,open:(String)->Unit)=chatAction { open(chat.create(name,visibility));runCatching {chat.sync()} }
+    fun createChannel(name:String,visibility:String,mode:String="DISCUSSION",admission:String=if(visibility=="OPEN")"OPEN" else "INVITE_PLUS_APPROVAL",open:(String)->Unit)=chatAction { open(chat.create(name,visibility,mode,admission));runCatching {chat.sync()} }
     fun joinChannel(id:String)=chatAction { chat.join(id);runCatching {chat.sync()} }
     fun joinInvite(link:String,open:(String)->Unit)=chatAction { open(chat.acceptInvite(link));runCatching {chat.sync()} }
     fun invitePerson(id:String,person:JSONObject,show:(String)->Unit)=chatAction { show(chat.invite(id,person));runCatching {chat.sync()} }
-    fun chatSend(id:String,text:String,mentions:List<String> = emptyList(),saved:()->Unit={})=chatAction { val payload=obj("text" to text);if(mentions.isNotEmpty())payload.put("mentions",org.json.JSONArray(mentions));chat.send(id,payload);saved();runCatching {chat.sync()} }
+    fun chatSend(id:String,text:String,mentions:List<String> = emptyList(),threadRootId:String?=null,saved:()->Unit={})=chatAction { val payload=obj("text" to text);if(mentions.isNotEmpty())payload.put("mentions",org.json.JSONArray(mentions));chat.send(id,payload,threadRootId=threadRootId);saved();runCatching {chat.sync()} }
+    fun moderateChannel(id:String,action:String,target:String,role:String?=null,reaction:String?=null)=chatAction {chat.moderate(id,action,target,role,reaction);runCatching{chat.sync()};notice("Channel action saved. Check its confirmation in channel settings.")}
+    fun configureChannel(id:String,mode:String,admission:String)=chatAction {chat.configure(id,mode,admission);runCatching{chat.sync()}}
     private val composerVersions=mutableMapOf<String,Long>()
     fun saveChatComposer(id:String,text:String) {
         val version=maxOf(composerVersions[id]?:0,repository.store.get("chat-drafts",id)?.optLong("version")?:0)+1;composerVersions[id]=version
@@ -132,9 +182,10 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     fun leaveChat(id:String)=chatAction { chat.membership(id,null);runCatching {chat.sync()} }
     fun removeChatMember(id:String,person:String)=chatAction { chat.membership(id,person);runCatching {chat.sync()} }
     fun deleteChannel(id:String)=chatAction { chat.membership(id,null,true);runCatching {chat.sync()} }
-    fun reportChat(id:String)=chatAction { chat.report(id,"ABUSE");runCatching {chat.sync()};notice("Report saved. It will reach the team when connected.") }
+    fun reportChat(id:String,reason:String="ABUSE")=chatAction { chat.report(id,reason);runCatching {chat.sync()};notice("Report saved. It will reach the team when connected.") }
+    fun reportPerson(id:String,reason:String)=chatAction{chat.reportPerson(id,reason);runCatching{chat.sync()};notice("Report saved for review. Sending waits for an online connection.")}
     fun syncChats()=chatAction { chat.sync();notice("Chats checked. Recipient confirmations determine delivery.") }
-    fun attachChat(id:String,uri:Uri)=chatAction { chat.attach(id,uri);runCatching {chat.sync()} }
+    fun attachChat(id:String,uri:Uri,threadRootId:String?=null)=chatAction { chat.attach(id,uri,threadRootId=threadRootId);runCatching {chat.sync()} }
     fun shareChatAttachment(id:String)=chatAction { chat.offerAttachment(id) }
     fun clearChat(id:String)=chatAction {chat.clearConversation(id)}
     fun sendNearbyInvite(link:String)=chatAction {require(chat.peer!=null);session.send("CHAT_INVITE",link);notice("Invitation sent nearby. The recipient decides whether to join.")}
@@ -150,9 +201,9 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         this.recorder=recorder
         try { recorder.setAudioSource(MediaRecorder.AudioSource.MIC);recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);recorder.setAudioEncodingBitRate(64000);recorder.setAudioSamplingRate(16000);recorder.setMaxDuration(120000);recorder.setOutputFile(file.path);recorder.prepare();recorder.start();mutable.update {it.copy(recording=true)};voiceTimeout=viewModelScope.launch {delay(120000);cancelVoice();notice("Voice note reached its two-minute limit and was discarded. Record a shorter note.")} }catch(e:Exception){cancelVoice();throw e}
     }
-    fun sendVoice(id:String)=chatAction {
+    fun sendVoice(id:String,threadRootId:String?=null)=chatAction {
         val file=voiceFile?:error("Record a voice note first.");voiceTimeout?.cancel();recorder?.stop();recorder?.release();recorder=null;mutable.update {it.copy(recording=false)}
-        try {chat.attach(id,Uri.fromFile(file),"audio/mp4","Voice note.m4a");runCatching {chat.sync()} }finally { file.delete();voiceFile=null }
+        try {chat.attach(id,Uri.fromFile(file),"audio/mp4","Voice note.m4a",threadRootId);runCatching {chat.sync()} }finally { file.delete();voiceFile=null }
     }
     fun cancelVoice() { voiceTimeout?.cancel();runCatching {recorder?.stop()};runCatching {recorder?.release()};recorder=null;voiceFile?.delete();voiceFile=null;mutable.update {it.copy(recording=false)} }
     suspend fun loadDashboard() { mutable.update { it.copy(dashboard = JSONObject(repository.api("/volunteer/dashboard", authenticated = true))) } }
@@ -167,7 +218,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     fun listDevices() = action { mutable.update { it.copy(devices = org.json.JSONArray(repository.api("/sync/devices", authenticated = true)).objects()) } }
     fun revokeDevice(id: String) = action { repository.api("/sync/devices/$id/revoke", obj(), true); mutable.update { it.copy(devices = org.json.JSONArray(repository.api("/sync/devices", authenticated = true)).objects()) }; notice("Phone revoked by Swarm. Unsent events signed by that phone may be rejected.") }
     private fun activate(transport: PeerTransport) { session.transport?.disconnect(); session.reset(); session.transport = transport; mutable.update { it.copy(invitation = "", localCode = "", media = false, connected = false, callActive = false, calling = false) } }
-    fun scan(advertise: Boolean,automatic:Boolean=false) = action { require(repository.featureFlags?.optBoolean("nearby") == true) { "Nearby discovery is not enabled for this environment. Local pairing remains available when configured." }; activate(nearby); nearby.scan(advertise,automatic) }
+    fun scan(advertise: Boolean,automatic:Boolean=false) = action { require(preferences().optBoolean("nearbyVisible",true)){"Enable Nearby visibility in More before searching."};require(repository.featureFlags?.optBoolean("nearby") == true) { "Nearby discovery is not enabled for this environment. Local pairing remains available when configured." }; activate(nearby); nearby.scan(advertise,automatic) }
     fun connect(id: String) = action { nearby.connect(id) }
     fun offer() = action { activate(wifi); mutable.update { it.copy(invitation = wifi.offer()) } }
     fun accept(text: String) = action { if (session.transport !== wifi) activate(wifi); val reply = wifi.accept(text); mutable.update { it.copy(invitation = reply) } }
@@ -189,7 +240,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     private fun endMedia() { ringTimeout?.cancel(); session.callInProgress = false; if (wifiDelegate.isInitialized()) wifi.stopMedia(); mutable.update { it.copy(calling = false, callActive = false, incomingCall = null, video = false, quality = "") } }
     fun foregroundActive() {
         healthCheck?.cancel()
-        healthCheck = viewModelScope.launch { while (isActive) { delay(30000); repository.checkReachability(); if(BuildConfig.CHAT_ENABLED){if(repository.reachable)runCatching {chat.sync();chat.autoMedia()}; if(session.confirmed)runCatching {chat.announce()}}; mutable.update { it.copy(reachable = repository.reachable) } } }
+        healthCheck = viewModelScope.launch { while (isActive) { delay(30000); repository.checkReachability(); if(BuildConfig.CHAT_ENABLED){if(repository.reachable){runCatching {chat.sync();chat.autoMedia()};runCatching{community.sync()}}; if(session.confirmed){runCatching {chat.announce()};runCatching{community.announce()}}}; mutable.update { it.copy(reachable = repository.reachable) } } }
     }
     fun foregroundLost() { attachmentSync?.cancel();healthCheck?.cancel(); nearby.stopScan();cancelVoice(); if (state.value.calling) hangup() }
     override fun onCleared() { disconnect(); if (wifiDelegate.isInitialized()) wifi.release(); repository.store.close() }

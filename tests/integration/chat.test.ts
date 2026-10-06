@@ -4,8 +4,21 @@ import { randomUUID, createHash } from 'node:crypto';
 import { createApp } from '../../apps/api/src/app';
 import { Database } from '../../apps/api/src/database';
 import { env } from '../../packages/config/src';
-import { chatPerson, chatPolicy, chatMessage, chatBatch, type Person } from '../chat-fixtures';
-import { sign, hash, encryptChatValue, type ChatMessage } from '../../packages/protocol/src';
+import {
+  chatPerson,
+  chatPolicy,
+  chatMessage,
+  chatBatch,
+  channelAction,
+  type Person,
+} from '../chat-fixtures';
+import {
+  sign,
+  hash,
+  encryptChatValue,
+  channelCapabilities,
+  type ChatMessage,
+} from '../../packages/protocol/src';
 let app: Awaited<ReturnType<typeof createApp>>, db: Database;
 const origin = 'http://localhost:3000';
 async function sync(person: Person, fields: Parameters<typeof chatBatch>[1] = {}) {
@@ -30,6 +43,242 @@ afterAll(async () => {
   await app?.close();
 });
 describe('Real PostgreSQL operational chat boundary', () => {
+  it('keeps person reports generic, acknowledges queued reports, and delegates private report review without plaintext', async () => {
+    const owner = await chatPerson('Report owner'),
+      mod = await chatPerson('Report moderator'),
+      member = await chatPerson('Report member'),
+      channel = await chatPolicy(owner, [owner, mod, member], 'INVITE');
+    channel.policy.body.members[1]!.role = 'MODERATOR';
+    channel.policy.signature = await sign(channel.policy.body, owner.signing.privateKey);
+    await sync(owner, { policies: [channel.policy] });
+    const message = await chatMessage(member, channel, 'Private reported message');
+    await sync(member, { messages: [message] });
+    const report = { id: randomUUID(), messageId: message.body.id, reason: 'OTHER' as const };
+    expect((await sync(owner, { reports: [report] })).acceptedReports).toContain(report.id);
+    expect((await sync(member)).reports).toEqual([]);
+    const inbox = (await sync(mod)).reports;
+    expect(inbox.find((r: { id: string }) => r.id === report.id).messageId).toBe(message.body.id);
+    expect(JSON.stringify(inbox)).not.toContain('Private reported message');
+    const review = await channelAction(mod, channel.policy, 'REVIEW_REPORT', message.body.id);
+    expect((await sync(mod, { actions: [review] })).acceptedActions).toContain(review.body.id);
+    expect((await sync(mod)).reports).toEqual([]);
+    const person = { id: randomUUID(), personId: member.profile.body.id, reason: 'OTHER' as const };
+    expect((await sync(owner, { reports: [person] })).acceptedReports).toContain(person.id);
+    await sync(owner, { reports: [person] });
+    expect(
+      await db.moderationReport.count({ where: { id: person.id, entityType: 'CHAT_USER' } }),
+    ).toBe(1);
+    expect(await db.user.count({ where: { id: member.profile.body.id } })).toBe(0);
+  });
+  it('distinguishes creating a thread from replying and rejects opposing offline locks on one policy', async () => {
+    const owner = await chatPerson('Thread owner'),
+      member = await chatPerson('Reply only'),
+      mod = await chatPerson('Thread moderator'),
+      channel = await chatPolicy(owner, [owner, member, mod]);
+    channel.policy.body.members[2]!.role = 'MODERATOR';
+    channel.policy.body.settings = {
+      mode: 'DISCUSSION',
+      admission: 'OPEN',
+      capabilities: {
+        MEMBER: {
+          ...channelCapabilities(channel.policy, member.profile.body.id),
+          canCreateThreads: false,
+        },
+      },
+    };
+    channel.policy.signature = await sign(channel.policy.body, owner.signing.privateKey);
+    await sync(owner, { policies: [channel.policy] });
+    const root = await chatMessage(owner, channel);
+    await sync(owner, { messages: [root] });
+    const first = await chatMessage(member, channel);
+    first.body.threadRootId = root.body.id;
+    first.signature = await sign(first.body, member.signing.privateKey);
+    expect((await sync(member, { messages: [first] })).rejected[0].reason).toBe(
+      'THREAD_CREATION_NOT_PERMITTED',
+    );
+    const start = await chatMessage(owner, channel);
+    start.body.threadRootId = root.body.id;
+    start.signature = await sign(start.body, owner.signing.privateKey);
+    await sync(owner, { messages: [start] });
+    const reply = await chatMessage(member, channel);
+    reply.body.threadRootId = root.body.id;
+    reply.signature = await sign(reply.body, member.signing.privateKey);
+    expect((await sync(member, { messages: [reply] })).accepted).toContain(reply.body.id);
+    const lock = await channelAction(mod, channel.policy, 'LOCK_THREAD', root.body.id);
+    await sync(mod, { actions: [lock] });
+    const opposing = await channelAction(owner, channel.policy, 'UNLOCK_THREAD', root.body.id);
+    expect((await sync(owner, { actions: [opposing] })).rejectedActions).toHaveLength(1);
+  });
+  it('enforces announcement/read-only roles, separate replies, thread locks and stale moderation on raw requests', async () => {
+    const owner = await chatPerson('Announcement owner'),
+      admin = await chatPerson('Admin'),
+      mod = await chatPerson('Moderator'),
+      member = await chatPerson('Member'),
+      reader = await chatPerson('Reader');
+    const channel = await chatPolicy(owner, [owner, admin, mod, member, reader]);
+    channel.policy.body.settings = { mode: 'ANNOUNCEMENT', admission: 'OPEN' };
+    channel.policy.body.members[1]!.role = 'ADMIN';
+    channel.policy.body.members[2]!.role = 'MODERATOR';
+    channel.policy.body.members[4]!.role = 'READ_ONLY';
+    channel.policy.signature = await sign(channel.policy.body, owner.signing.privateKey);
+    await sync(owner, { policies: [channel.policy] });
+    const root = await chatMessage(admin, channel, 'Distribution at Gate 4');
+    expect((await sync(admin, { messages: [root] })).accepted).toContain(root.body.id);
+    const forgedTop = await chatMessage(member, channel);
+    expect((await sync(member, { messages: [forgedTop] })).rejected[0].reason).toBe(
+      'MEMBERSHIP_OR_SIGNATURE',
+    );
+    const reply = await chatMessage(member, channel);
+    reply.body.threadRootId = root.body.id;
+    reply.signature = await sign(reply.body, member.signing.privateKey);
+    expect((await sync(member, { messages: [reply] })).accepted).toContain(reply.body.id);
+    expect((await sync(member, { messages: [reply] })).accepted).toContain(reply.body.id);
+    expect(await db.chatMessage.count({ where: { id: reply.body.id } })).toBe(1);
+    const readOnly = await chatMessage(reader, channel);
+    readOnly.body.threadRootId = root.body.id;
+    readOnly.signature = await sign(readOnly.body, reader.signing.privateKey);
+    expect((await sync(reader, { messages: [readOnly] })).rejected).toHaveLength(1);
+    const lock = await channelAction(mod, channel.policy, 'LOCK_THREAD', root.body.id);
+    expect((await sync(mod, { actions: [lock] })).acceptedActions).toContain(lock.body.id);
+    const blockedReply = await chatMessage(member, channel);
+    blockedReply.body.threadRootId = root.body.id;
+    blockedReply.signature = await sign(blockedReply.body, member.signing.privateKey);
+    expect((await sync(member, { messages: [blockedReply] })).rejected[0].reason).toBe(
+      'THREAD_UNAVAILABLE_OR_LOCKED',
+    );
+    const next = await chatPolicy(
+      owner,
+      [owner, admin, mod, member, reader],
+      'OPEN',
+      channel.policy,
+    );
+    next.policy.body.settings = channel.policy.body.settings;
+    next.policy.body.members[1]!.role = 'ADMIN';
+    next.policy.body.members[2]!.role = 'MEMBER';
+    next.policy.body.members[4]!.role = 'READ_ONLY';
+    next.policy.body.appliedActions = [lock.body.id];
+    next.policy.body.moderation = { lockedThreads: [root.body.id], hiddenMessages: [] };
+    next.policy.signature = await sign(next.policy.body, owner.signing.privateKey);
+    await sync(owner, { policies: [next.policy] });
+    const stale = await channelAction(mod, channel.policy, 'UNLOCK_THREAD', root.body.id);
+    expect((await sync(mod, { actions: [stale] })).rejectedActions).toHaveLength(1);
+    const demoted = await channelAction(mod, next.policy, 'UNLOCK_THREAD', root.body.id);
+    expect((await sync(mod, { actions: [demoted] })).rejectedActions).toHaveLength(1);
+  });
+  it('gates private admission, delegated approval and bans, pauses old epochs, and keeps rename-bound bans', async () => {
+    const owner = await chatPerson('Private owner'),
+      admin = await chatPerson('Private admin'),
+      member = await chatPerson('Applicant');
+    const channel = await chatPolicy(owner, [owner, admin], 'INVITE');
+    channel.policy.body.settings = { mode: 'DISCUSSION', admission: 'INVITE_PLUS_APPROVAL' };
+    channel.policy.body.members[1]!.role = 'ADMIN';
+    channel.policy.signature = await sign(channel.policy.body, owner.signing.privateKey);
+    await sync(owner, { policies: [channel.policy] });
+    const descriptor = {
+      v: 1 as const,
+      kind: 'CHAT_ADMISSION' as const,
+      id: randomUUID(),
+      channelId: channel.policy.body.id,
+      name: channel.policy.body.name,
+      owner: owner.profile,
+      issuer: admin.profile,
+      recipientId: member.profile.body.id,
+      policyHash: await hash(channel.policy),
+      admission: 'INVITE_PLUS_APPROVAL' as const,
+      issuedAt: new Date().toISOString(),
+      expiresAt: channel.policy.body.expiresAt,
+    };
+    const invitation = {
+      body: descriptor,
+      signature: await sign(descriptor, admin.signing.privateKey),
+    };
+    const joinBody = {
+      v: 1 as const,
+      kind: 'CHAT_JOIN' as const,
+      id: randomUUID(),
+      channelId: channel.policy.body.id,
+      participant: member.profile,
+      action: 'JOIN' as const,
+      invitation,
+      issuedAt: new Date().toISOString(),
+      expiresAt: channel.policy.body.expiresAt,
+    };
+    const join = { body: joinBody, signature: await sign(joinBody, member.signing.privateKey) };
+    member.channels.add(channel.policy.body.id);
+    const pending = await sync(member, { joins: [join] });
+    expect(pending.messages).toEqual([]);
+    expect(pending.policies).toEqual([]);
+    expect((await sync(admin)).joins).toHaveLength(1);
+    const approve = await channelAction(
+      admin,
+      channel.policy,
+      'APPROVE_JOIN',
+      member.profile.body.id,
+    );
+    expect((await sync(admin, { actions: [approve] })).acceptedActions).toContain(approve.body.id);
+    const approved = await chatPolicy(owner, [owner, admin, member], 'INVITE', channel.policy);
+    approved.policy.body.settings = channel.policy.body.settings;
+    approved.policy.body.members[1]!.role = 'ADMIN';
+    approved.policy.body.appliedActions = [approve.body.id];
+    approved.policy.signature = await sign(approved.policy.body, owner.signing.privateKey);
+    await sync(owner, { policies: [approved.policy] });
+    expect((await sync(member)).policies).toHaveLength(1);
+    const privateMessage = await chatMessage(member, approved, 'Private admission worked');
+    expect((await sync(member, { messages: [privateMessage] })).accepted).toContain(
+      privateMessage.body.id,
+    );
+    expect(
+      JSON.stringify(
+        (await db.chatMessage.findUniqueOrThrow({ where: { id: privateMessage.body.id } }))
+          .envelope,
+      ),
+    ).not.toContain('Private admission worked');
+    const ban = await channelAction(admin, approved.policy, 'BAN', member.profile.body.id);
+    expect((await sync(admin, { actions: [ban] })).acceptedActions).toContain(ban.body.id);
+    expect(
+      (await sync(owner, { messages: [await chatMessage(owner, approved)] })).rejected[0].reason,
+    ).toBe('WAITING_FOR_FRESH_MEMBERSHIP');
+    const removed = await chatPolicy(owner, [owner, admin], 'INVITE', approved.policy);
+    removed.policy.body.settings = approved.policy.body.settings;
+    removed.policy.body.members[1]!.role = 'ADMIN';
+    removed.policy.body.appliedActions = [approve.body.id, ban.body.id];
+    removed.policy.body.bannedIds = [member.profile.body.id];
+    removed.policy.signature = await sign(removed.policy.body, owner.signing.privateKey);
+    await sync(owner, { policies: [removed.policy] });
+    expect(removed.policy.body.keys.some((k) => k.participantId === member.profile.body.id)).toBe(
+      false,
+    );
+    const renamed = {
+      ...member.profile.body,
+      name: 'Different visible name',
+      updatedAt: new Date().toISOString(),
+    };
+    member.profile = { body: renamed, signature: await sign(renamed, member.signing.privateKey) };
+    const retryBody = {
+      ...joinBody,
+      id: randomUUID(),
+      participant: member.profile,
+      issuedAt: new Date().toISOString(),
+    };
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/chat/sync')
+      .set('Origin', origin)
+      .send(
+        await chatBatch(member, {
+          joins: [{ body: retryBody, signature: await sign(retryBody, member.signing.privateKey) }],
+        }),
+      );
+    expect(response.status).toBe(403);
+    const unban = await channelAction(owner, removed.policy, 'UNBAN', member.profile.body.id);
+    expect((await sync(owner, { actions: [unban] })).acceptedActions).toContain(unban.body.id);
+    const fresh = await chatPolicy(owner, [owner, admin], 'INVITE', removed.policy);
+    fresh.policy.body.settings = removed.policy.body.settings;
+    fresh.policy.body.members[1]!.role = 'ADMIN';
+    fresh.policy.body.bannedIds = [];
+    fresh.policy.body.appliedActions = [approve.body.id, ban.body.id, unban.body.id];
+    fresh.policy.signature = await sign(fresh.policy.body, owner.signing.privateKey);
+    await sync(owner, { policies: [fresh.policy] });
+  });
   it('replaying a cached request cannot undo a later block', async () => {
     const a = await chatPerson('Replay A'),
       b = await chatPerson('Replay B'),

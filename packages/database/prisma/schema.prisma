@@ -200,12 +200,17 @@ model Delivery {
 model FieldUpdate {
   id String @id @default(uuid())
   caption String
-  authorId String
-  author User @relation(fields:[authorId], references:[id])
-  organizationId String
-  organization Organization @relation(fields:[organizationId], references:[id])
-  reliefPointId String
-  reliefPoint ReliefPoint @relation(fields:[reliefPointId], references:[id])
+  authorId String?
+  author User? @relation(fields:[authorId], references:[id])
+  organizationId String?
+  organization Organization? @relation(fields:[organizationId], references:[id])
+  reliefPointId String?
+  reliefPoint ReliefPoint? @relation(fields:[reliefPointId], references:[id])
+  participantName String?
+  publicArea String?
+  contentWarning Boolean @default(false)
+  receivedAt DateTime @default(now())
+  publishedAt DateTime?
   requestId String?
   request ReliefRequest? @relation(fields:[requestId], references:[id])
   moderation ModerationState @default(PENDING)
@@ -217,7 +222,7 @@ model FieldUpdate {
 model MediaAsset {
   id String @id @default(uuid())
   ownerId String
-  organizationId String
+  organizationId String?
   fieldUpdateId String?
   fieldUpdate FieldUpdate? @relation(fields:[fieldUpdateId], references:[id])
   originalKey String
@@ -233,6 +238,31 @@ model MediaAsset {
   createdAt DateTime @default(now())
   @@index([organizationId, moderation])
   @@index([processingState, processingStartedAt])
+}
+model CommunityEvent {
+  id String @id
+  objectId String
+  type String
+  authorId String
+  area String?
+  version Int @default(1)
+  envelope Json
+  envelopeHash String @unique
+  receipt Json?
+  receivedAt DateTime @default(now())
+  expiresAt DateTime
+  hidden Boolean @default(false)
+  @@index([objectId, version])
+  @@index([authorId, receivedAt])
+  @@index([area, expiresAt])
+}
+model CommunityMediaChunk {
+  mediaId String
+  index Int
+  data Bytes
+  expiresAt DateTime
+  @@id([mediaId, index])
+  @@index([expiresAt])
 }
 model Notification {
   id String @id @default(uuid())
@@ -345,6 +375,7 @@ model ChatConversation {
   messages ChatMessage[]
   joins ChatJoinRequest[]
   policies ChatPolicy[]
+  actions ChatAction[]
 }
 model ChatPolicy {
   id String @id
@@ -419,10 +450,29 @@ model ChatJoinRequest {
   participantId String
   profile Json
   fulfilled Boolean @default(false)
+  decision String @default("PENDING")
   action String @default("JOIN")
   createdAt DateTime @default(now())
   conversation ChatConversation @relation(fields:[conversationId], references:[id], onDelete:Cascade)
   @@unique([conversationId,participantId])
+}
+
+// Signed capability actions contain identifiers/reasons, never private message plaintext.
+model ChatAction {
+  id String @id
+  conversationId String
+  actorId String
+  targetId String
+  action String
+  version Int
+  envelope Json
+  envelopeHash String
+  receivedAt DateTime @default(now())
+  expiresAt DateTime
+  conversation ChatConversation @relation(fields:[conversationId], references:[id], onDelete:Cascade)
+  @@index([conversationId, receivedAt, id])
+  @@index([conversationId, version])
+  @@index([expiresAt])
 }
 
 model ChatBlock {

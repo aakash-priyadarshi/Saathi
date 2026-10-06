@@ -113,15 +113,29 @@ export function RequestCard({ request: r }: { request: PublicRequest }) {
   );
 }
 export function FieldPost({ post: p, compact = false }: { post: PublicPost; compact?: boolean }) {
+  const [showMedia, setShowMedia] = useState(!p.contentWarning);
   return (
     <article className={`field-post ${compact ? 'compact' : ''}`}>
       <div className="post-time">
         <span className="live-dot" />
-        <time dateTime={p.createdAt}>{formatTime(p.createdAt)}</time>
+        <time dateTime={p.createdAt}>Reported {formatTime(p.createdAt)}</time>
         <span>{p.reliefPoint.name}</span>
       </div>
       <p>{p.caption}</p>
+      {p.receivedAt && (
+        <small>
+          Received online {formatDate(p.receivedAt)}
+          {Date.parse(p.receivedAt) - Date.parse(p.createdAt) > 900000 ? ' · Delayed report' : ''}
+          {Date.now() - Date.parse(p.createdAt) > 86400000 ? ' · Conditions may have changed' : ''}
+        </small>
+      )}
+      {!compact && p.contentWarning && !showMedia && (
+        <button className="button secondary" onClick={() => setShowMedia(true)}>
+          Content warning · View media
+        </button>
+      )}
       {!compact &&
+        showMedia &&
         p.media.map((m) =>
           m.mimeType.startsWith('video') ? (
             <video
@@ -137,7 +151,11 @@ export function FieldPost({ post: p, compact = false }: { post: PublicPost; comp
           ),
         )}
       <div className="post-author">
-        <Verified label="Verified volunteer" />
+        {p.verificationState === 'PARTICIPANT' ? (
+          <span>Participant report · Unverified</span>
+        ) : (
+          <Verified label="Verified volunteer" />
+        )}
         <span>
           {p.author.displayName} · {p.organization.name}
         </span>
@@ -322,7 +340,7 @@ export function LivePage() {
     <div className="page-wrap narrow">
       <div className="page-heading">
         <h1>From the field</h1>
-        <p>Verified updates from volunteer teams. The latest information, in their own words.</p>
+        <p>Reports from the field. Volunteer updates and unverified participant reports are labeled separately.</p>
       </div>
       <div className="feed-status">
         <span className="live-dot" />

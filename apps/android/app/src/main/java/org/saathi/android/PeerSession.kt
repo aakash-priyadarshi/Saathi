@@ -50,6 +50,9 @@ class PeerSession(private val context: Context, private val repository: Reposito
     var onChatReset: () -> Unit = {}
     var chatFileAllowed: (String,String) -> Boolean = { _,_->false }
     var onChatFileComplete: suspend (String) -> Unit = {}
+    var onCommunityFrame: suspend (JSONObject,Long)->Unit={_,_->}
+    var publicFileAllowed:(String,String)->Boolean={_,_->false}
+    var onPublicFileComplete:suspend(String)->Unit={}
     init {
         scope.launch { for (item in incoming) if (item.generation == generation) runCatching { receive(item.frame, item.generation) }.onFailure { onError(it.message ?: "This nearby update could not be saved.") } }
         scope.launch {
@@ -67,7 +70,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
         synchronized(queue) { while (queue.isNotEmpty()) queue.poll()?.result?.completeExceptionally(IllegalStateException("Connection changed. Saved work is safe.")) }
         onChange()
     }
-    suspend fun send(kind: String, value: Any, id: String = UUID.randomUUID().toString(), priority: Int = if (kind in listOf("EVENT", "RECEIPT", "INVENTORY", "NEED")) 0 else if (kind == "FILE_CHUNK") 3 else 1): String {
+    suspend fun send(kind: String, value: Any, id: String = UUID.randomUUID().toString(), priority: Int = if (kind in listOf("EVENT", "RECEIPT", "INVENTORY", "NEED")) 0 else if (kind == "FILE_CHUNK") 5 else if(kind.startsWith("CHAT_"))2 else 1): String {
         val frame = obj("v" to 1, "kind" to kind, "id" to id, "value" to value)
         require(frame.toString().toByteArray().size <= 24000)
         val completion = CompletableDeferred<Unit>()
@@ -112,6 +115,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
         if (kind == "NATIVE_CAPS") { remoteLarge = frame.getJSONObject("value").optBoolean("largeFiles"); return }
         if (!confirmed || transport?.connected != true) return
         if (kind.startsWith("CHAT_")) { onChatFrame(frame, receivedGeneration); return }
+        if (kind.startsWith("COMMUNITY_")) { onCommunityFrame(frame, receivedGeneration); return }
         when (kind) {
             "MESSAGE" -> {
                 val value = frame.getJSONObject("value"); value.exact("text", "createdAt"); require(value.getString("text").length in 1..4000); Instant.parse(value.getString("createdAt"))
@@ -178,7 +182,8 @@ class PeerSession(private val context: Context, private val repository: Reposito
                 require(!callInProgress)
                 sendingFiles[id] = scope.launch {
                     try {
-                        for (index in indices) { val raw = withContext(Dispatchers.IO) { readChunk(id, index) }; send("FILE_CHUNK", obj("id" to id, "index" to index, "data" to Protocol.b64(raw))); delay(20) }
+                        val mime=file.optString("contentMime",file.getString("mime"));val priority=if(mime.startsWith("audio/"))3 else if(mime.startsWith("video/"))6 else if(mime.startsWith("image/") && file.getInt("size")<=1048576)4 else 5
+                        for (index in indices) { val raw = withContext(Dispatchers.IO) { readChunk(id, index) }; send("FILE_CHUNK", obj("id" to id, "index" to index, "data" to Protocol.b64(raw)),priority=priority); delay(20) }
                         send("FILE_DONE", obj("id" to id)); file.put("sentAt", Instant.now().toString()); repository.store.put("attachments", id, file); onChange()
                     } catch (e: Exception) { if (e !is CancellationException) onError("File paused. Reconnect and offer it again to resume.") }
                     finally { sendingFiles.remove(id) }
@@ -198,6 +203,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
                 require(hash.digest().joinToString("") { "%02x".format(it) } == file.getString("hash")) { "This file could not be verified." }
                 file.put("complete", true); repository.store.put("attachments", id, file); accepted.remove(id); send("ACK", obj("id" to id)); onChange()
                 if(file.getString("mime")=="application/octet-stream")onChatFileComplete(id)
+                else onPublicFileComplete(id)
             }
             "FILE_CANCEL" -> { val id = frame.getJSONObject("value").getString("id"); accepted.remove(id); sendingFiles.remove(id)?.cancel(); onChange() }
         }
@@ -235,7 +241,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
             repository.store.put("attachments", id, file); withContext(Dispatchers.Main.immediate) { offerSaved(file); onChange() }
         } catch (e: Exception) { (0 until index).forEach { chunkFile(id, it).delete() }; throw e }
     }
-    suspend fun offerSaved(file: JSONObject) { fileReady(file.getLong("size")); if(file.optBoolean("chatOnly")) require(chatFileAllowed(file.getString("id"),file.getString("hash"))) { "Connect to an authorized chat member to share this attachment." }; offered.add(file.getString("id")); send("FILE_OFFER", obj("id" to file.getString("id"), "name" to file.getString("name"), "mime" to file.getString("mime"), "size" to file.getInt("size"), "hash" to file.getString("hash"))) }
+    suspend fun offerSaved(file: JSONObject) { fileReady(file.getLong("size")); if(file.optBoolean("chatOnly")) require(chatFileAllowed(file.getString("id"),file.getString("hash"))) { "Connect to an authorized chat member to share this attachment." }; if(file.optBoolean("publicOnly"))require(publicFileAllowed(file.getString("id"),file.getString("hash"))){"This public report is unavailable."};require(file.optBoolean("complete")){"Receive the whole file before sharing it."}; offered.add(file.getString("id")); send("FILE_OFFER", obj("id" to file.getString("id"), "name" to file.getString("name"), "mime" to file.getString("mime"), "size" to file.getInt("size"), "hash" to file.getString("hash"))) }
     suspend fun acceptFile(offer: JSONObject) {
         require(confirmed && !callInProgress && offer.getInt("size") <= maximumFile() && accepted.size < 2)
         checkSpace(offer.getInt("size")); val id = offer.getString("id"); val previous = repository.store.get("attachments", id)
@@ -252,6 +258,10 @@ class PeerSession(private val context: Context, private val repository: Reposito
             var offset=0;while(offset<bytes.size){val end=minOf(bytes.size,offset+8192);writeChunk(id,index++,bytes.copyOfRange(offset,end));offset=end}
             obj("id" to id,"name" to "Encrypted attachment","mime" to "application/octet-stream","size" to bytes.size,"hash" to Protocol.digest(bytes),"direction" to "OUT","complete" to true,"chatOnly" to true).also { repository.store.put("attachments",id,it) }
         }catch(e:Exception){(0 until index).forEach { chunkFile(id,it).delete() };throw e}
+    }
+    suspend fun savePublicBytes(id:String,bytes:ByteArray,mime:String):JSONObject {
+        require(mime in listOf("image/jpeg","video/mp4"));require(bytes.size in 29..16777216)
+        return saveChatBytes(id,bytes).apply{put("name",if(mime=="image/jpeg")"Public report photo.jpg"else"Public report video.mp4");put("mime",mime);remove("chatOnly");put("publicOnly",true);repository.store.put("attachments",id,this)}
     }
     suspend fun readSavedBytes(id:String)=withContext(Dispatchers.IO) {
         val file=repository.store.get("attachments",id)?:error("Attachment is unavailable.");require(file.getBoolean("complete") && file.getInt("size")<=16777216)

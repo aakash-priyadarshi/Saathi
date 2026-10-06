@@ -1,5 +1,26 @@
 # Offline and nearby protocol v1
 
+## Native community extension
+
+The Android community plane reuses the encrypted store, matched-code peer
+session, signed identity, existing file chunks and trusted server receipts.
+COMMUNITY_EVENT binds original author, stable object/event IDs, payload hash,
+creation/expiry and a six-hop ceiling. Help revisions and responder offers require
+held signed dependencies; inventories and API responses order/backfill them
+before dependent state. Known IDs rotate receipt checks without creating another
+logical report. COMMUNITY_MEDIA is restricted to the signed report's MIME,
+size and final hash; interrupted transfer reuses the existing durable chunk map.
+
+Only a consenting native carrier forwards other people's authenticated public
+statements/media to configured service paths. It is not a general internet proxy.
+Own explicit publication intent remains separate from carrier consent. Private
+chat files remain ciphertext-only and outside public publication. Foreground
+checks enforce network, battery, storage, daily reserved-byte budgets and resource
+caps on retries. Existing urgent relief precedes Help/public text/chat/media;
+large chunks yield between frames. No always-on Android background promise is
+made. Browser relief-only gateway behavior below remains unchanged. Details and
+limits: [community architecture](swarm-community-architecture.md).
+
 This document describes the browser version-1 foundation. The real native product now has separately measured Nearby/local-Wi-Fi adapters; see [Android evidence](android-testing.md). The experimental conversation extension is documented in [chat/channel architecture](chat-channel-architecture.md). Existing event signatures, protocol identifiers, package names and installed storage remain compatible after CJP Swarm branding. See also [capability research](nearby-connectivity-research.md), [architecture](nearby-connectivity-architecture.md), and [ADR](adr/0001-durable-events-and-local-peer-sessions.md).
 
 ## Local persistence

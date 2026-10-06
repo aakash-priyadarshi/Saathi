@@ -1,6 +1,6 @@
 # CJP Swarm Android engineering handoff — 6 October 2026
 
-The CJP Swarm product is built and signature-verified. Earlier milestone builds were installed and tested on the authorized Samsung S24 and tablet; the final UI build is verified on the tablet and emulator because the phone was disconnected for the owner's use. It displays SWARM by CJP and uses the existing native Kotlin/Compose application in `apps/android`; the research probe remains separate in `spikes/android`. This is a fictional local development preview, not a production or hosted staging deployment. Private chat is disabled in release pending independent cryptographic review.
+The current CJP Swarm development/QA milestone extends current main baseline `8a9d99d` in the existing Kotlin/Compose application. Both the S24 and tablet are available for this milestone; their current store/UI and physical QR checks pass. The [unified milestone](swarm-unified-milestone.md) and [artifact evidence](benchmarks/android-unified-community.json) distinguish current verification from earlier call/transport proof builds. This remains a fictional local development preview. Private chat is disabled in release pending independent cryptographic review.
 
 ## Changes
 
@@ -8,7 +8,7 @@ Native needs/completed/field/verification, contributions, volunteer preparation,
 
 Updates, Chats, Nearby, Needs and More now separate conversation from authoritative relief publishing. Stable DMs, open/invite-only channels, signed membership/invites/receipts, durable encrypted attachments, authorized history/sync, references, foreground mentions/notices and mute/block/report extend the existing transports. Familiar native calls appear only on a compatible live DM path; huddles remain unavailable. The [chat architecture](chat-channel-architecture.md) explains the static-key encryption, bounded retention/quotas and revocation limits. Chat membership confers no relief RBAC authority.
 
-Coordinator/admin management and field-photo authoring remain in the web portal. Direct BLE/Direct/Aware/iOS and background relaying/calls are unsupported. Physical range, sustained battery, degraded-network and lock/reboot behavior remain unverified.
+Verified-volunteer coordinator/admin management remains in the web portal. Ordinary participant field-photo/video authoring, temporary Nearby Help and consented public-media forwarding are now native; reports stay unverified and pending approval. Direct BLE/Direct/Aware/iOS and background relaying/calls are unsupported. Physical range, sustained battery, degraded-network and lock/reboot behavior remain unverified.
 
 ## Installed artifact
 
@@ -19,8 +19,8 @@ Coordinator/admin management and field-photo authoring remain in the web portal.
 | Android floor/target | min SDK 26 / target SDK 36; compile SDK 37.0                                                                |
 | Architecture         | Kotlin/Compose, Material 3, Android Keystore, encrypted SQLite records, native transport adapters           |
 | APK                  | `C:\project-bussiness\Saathi\apps\android\app\build\outputs\apk\debug\app-debug.apk`                        |
-| Size                 | 76,301,488 bytes                                                                                            |
-| APK SHA-256          | `ed7cc9933ed36fee5ebd1595039c37da586807c8899f95967e1a56ffd2b3d687`                                          |
+| Size                 | 77,215,868 bytes                                                                                            |
+| APK SHA-256          | `cb98308fe909ba2d80329f3808ab90113e5fd9e8da1fa7a8cb7563beed1539c2`                                          |
 | Certificate SHA-256  | `bfccf64b1323649f43c8dc2db8ff05aee9c71856ef1f0a60221768718a992310`                                          |
 | Environment          | Separate fictional development schema; API at `127.0.0.1:4000` through USB reverse; web at `localhost:3000` |
 
@@ -36,7 +36,15 @@ From the repository root:
 
 Fixture volunteer: `android-volunteer@saathi.test`. The password comes from the local environment and is neither published nor embedded in the APK. Preserve the configuration-root directory and debug signing certificate for updates. Uninstalling or changing the certificate can lose private app work. [Release instructions](android-release.md) describe external QA/production signing and conditional seven-day CI distribution.
 
-## Verified evidence
+## Current unified evidence
+
+Continued current main baseline `8a9d99d`. Five-role channel governance, key-free approval invitations, announcement threads, temporary Nearby Help, ordinary unverified photo/video reports, consented public-media relay, local QR scanning, durable theme/profile/data controls and the supplied animated brand lockup extend the incumbent native runtime. [Unified milestone](swarm-unified-milestone.md) records behavior and qualification limits; [current evidence](benchmarks/android-unified-community.json) binds verification to exact artifacts.
+
+Local checks pass 33 shared/API unit, 54 PostgreSQL integration, 14 browser and 16 native JVM cases, plus native build/lint. The current APK passed 13 storage/UI/governance/community cases on each Samsung Android 16 device (S24 49.879 seconds; tablet 31.065 seconds). Physical camera-to-tablet QR scanning was confirmed on the preceding build and the recipient showed a pending approval request; its separate artifact hash is retained in the evidence record. An actual tablet ANR exposed competing encrypted-store refreshes; snapshots now load through one conflated background reader, with an interaction regression during 100 refresh callbacks. Nearby relay evidence is recorded separately; store/QR results alone do not establish gateway or radio success.
+
+The final APK completed the two-device Nearby community fixture: tablet author 63.267 seconds, S24 carrier 63.908 seconds. It passed fresh-key approval, thread/lock authorization, ban after rename and future-key exclusion, Help offer/assignment/resolution, sanitized public-photo hash, relay-OFF refusal, consenting gateway text/media acceptance with original authorship, withdrawal and block. The tablet had no validated default internet and the S24 did; USB still supplied fixture configuration/API coordination. This does not prove author-absent relay, three-native-peer forwarding, full internet-loss transitions or video radio transfer. The [radio measurement](benchmarks/android-community-nearby.json) preserves the exact APK and barrier scope.
+
+## Earlier communication/foundation evidence
 
 Physical S24 (SM-S921B) and tablet (SM-X510), both Android 16/API 36:
 
@@ -54,11 +62,7 @@ This milestone extends `d60cdaf`; implementation source is [2a7f906](https://git
 
 ## Morning and production gates
 
-The tablet's original stay-awake-while-charging value (`0`) was restored and verified. Fixture activity/peer/media sessions ended, ordinary development storage scope was reopened, and fixture-only USB reverse ports 4009/4010 were removed on tablet/emulator. The development API reverse at 4000 remains available. The phone was disconnected before its temporary charging-awake override could be restored; phone restoration is unverified. Reconnect it with USB debugging authorized, then run the locally saved restoration helper from the repository root. The owner's ten-minute timeout was unchanged:
-
-```powershell
-node .data/tooling/device-awake.mjs restore-phone
-```
+Both Samsung devices' original stay-awake-while-charging values were restored and verified after the final fixture. The owner's ten-minute screen timeout was unchanged. Fixture activity and peer/media sessions ended, ordinary development storage was reopened, and fixture-only USB reverse ports 4009/4010 were removed on both devices and the emulator. The development API reverse at 4000 remains available.
 
 The tablet-scoped Windows UDP rule still needs removal in **Administrator PowerShell**:
 

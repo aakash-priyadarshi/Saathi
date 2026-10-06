@@ -1,0 +1,1 @@
+ALTER TABLE "ChatJoinRequest" ADD COLUMN "decision" TEXT NOT NULL DEFAULT 'PENDING';

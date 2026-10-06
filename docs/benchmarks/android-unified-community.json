@@ -1,0 +1,97 @@
+{
+  "date": "2026-10-06",
+  "baseline": "8a9d99d193d1a7803607261eca7e70ce5a02313a",
+  "scope": "Unified development/QA milestone; fictional isolated identities and local API via USB reverse",
+  "artifact": {
+    "package": "org.saathi.android.dev",
+    "version": "1.0.0-dev",
+    "versionCode": 1,
+    "minSdk": 26,
+    "targetSdk": 36,
+    "compileSdk": "37.0",
+    "apkSha256": "cb98308fe909ba2d80329f3808ab90113e5fd9e8da1fa7a8cb7563beed1539c2",
+    "bytes": 77215868,
+    "certificateSha256": "bfccf64b1323649f43c8dc2db8ff05aee9c71856ef1f0a60221768718a992310"
+  },
+  "automated": {
+    "sharedApiUnit": 33,
+    "postgresIntegration": 54,
+    "browser": 14,
+    "nativeJvm": 16,
+    "buildLint": true
+  },
+  "physicalStore": [
+    {
+      "model": "SM-S921B",
+      "android": 16,
+      "tests": 13,
+      "seconds": 49.879,
+      "result": "PASS",
+      "apkSha256": "cb98308fe909ba2d80329f3808ab90113e5fd9e8da1fa7a8cb7563beed1539c2"
+    },
+    {
+      "model": "SM-X510",
+      "android": 16,
+      "tests": 13,
+      "seconds": 31.065,
+      "result": "PASS",
+      "apkSha256": "cb98308fe909ba2d80329f3808ab90113e5fd9e8da1fa7a8cb7563beed1539c2"
+    }
+  ],
+  "camera": {
+    "sourceModel": "SM-X510",
+    "scannerModel": "SM-S921B",
+    "apkSha256": "543ab271d49a814cb4291682466d2d9b87369cb880c5e632d0472b57b6e03f6b",
+    "result": "PASS",
+    "observed": "User confirmed physical camera capture; S24 showed authenticated announcement invitation with join pending approval and no messages. Review dialog itself was not captured before user proceeded.",
+    "limits": "One recipient-bound fictional invitation, camera-to-tablet-screen. Decoder rejection cases are separate automated tests."
+  },
+  "nearby": {
+    "result": "PASS",
+    "testedAt": "2026-10-06T11:39:37.577Z",
+    "apkSha256": "cb98308fe909ba2d80329f3808ab90113e5fd9e8da1fa7a8cb7563beed1539c2",
+    "authorModel": "SM-X510",
+    "carrierModel": "SM-S921B",
+    "authorSeconds": 63.908,
+    "carrierSeconds": 63.267,
+    "authorInternetValidated": false,
+    "carrierInternetValidated": true,
+    "measurement": "android-community-nearby.json",
+    "observed": "Actual Nearby DM/read/dedup, recipient-only private channel, generated photo/AAC, key-free approval and fresh-key delivery, announcement thread and lock, stable-identity ban after rename and future-key exclusion, unban, Help offer/assign/resolve, public sanitized photo hash, relay OFF refusal, consenting S24 gateway text/media acceptance with original authorship, withdrawal, member removal and personal block.",
+    "limits": "Two Android devices; local API and fixture coordination use USB reverse. Author remains attached to the fixture API. This is not author-absent, three-native-peer relay or full internet-loss transition. Community fixture skips the separately recorded encrypted 4 MiB resume/server transfer; video remux is a separate storage test."
+  },
+  "corrections": [
+    "Newly admitted recipients receive the owner policy and fresh wrapped key.",
+    "Immediate channel posts respect the policy authority time within the existing clock bound.",
+    "Help offers preserve original expiry while tolerating bounded sender clock skew.",
+    "Remuxed video retains final sample duration.",
+    "Encrypted-store refreshes are conflated and read once off the UI thread; conversation rendering uses state snapshots."
+  ],
+  "limitations": [
+    "Development/QA, no independent crypto review or production certification.",
+    "Private policies capped at 16 entries, including removed members; six-hour disconnected revocation limit.",
+    "No physical range, battery endurance, screen-lock/reboot or background qualification.",
+    "Earlier calls and transport benchmarks retain their own APK scope.",
+    "Railway staging and persistent hosted QA signer are not provisioned."
+  ],
+  "designReview": {
+    "disposition": "ship",
+    "scope": "Four listed fixes resolved; all 33 native and two web captures reread. Finding-list verdict, not whole-surface, crypto, transport or production approval.",
+    "apkSha256": "cb98308fe909ba2d80329f3808ab90113e5fd9e8da1fa7a8cb7563beed1539c2",
+    "nativeHtmlCssDetector": false,
+    "webDetectorFindings": 0,
+    "documented": true
+  },
+  "testRetryNotes": [
+    "Dense generated invitation QR fixture now uses the same QR-only/TRY_HARDER hints as the production camera reader; signature, recipient and approval checks are unchanged.",
+    "An initial S24 UI-host launch reported no Compose hierarchy. Reopening passed both UI cases in 19.367 seconds, followed by a complete passing 13-case suite.",
+    "An initial S24 streamed test-APK install timed out; later installation succeeded and both installed app hashes matched the final host APK."
+  ],
+  "cleanup": {
+    "screenOverridesRestored": ["SM-S921B", "SM-X510"],
+    "originalTimeoutUnchanged": true,
+    "fixtureOnlyReversePortsRemoved": true,
+    "ordinaryDevelopmentScopeReopened": true,
+    "temporaryWindowsUdpRule": "Still enabled; owner must run Disable in Administrator PowerShell."
+  }
+}

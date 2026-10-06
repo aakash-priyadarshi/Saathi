@@ -192,10 +192,18 @@ export class ManagementService {
       const p = await tx.fieldUpdate.findUnique({ where: { id }, include: { media: true } });
       if (!p) throw new NotFoundException();
       this.auth.requireOrg(actor, p.organizationId, true);
+      if (
+        p.participantName &&
+        (await tx.communityEvent.findFirst({ where: { objectId: id, type: 'WITHDRAW' } }))
+      )
+        throw new ForbiddenException('The author withdrew this participant report.');
       if (action === 'APPROVED' && p.media.some((m) => m.processingState !== 'READY'))
         throw new ForbiddenException('Media is not ready for publication.');
       await this.media.publication(p.media, action === 'APPROVED');
-      await tx.fieldUpdate.update({ where: { id }, data: { moderation: action } });
+      await tx.fieldUpdate.update({
+        where: { id },
+        data: { moderation: action, ...(action === 'APPROVED' ? { publishedAt: new Date() } : {}) },
+      });
       await tx.mediaAsset.updateMany({
         where: { fieldUpdateId: id },
         data: { moderation: action },

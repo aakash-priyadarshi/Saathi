@@ -205,11 +205,12 @@ export class SyncService {
     });
   }
   private async receipt(
-    envelope: Envelope,
+    envelope: { body: { id: string; payloadHash: string }; signature: string },
     status: Receipt['body']['status'],
     message: string,
     publicId?: string,
     fieldId?: string,
+    times?: { receivedAt: string; publishedAt?: string },
   ): Promise<Receipt> {
     const active = this.receiptKeys.find(
       (key) => key.keyId === this.keyId && key.status === 'ACTIVE',
@@ -230,8 +231,19 @@ export class SyncService {
       keyId: this.keyId,
       ...(publicId ? { publicId } : {}),
       ...(fieldId ? { fieldId } : {}),
+      ...times,
     };
     return { body, signature: await sign(body, this.signingKey) };
+  }
+  // Internal domain services share the provisioned signer; no public signing endpoint.
+  issueObjectReceipt(
+    envelope: { body: { id: string; payloadHash: string }; signature: string },
+    status: Receipt['body']['status'],
+    message: string,
+    fieldId?: string,
+    times?: { receivedAt: string; publishedAt?: string },
+  ) {
+    return this.receipt(envelope, status, message, undefined, fieldId, times);
   }
   async ingest(value: unknown, carrierId: string): Promise<Receipt> {
     const envelope = envelopeSchema.parse(value),
@@ -443,7 +455,7 @@ export class SyncService {
       const visible =
         post.moderation === 'APPROVED' &&
         post.publishAt <= new Date() &&
-        post.organization.active &&
+        post.organization?.active === true &&
         post.organization.verified;
       const rejected = ['REJECTED', 'HIDDEN'].includes(post.moderation);
       if ((!visible && !rejected) || (visible && previous.body.status === 'PUBLISHED'))

@@ -1,5 +1,13 @@
 # Android product verification
 
+## Unified community milestone — 6 October 2026
+
+Continued current main baseline `8a9d99d`. Five-role channel governance, key-free approval invitations, announcement threads, temporary Nearby Help, ordinary unverified photo/video reports, consented public-media relay, local QR scanning, durable theme/profile/data controls and the supplied animated brand lockup extend the incumbent native runtime. [Unified milestone](swarm-unified-milestone.md) records behavior and qualification limits; [current evidence](benchmarks/android-unified-community.json) binds verification to exact artifacts.
+
+Local checks pass 33 shared/API unit, 54 PostgreSQL integration, 14 browser and 16 native JVM cases, plus native build/lint. The current APK passed 13 storage/UI/governance/community cases on each Samsung Android 16 device (S24 49.879 seconds; tablet 31.065 seconds). Physical camera-to-tablet QR scanning was confirmed on the preceding build and the recipient showed a pending approval request; its separate artifact hash is retained in the evidence record. An actual tablet ANR exposed competing encrypted-store refreshes; snapshots now load through one conflated background reader, with an interaction regression during 100 refresh callbacks. Nearby relay evidence is recorded separately; store/QR results alone do not establish gateway or radio success.
+
+The final APK completed the two-device Nearby community fixture: tablet author 63.267 seconds, S24 carrier 63.908 seconds. It passed fresh-key approval, thread/lock authorization, ban after rename and future-key exclusion, Help offer/assignment/resolution, sanitized public-photo hash, relay-OFF refusal, consenting gateway text/media acceptance with original authorship, withdrawal and block. The tablet had no validated default internet and the S24 did; USB still supplied fixture configuration/API coordination. This does not prove author-absent relay, three-native-peer forwarding, full internet-loss transitions or video radio transfer. The [radio measurement](benchmarks/android-community-nearby.json) preserves the exact APK and barrier scope.
+
 ## Communication extension — 6 October 2026
 
 CJP Swarm extends the earlier product; evidence below is scoped to the new protocol, not inferred from earlier transport work. New physical fixtures use isolated fictional stores and generated media, with USB coordination/API access; no owner conversations, files or recordings are read.

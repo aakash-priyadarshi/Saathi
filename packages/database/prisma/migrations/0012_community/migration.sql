@@ -1,0 +1,10 @@
+ALTER TABLE "FieldUpdate" ALTER COLUMN "authorId" DROP NOT NULL, ALTER COLUMN "organizationId" DROP NOT NULL, ALTER COLUMN "reliefPointId" DROP NOT NULL;
+ALTER TABLE "FieldUpdate" ADD COLUMN "participantName" TEXT, ADD COLUMN "publicArea" TEXT, ADD COLUMN "contentWarning" BOOLEAN NOT NULL DEFAULT false, ADD COLUMN "receivedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, ADD COLUMN "publishedAt" TIMESTAMP(3);
+ALTER TABLE "MediaAsset" ALTER COLUMN "organizationId" DROP NOT NULL;
+CREATE TABLE "CommunityEvent" ("id" TEXT NOT NULL PRIMARY KEY, "objectId" TEXT NOT NULL, "type" TEXT NOT NULL, "authorId" TEXT NOT NULL, "area" TEXT, "version" INTEGER NOT NULL DEFAULT 1, "envelope" JSONB NOT NULL, "envelopeHash" TEXT NOT NULL, "receipt" JSONB, "receivedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "expiresAt" TIMESTAMP(3) NOT NULL, "hidden" BOOLEAN NOT NULL DEFAULT false);
+CREATE UNIQUE INDEX "CommunityEvent_envelopeHash_key" ON "CommunityEvent"("envelopeHash");
+CREATE INDEX "CommunityEvent_objectId_version_idx" ON "CommunityEvent"("objectId", "version");
+CREATE INDEX "CommunityEvent_authorId_receivedAt_idx" ON "CommunityEvent"("authorId", "receivedAt");
+CREATE INDEX "CommunityEvent_area_expiresAt_idx" ON "CommunityEvent"("area", "expiresAt");
+CREATE TABLE "CommunityMediaChunk" ("mediaId" TEXT NOT NULL, "index" INTEGER NOT NULL, "data" BYTEA NOT NULL, "expiresAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "CommunityMediaChunk_pkey" PRIMARY KEY ("mediaId", "index"));
+CREATE INDEX "CommunityMediaChunk_expiresAt_idx" ON "CommunityMediaChunk"("expiresAt");

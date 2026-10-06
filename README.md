@@ -33,6 +33,13 @@ Demo accounts: `volunteer@saathi.test`, `coordinator@saathi.test`, `admin@saathi
 
 ## Working flow
 
+The [unified CJP Swarm milestone](docs/swarm-unified-milestone.md) extends the
+native app with announcement threads, delegated moderation, approval-required
+private membership, QR scanning, temporary Nearby Help, ordinary unverified
+participant reports and consenting public-media carriers. It preserves the
+existing verified Needs/donation boundary. See the [community architecture](docs/swarm-community-architecture.md)
+for resource limits, original-author receipts and release gates.
+
 1. Admin creates a verified organization and appoints a coordinator.
 2. Coordinator invites and approves volunteers after verifying identity and email, and designates public relief points.
 3. Volunteer publishes a need. Guests see its remaining quantity and permanent `SAA-…` URL.
@@ -118,7 +125,7 @@ Migrations are checked in. `pnpm db:migrate` applies them without prompting. Gen
 
 Open `/connectivity` while connected to save the public app shell and prepare an approved volunteer's signing device. `/offline` keeps timestamped public information, private drafts/media and signed relief events. `/nearby` provides manual invitation/reply pairing over a reachable local network, saved messages, accepted voice/video calls, consented small attachments and signed public-relief relay. Nearby delivery and canonical server publication have separate status indicators. Reservations require current server quantities.
 
-Foreground automatic gateway upload is opt-in and carries public relief text only. Field media waits for an authenticated direct upload and the existing sanitization/moderation flow. No call recording, unrestricted internet gateway or automatic browser radio discovery is provided. Use operator HTTPS on phones; a plain LAN URL cannot substitute for the retained secure origin. The [Samsung S24 / Android 16 guide](docs/android-field-test-guide.md) and [device worksheet](docs/nearby-connectivity-device-tests.md) keep physical results separate from browser emulation.
+The browser foreground gateway is opt-in and carries public relief text only. The native participant gateway additionally carries eligible signed public reports and sanitized derivatives with explicit relay/media consent, limits and existing moderation. Verified-volunteer browser field media retains direct authenticated upload. No call recording, unrestricted internet gateway or automatic browser radio discovery is provided. Use operator HTTPS on phones; a plain LAN URL cannot substitute for the retained secure origin. The [Samsung S24 / Android 16 guide](docs/android-field-test-guide.md) and [device worksheet](docs/nearby-connectivity-device-tests.md) keep physical results separate from browser emulation.
 
 Reproduce the independent desktop proof with `pnpm spike:nearby`. It uses two Chromium processes on one Windows host, no STUN/TURN/cloud signaling, verified bytes and synthetic camera/microphone. Results are in `docs/benchmarks/chromium-nearby.json`; they are not Android range or battery measurements. See the [official-source capability matrix](docs/nearby-connectivity-research.md) and [architecture decision](docs/adr/0001-durable-events-and-local-peer-sessions.md).
 

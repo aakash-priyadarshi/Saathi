@@ -30,6 +30,8 @@ import { SyncController } from './sync/sync.controller';
 import { PublicReadModule } from './public/public.module';
 import { ChatController } from './chat/chat.controller';
 import { ChatService } from './chat/chat.service';
+import { CommunityController } from './community/community.controller';
+import { CommunityService } from './community/community.service';
 import {
   PublicController,
   AuthController,
@@ -70,6 +72,7 @@ class Errors implements ExceptionFilter {
   ],
   controllers: [
     ChatController,
+    CommunityController,
     SyncController,
     PublicController,
     AuthController,
@@ -79,6 +82,12 @@ class Errors implements ExceptionFilter {
   ],
   providers: [
     { provide: ChatService, useFactory: (db: Database) => new ChatService(db), inject: [Database] },
+    {
+      provide: CommunityService,
+      useFactory: (db: Database, sync: SyncService, media: MediaService, storage: S3Storage) =>
+        new CommunityService(db, sync, media, storage),
+      inject: [Database, SyncService, MediaService, S3Storage],
+    },
     {
       provide: SyncService,
       useFactory: (

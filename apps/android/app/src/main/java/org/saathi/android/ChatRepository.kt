@@ -79,7 +79,19 @@ class ChatRepository(private val context: Context, private val repository: Repos
         if(store.get("chat-conversations",id)==null) save("chat-conversations",id,obj("id" to id,"type" to "DIRECT","peerId" to ChatProtocol.participant(person),"title" to person.getJSONObject("body").getString("name"),"muted" to false,"joined" to true,"lastRead" to Instant.EPOCH.toString()))
         onChange(); id
     } }
-    private fun current(id:String)=store.get("chat-policies",id)?.getJSONObject("policy")
+    fun current(id:String)=store.get("chat-policies",id)?.getJSONObject("policy")
+    fun actions(id:String)=store.all("chat-actions").filter{it.getJSONObject("envelope").getJSONObject("body").getString("channelId")==id && !it.optBoolean("rejected")}.sortedWith(compareBy<JSONObject>{it.getJSONObject("envelope").getJSONObject("body").getString("issuedAt")}.thenBy{it.getString("id")})
+    fun joinRequests(id:String)=store.all("chat-join-inbox").filter{it.getJSONObject("request").getJSONObject("body").getString("channelId")==id && !it.optBoolean("resolved") && Instant.parse(it.getJSONObject("request").getJSONObject("body").getString("expiresAt"))>now()}
+    private fun pendingMembership(policy:JSONObject)=actions(policy.getJSONObject("body").getString("id")).any{r->val a=r.getJSONObject("envelope").getJSONObject("body");a.getString("action") in listOf("REMOVE","BAN","SET_ROLE","APPROVE_JOIN") && a.getInt("version")==policy.getJSONObject("body").getInt("version") && policy.getJSONObject("body").optJSONArray("appliedActions")?.strings()?.contains(a.getString("id"))!=true}
+    fun capabilities(id:String)=current(id)?.let{ChannelGovernance.capabilities(it,self())}
+    fun threadLocked(id:String,root:String):Boolean {
+        val latest=actions(id).lastOrNull {it.getJSONObject("envelope").getJSONObject("body").let{a->a.getString("targetId")==root && a.getString("action") in listOf("LOCK_THREAD","UNLOCK_THREAD")}}
+        return latest?.getJSONObject("envelope")?.getJSONObject("body")?.getString("action")?.let{it=="LOCK_THREAD"} ?: (current(id)?.getJSONObject("body")?.optJSONObject("moderation")?.getJSONArray("lockedThreads")?.strings()?.contains(root)==true)
+    }
+    fun messageHidden(id:String,message:String):Boolean {
+        val latest=actions(id).lastOrNull {it.getJSONObject("envelope").getJSONObject("body").let{a->a.getString("targetId")==message && a.getString("action") in listOf("HIDE_MESSAGE","RESTORE_MESSAGE")}}
+        return latest?.getJSONObject("envelope")?.getJSONObject("body")?.getString("action")?.let{it=="HIDE_MESSAGE"} ?: (current(id)?.getJSONObject("body")?.optJSONObject("moderation")?.getJSONArray("hiddenMessages")?.strings()?.contains(message)==true)
+    }
     fun fileAllowed(id:String,hash:String):Boolean {
         val person=peer?.let { ChatProtocol.participant(it) }?:return false
         if(!session.confirmed || blocked(person))return false
@@ -87,10 +99,10 @@ class ChatRepository(private val context: Context, private val repository: Repos
             val a=record.getJSONObject("payload").optJSONObject("attachment");val b=record.getJSONObject("envelope").getJSONObject("body")
             a?.optString("id")==id && a.optString("cipherHash")==hash && if(!b.isNull("recipientId")) {
                 val other=if(record.optBoolean("owned"))b.getString("recipientId") else ChatProtocol.participant(b.getJSONObject("author"));other==person
-            }else{val p=current(b.getString("conversationId"));p!=null && live(p) && ChatProtocol.member(p,person)}
+            }else{val p=current(b.getString("conversationId"));p!=null && live(p) && !pendingMembership(p) && ChatProtocol.member(p,person)}
         }
     }
-    suspend fun attach(conversationId:String,uri:Uri,mimeOverride:String?=null,nameOverride:String?=null)=withContext(Dispatchers.IO){lock.withLock{
+    suspend fun attach(conversationId:String,uri:Uri,mimeOverride:String?=null,nameOverride:String?=null,threadRootId:String?=null)=withContext(Dispatchers.IO){lock.withLock{
         val mime=mimeOverride?:context.contentResolver.getType(uri)?:error("Choose a photo, audio, video or text file.")
         require(mime in listOf("image/jpeg","image/png","image/webp","audio/mp4","audio/mpeg","video/mp4","video/webm","text/plain"))
         val name=nameOverride?:context.contentResolver.query(uri,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)?.use { require(it.moveToFirst());it.getString(0) }?: "Attachment"
@@ -99,10 +111,11 @@ class ChatRepository(private val context: Context, private val repository: Repos
         val plain=output.toByteArray();require(plain.isNotEmpty()); val id=UUID.randomUUID().toString();val key=ByteArray(32).also { SecureRandom().nextBytes(it) }
         val cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.ENCRYPT_MODE,SecretKeySpec(key,"AES"));cipher.updateAAD(("SWARM_ATTACHMENT_V1/"+id).toByteArray());val encrypted=cipher.iv+cipher.doFinal(plain)
         val file=session.saveChatBytes(id,encrypted)
+        file.put("contentMime",mime);store.put("attachments",id,file)
         val attachment=obj("id" to id,"name" to name.take(100),"mime" to mime,"size" to plain.size,"hash" to Protocol.digest(plain),"cipherHash" to Protocol.digest(encrypted),"key" to Protocol.b64(key))
         val format=if(mime.startsWith("image/"))"PHOTO" else if(mime.startsWith("video/"))"VIDEO" else if(mime.startsWith("audio/"))"VOICE" else "FILE"
         try {
-            val messageId=sendUnlocked(conversationId,obj("attachment" to attachment),format)
+            val messageId=sendUnlocked(conversationId,obj("attachment" to attachment),format,threadRootId)
             val envelope=store.get("chat-messages",messageId)!!.getJSONObject("envelope")
             val manifest=signed(obj("v" to 1,"kind" to "CHAT_ATTACHMENT","id" to id,"messageId" to messageId,"messageHash" to Protocol.hash(envelope),"author" to profile(),"size" to encrypted.size,"cipherHash" to Protocol.digest(encrypted),"expiresAt" to envelope.getJSONObject("body").getString("expiresAt")))
             save("chat-manifests",messageId,obj("id" to messageId,"manifest" to manifest))
@@ -196,34 +209,52 @@ class ChatRepository(private val context: Context, private val repository: Repos
             require(ChatProtocol.participant(previous.getJSONObject("owner"))==ChatProtocol.participant(b.getJSONObject("owner")) && previous.getString("visibility")==b.getString("visibility"))
             if(b.getInt("version")<previous.getInt("version") || previous.getBoolean("deleted")&&!b.getBoolean("deleted")) return
             require(b.getInt("version")!=previous.getInt("version") || Protocol.hash(old)==Protocol.hash(policy)) { "Conflicting channel membership. Sending is paused." }
+            if(b.getInt("version")>previous.getInt("version")){
+                for(row in actions(id).filter{it.getJSONObject("envelope").getJSONObject("body").getInt("version")==previous.getInt("version")}){
+                    val action=row.getJSONObject("envelope").getJSONObject("body");val kind=action.getString("action");if(kind in listOf("REACT","UNREACT","REVIEW_REPORT"))continue
+                    val target=action.getString("targetId");val member=b.getJSONArray("members").objects().firstOrNull{ChatProtocol.participant(it.getJSONObject("profile"))==target}
+                    require(b.optJSONArray("appliedActions")?.strings()?.contains(action.getString("id"))==true &&
+                        (kind !in listOf("REMOVE","BAN","REJECT_JOIN") || member==null||!member.isNull("removedAt")) &&
+                        (kind!="BAN"||b.optJSONArray("bannedIds")?.strings()?.contains(target)==true) &&
+                        (kind!="UNBAN"||b.optJSONArray("bannedIds")?.strings()?.contains(target)!=true) &&
+                        (kind!="APPROVE_JOIN"||member?.isNull("removedAt")==true) &&
+                        (kind!="SET_ROLE"||member?.optString("role")==action.getString("role")) &&
+                        (kind!="LOCK_THREAD"||b.optJSONObject("moderation")?.getJSONArray("lockedThreads")?.strings()?.contains(target)==true) &&
+                        (kind!="UNLOCK_THREAD"||b.optJSONObject("moderation")?.getJSONArray("lockedThreads")?.strings()?.contains(target)!=true) &&
+                        (kind!="HIDE_MESSAGE"||b.optJSONObject("moderation")?.getJSONArray("hiddenMessages")?.strings()?.contains(target)==true) &&
+                        (kind!="RESTORE_MESSAGE"||b.optJSONObject("moderation")?.getJSONArray("hiddenMessages")?.strings()?.contains(target)!=true)) {"This policy omitted a known moderation action. Check permissions again."}
+                }
+            }
         }
         require(conversation!=null || consent) { "Join this channel before accepting its history." }
         archive(policy); save("chat-policies",id,obj("id" to id,"policy" to policy))
         b.getJSONArray("members").objects().forEach { remember(it.getJSONObject("profile")) }
         val joined=ChatProtocol.member(policy,self()) && (consent || conversation?.optBoolean("joined")==true || conversation?.optBoolean("pendingJoin")==true)
+        if(joined || store.get("chat-joins",id)?.getJSONObject("request")?.getJSONObject("body")?.getString("action")=="LEAVE"&&!ChatProtocol.member(policy,self()))store.remove("chat-joins",id)
         val next=conversation?:obj("id" to id,"type" to "CHANNEL","muted" to false,"lastRead" to Instant.EPOCH.toString())
         next.put("title",b.getString("name")).put("joined",joined).put("pendingJoin",false).put("deleted",b.getBoolean("deleted")).put("visibility",b.getString("visibility")).put("ownerId",ChatProtocol.participant(b.getJSONObject("owner")))
         save("chat-conversations",id,next)
         if(!joined) store.remove("chat-keys",Protocol.hash(policy))
     }
-    private fun revised(previous:JSONObject?,name:String,visibility:String,members:JSONArray,deleted:Boolean=false):JSONObject {
+    private fun revised(previous:JSONObject?,name:String,visibility:String,members:JSONArray,deleted:Boolean=false,settings:JSONObject?=null):JSONObject {
         val id=previous?.getJSONObject("body")?.getString("id")?:UUID.randomUUID().toString()
         val epoch=UUID.randomUUID().toString(); val key=ByteArray(32).also { SecureRandom().nextBytes(it) }
         val keys=JSONArray()
-        if(visibility=="INVITE") members.objects().filter { it.isNull("removedAt") }.forEach {
-            val person=it.getJSONObject("profile"); val personId=ChatProtocol.participant(person)
-            keys.put(obj("participantId" to personId,"jwe" to ChatProtocol.encrypt(obj("key" to Protocol.b64(key)),person.getJSONObject("body").getJSONObject("encryptionKey"),null,"channel:$id:$epoch:$personId")))
-        }
         val issued=now(); val body=obj("v" to 1,"kind" to "CHAT_CHANNEL","id" to id,"name" to name,"visibility" to visibility,"owner" to profile(),"version" to ((previous?.getJSONObject("body")?.getInt("version")?:0)+1),"epoch" to epoch,"issuedAt" to issued.toString(),"expiresAt" to issued.plusSeconds(21600).toString(),"deleted" to deleted,"members" to members,"keys" to keys)
+        previous?.getJSONObject("body")?.let{p->listOf("settings","bannedIds","appliedActions","moderation").forEach{if(p.has(it))body.put(it,p.get(it))}}
+        if(settings!=null)body.put("settings",settings)
+        if(visibility=="INVITE")members.objects().filter{ChannelGovernance.capabilities(obj("body" to JSONObject(body.toString()).put("deleted",false)),ChatProtocol.participant(it.getJSONObject("profile"))).getBoolean("canRead")}.forEach{
+            val person=it.getJSONObject("profile");val personId=ChatProtocol.participant(person);keys.put(obj("participantId" to personId,"jwe" to ChatProtocol.encrypt(obj("key" to Protocol.b64(key)),person.getJSONObject("body").getJSONObject("encryptionKey"),null,"channel:$id:$epoch:$personId")))
+        }
         val policy=signed(body); ChatProtocol.policy(policy,issued); return policy
     }
-    suspend fun create(name:String,visibility:String):String=withContext(Dispatchers.IO) { lock.withLock {
+    suspend fun create(name:String,visibility:String,mode:String="DISCUSSION",admission:String=if(visibility=="OPEN")"OPEN" else "INVITE_AUTO"):String=withContext(Dispatchers.IO) { lock.withLock {
         require(name.trim().length in 1..48 && visibility in listOf("OPEN","INVITE") && conversations().count { it.getString("type")=="CHANNEL"&&it.optBoolean("joined") }<16)
         val members=JSONArray().put(obj("profile" to profile(),"role" to "OWNER","joinedAt" to now().toString(),"removedAt" to null))
-        val policy=revised(null,name.trim(),visibility,members); applyPolicy(policy,true); announceUnlocked(); onChange(); policy.getJSONObject("body").getString("id")
+        val policy=revised(null,name.trim(),visibility,members,settings=obj("mode" to mode,"admission" to admission)); applyPolicy(policy,true); announceUnlocked(); onChange(); policy.getJSONObject("body").getString("id")
     } }
-    private fun makeJoin(id:String,action:String):JSONObject {
-        val time=now(); return signed(obj("v" to 1,"kind" to "CHAT_JOIN","id" to UUID.randomUUID().toString(),"channelId" to id,"participant" to profile(),"action" to action,"issuedAt" to time.toString(),"expiresAt" to time.plusSeconds(21600).toString()))
+    private fun makeJoin(id:String,action:String,invitation:JSONObject?=null):JSONObject {
+        val time=now();val body=obj("v" to 1,"kind" to "CHAT_JOIN","id" to UUID.randomUUID().toString(),"channelId" to id,"participant" to profile(),"action" to action,"issuedAt" to time.toString(),"expiresAt" to time.plusSeconds(21600).toString());if(invitation!=null)body.put("invitation",invitation);return signed(body)
     }
     suspend fun join(id:String)=withContext(Dispatchers.IO) { lock.withLock {
         UUID.fromString(id); val descriptor=discovery.firstOrNull { it.getString("id")==id }?:error("Find the channel nearby again.")
@@ -233,26 +264,45 @@ class ChatRepository(private val context: Context, private val repository: Repos
     } }
     private suspend fun handleJoin(request:JSONObject) {
         ChatProtocol.join(request,now()); val b=request.getJSONObject("body"); val p=current(b.getString("channelId"))?:return; val pb=p.getJSONObject("body")
-        if(ChatProtocol.participant(pb.getJSONObject("owner"))!=self() || pb.getBoolean("deleted")) return
+        if(!ChannelGovernance.capabilities(p,self()).getBoolean("canManageMembers") || pb.getBoolean("deleted")) return
         val person=b.getJSONObject("participant"); val personId=ChatProtocol.participant(person); if(blocked(personId))return
+        if(pb.optJSONArray("bannedIds")?.strings()?.contains(personId)==true)return
+        if(b.getString("action")=="JOIN") {
+            val admission=pb.optJSONObject("settings")?.optString("admission")?:if(pb.getString("visibility")=="OPEN")"OPEN" else "INVITE_AUTO"
+            if(admission in listOf("APPROVAL_ONLY","INVITE_PLUS_APPROVAL")) {
+                if(pb.getString("visibility")=="INVITE") {
+                    val invite=b.optJSONObject("invitation")?:return;val ib=invite.getJSONObject("body")
+                    require(ib.getString("policyHash")==Protocol.hash(p) && ChatProtocol.participant(ib.getJSONObject("owner"))==ChatProtocol.participant(pb.getJSONObject("owner")) && ChannelGovernance.capabilities(p,ChatProtocol.participant(ib.optJSONObject("issuer")?:ib.getJSONObject("owner"))).getBoolean("canInvite")) {"Ask for a current invitation."}
+                }
+                remember(person);save("chat-join-inbox",b.getString("id"),obj("id" to b.getString("id"),"request" to request,"resolved" to false));return
+            }
+        }
+        if(ChatProtocol.participant(pb.getJSONObject("owner"))!=self())return
         val members=JSONArray(pb.getJSONArray("members").toString()); val existing=members.objects().firstOrNull { ChatProtocol.participant(it.getJSONObject("profile"))==personId }
         if(b.getString("action")=="JOIN") {
-            if(pb.getString("visibility")!="OPEN" || existing?.isNull("removedAt")==false) return
-            if(existing==null) { require(members.length()<16); members.put(obj("profile" to person,"role" to "MEMBER","joinedAt" to now().toString(),"removedAt" to null)) } else { if(live(p)) { if(session.confirmed && peer?.let { ChatProtocol.participant(it) }==personId)session.send("CHAT_POLICY",p); return } }
+            if(pb.getString("visibility")!="OPEN") return
+            if(existing==null) { require(members.length()<16); members.put(obj("profile" to person,"role" to "MEMBER","joinedAt" to now().toString(),"removedAt" to null)) } else if(!existing.isNull("removedAt")){existing.put("removedAt",JSONObject.NULL).put("joinedAt",now().toString()).put("profile",person)}else { if(live(p)) { if(session.confirmed && peer?.let { ChatProtocol.participant(it) }==personId)session.send("CHAT_POLICY",p); return } }
         } else { if(personId==self() || existing==null || !existing.isNull("removedAt"))return; existing.put("removedAt",now().toString()) }
         val revised=revised(p,pb.getString("name"),pb.getString("visibility"),members); applyPolicy(revised,true)
         if(session.confirmed && peer!=null)session.send("CHAT_POLICY",revised)
     }
     suspend fun invite(id:String,person:JSONObject):String=withContext(Dispatchers.IO) { lock.withLock {
-        remember(person); val old=current(id)?:error("Channel is unavailable."); val b=old.getJSONObject("body"); require(ChatProtocol.participant(b.getJSONObject("owner"))==self() && !b.getBoolean("deleted"))
-        val members=JSONArray(b.getJSONArray("members").toString()); val recipient=ChatProtocol.participant(person)
+        remember(person); val old=current(id)?:error("Channel is unavailable."); val b=old.getJSONObject("body"); require(ChannelGovernance.capabilities(old,self()).getBoolean("canInvite") && !b.getBoolean("deleted"))
+        val recipient=ChatProtocol.participant(person);require(b.optJSONArray("bannedIds")?.strings()?.contains(recipient)!=true) {"Unban this identity before inviting them."}
+        val admission=b.optJSONObject("settings")?.optString("admission")?:"INVITE_AUTO"
+        if(admission in listOf("INVITE_PLUS_APPROVAL","APPROVAL_ONLY")) {
+            val time=now();val invite=signed(obj("v" to 1,"kind" to "CHAT_ADMISSION","id" to UUID.randomUUID().toString(),"channelId" to id,"name" to b.getString("name"),"owner" to b.getJSONObject("owner"),"issuer" to profile(),"recipientId" to recipient,"policyHash" to Protocol.hash(old),"admission" to admission,"issuedAt" to time.toString(),"expiresAt" to b.getString("expiresAt")))
+            onChange();return@withLock encodeInvite(invite)
+        }
+        require(ChatProtocol.participant(b.getJSONObject("owner"))==self()) {"Ask the owner to activate automatic admission, or use an approval invitation."}
+        val members=JSONArray(b.getJSONArray("members").toString())
         val existing=members.objects().firstOrNull { ChatProtocol.participant(it.getJSONObject("profile"))==recipient }
         if(existing==null){ require(members.length()<16); members.put(obj("profile" to person,"role" to "MEMBER","joinedAt" to now().toString(),"removedAt" to null)) } else { existing.put("removedAt",JSONObject.NULL).put("profile",person) }
         val policy=revised(old,b.getString("name"),b.getString("visibility"),members); applyPolicy(policy,true)
         val time=now(); val invite=signed(obj("v" to 1,"kind" to "CHAT_INVITE","id" to UUID.randomUUID().toString(),"policy" to policy,"recipientId" to recipient,"issuedAt" to time.toString(),"expiresAt" to policy.getJSONObject("body").getString("expiresAt")))
-        val bytes=ByteArrayOutputStream(); GZIPOutputStream(bytes).use { it.write(invite.toString().toByteArray()) }
-        onChange(); "cjpswarm://invite/"+Protocol.b64(bytes.toByteArray())
+        onChange(); encodeInvite(invite)
     } }
+    private fun encodeInvite(invite:JSONObject):String {val bytes=ByteArrayOutputStream(); GZIPOutputStream(bytes).use { it.write(invite.toString().toByteArray()) };return "cjpswarm://invite/"+Protocol.b64(bytes.toByteArray())}
     fun decodeInvite(link:String):JSONObject {
         val uri=Uri.parse(link.trim()); require(uri.scheme=="cjpswarm" && uri.host=="invite" && uri.query==null && uri.fragment==null && link.length<=44000)
         val token=uri.path?.removePrefix("/")?:error("Invitation is incomplete."); require(token.length in 1..42000 && !token.contains('/'))
@@ -260,14 +310,83 @@ class ChatRepository(private val context: Context, private val repository: Repos
         val invite=JSONObject(output.toString(Charsets.UTF_8.name())); ChatProtocol.invite(invite,self(),now()); return invite
     }
     suspend fun acceptInvite(link:String):String=withContext(Dispatchers.IO) { lock.withLock {
-        val invite=decodeInvite(link); val b=invite.getJSONObject("body"); val id=b.getJSONObject("policy").getJSONObject("body").getString("id")
+        val invite=decodeInvite(link); val b=invite.getJSONObject("body"); val id=if(b.getString("kind")=="CHAT_ADMISSION")b.getString("channelId") else b.getJSONObject("policy").getJSONObject("body").getString("id")
         val existing=store.get("chat-invites",b.getString("id"))
         require(existing==null || existing.getString("hash")==Protocol.hash(invite))
+        if(b.getString("kind")=="CHAT_ADMISSION") {
+            require(existing==null){"This invitation has already been used. Ask for a new one."}
+            val request=makeJoin(id,"JOIN",invite);save("chat-joins",id,obj("id" to id,"request" to request))
+            save("chat-conversations",id,obj("id" to id,"type" to "CHANNEL","title" to b.getString("name"),"muted" to false,"joined" to false,"pendingJoin" to true,"lastRead" to Instant.EPOCH.toString()))
+            save("chat-invites",b.getString("id"),obj("id" to b.getString("id"),"hash" to Protocol.hash(invite),"expiresAt" to b.getString("expiresAt")))
+            if(session.confirmed)session.send("CHAT_JOIN",request);onChange();return@withLock id
+        }
         val p=b.getJSONObject("policy"); val old=current(id); require(old==null || old.getJSONObject("body").getInt("version")<=p.getJSONObject("body").getInt("version")) { "This invitation has been replaced. Ask for a new one." }
         applyPolicy(p,true); save("chat-invites",b.getString("id"),obj("id" to b.getString("id"),"hash" to Protocol.hash(invite),"expiresAt" to b.getString("expiresAt")))
         announceUnlocked(); onChange(); id
     } }
+    suspend fun moderate(id:String,action:String,target:String,role:String?=null,reaction:String?=null)=withContext(Dispatchers.IO){lock.withLock{moderateUnlocked(id,action,target,role,reaction)}}
+    private suspend fun moderateUnlocked(id:String,action:String,target:String,role:String?=null,reaction:String?=null){
+        val policy=current(id)?:error("Channel is unavailable.");val time=now()
+        val body=obj("v" to 1,"kind" to "CHAT_ACTION","id" to UUID.randomUUID().toString(),"channelId" to id,"actor" to profile(),"policyHash" to Protocol.hash(policy),"version" to policy.getJSONObject("body").getInt("version"),"action" to action,"targetId" to target,"issuedAt" to time.toString(),"expiresAt" to time.plusSeconds(21600).toString())
+        if(role!=null)body.put("role",role);if(reaction!=null)body.put("reaction",reaction)
+        val envelope=signed(body);receiveAction(envelope,false)
+        if(action=="REJECT_JOIN" && ChatProtocol.participant(policy.getJSONObject("body").getJSONObject("owner"))==self() && peer?.let{ChatProtocol.participant(it)}==target)session.send("CHAT_ADMISSION_REJECTION",envelope)
+        if(session.confirmed && peer?.let{ChatProtocol.member(policy,ChatProtocol.participant(it))}==true)session.send("CHAT_ACTION",envelope)
+        onChange()
+    }
+    suspend fun configure(id:String,mode:String,admission:String)=withContext(Dispatchers.IO){lock.withLock{
+        val p=current(id)?:error("Channel is unavailable.");val b=p.getJSONObject("body");require(ChatProtocol.participant(b.getJSONObject("owner"))==self()&&!pendingMembership(p))
+        val settings=JSONObject((b.optJSONObject("settings")?:obj("mode" to "DISCUSSION","admission" to if(b.getString("visibility")=="OPEN")"OPEN"else"INVITE_AUTO")).toString()).put("mode",mode).put("admission",admission)
+        val next=revised(p,b.getString("name"),b.getString("visibility"),b.getJSONArray("members"),settings=settings);applyPolicy(next,true);announceUnlocked();onChange()
+    }}
+    private suspend fun receiveAction(envelope:JSONObject,server:Boolean){
+        val b=envelope.getJSONObject("body");val id=b.getString("id");val policy=current(b.getString("channelId"))?:error("Channel is unavailable.")
+        val old=store.get("chat-actions",id)
+        if(old!=null){require(Protocol.hash(old.getJSONObject("envelope"))==Protocol.hash(envelope));if(server){old.put("serverSaved",true);save("chat-actions",id,old)};return}
+        val consumed=policy.getJSONObject("body").optJSONArray("appliedActions")?.strings()?.contains(id)==true
+        val authorization=if(Protocol.hash(policy)==b.getString("policyHash"))policy else if(consumed)store.get("chat-policy-history",b.getString("policyHash"))?.getJSONObject("policy")?:error("Moderation history is unavailable.") else error("Permissions changed. This action needs review.")
+        ChannelGovernance.action(envelope,authorization,if(consumed)Instant.parse(b.getString("issuedAt"))else now())
+        val a=b.getString("action");val actor=ChatProtocol.participant(b.getJSONObject("actor"))
+        if(!consumed){
+            if(a !in listOf("REACT","UNREACT","REVIEW_REPORT")){
+                val family=if(a in ChannelGovernance.membershipActions)ChannelGovernance.membershipActions else if(a in listOf("LOCK_THREAD","UNLOCK_THREAD"))listOf("LOCK_THREAD","UNLOCK_THREAD") else listOf("HIDE_MESSAGE","RESTORE_MESSAGE")
+                require(actions(b.getString("channelId")).none{r->val prior=r.getJSONObject("envelope").getJSONObject("body");prior.getInt("version")==b.getInt("version") && prior.getString("targetId")==b.getString("targetId") && prior.getString("action") in family && policy.getJSONObject("body").optJSONArray("appliedActions")?.strings()?.contains(prior.getString("id"))!=true}){"A conflicting action needs a fresh owner policy before retrying."}
+            }
+            val denied=actions(b.getString("channelId")).any{r->val prior=r.getJSONObject("envelope").getJSONObject("body");prior.getInt("version")==b.getInt("version") && prior.getString("targetId")==actor && prior.getString("action") in listOf("REMOVE","BAN","SET_ROLE")}
+            require(!denied){"Moderator authority has changed."}
+            if(a in ChannelGovernance.membershipActions){
+                if(a in listOf("APPROVE_JOIN","REJECT_JOIN"))require(joinRequests(b.getString("channelId")).any{ChatProtocol.participant(it.getJSONObject("request").getJSONObject("body").getJSONObject("participant"))==b.getString("targetId")}) {"Pending request is unavailable."}
+            }else{
+                val message=store.get("chat-messages",b.getString("targetId"))?.getJSONObject("envelope")?.getJSONObject("body")?:error("Message is unavailable.")
+                require(message.getString("conversationId")==b.getString("channelId") && Instant.parse(message.getString("expiresAt"))>now())
+                if(a in listOf("LOCK_THREAD","UNLOCK_THREAD"))require(!message.has("threadRootId"))
+            }
+        }
+        save("chat-actions",id,obj("id" to id,"envelope" to envelope,"serverSaved" to server,"receivedAt" to now().toString(),"owned" to (actor==self())))
+        if(!consumed && ChatProtocol.participant(policy.getJSONObject("body").getJSONObject("owner"))==self() && a !in listOf("REACT","UNREACT","REVIEW_REPORT")) incorporateAction(envelope,policy)
+        onChange()
+    }
+    private suspend fun incorporateAction(envelope:JSONObject,policy:JSONObject){
+        val a=envelope.getJSONObject("body");val b=JSONObject(policy.getJSONObject("body").toString());val members=b.getJSONArray("members");val target=a.getString("targetId");val kind=a.getString("action")
+        val member=members.objects().firstOrNull{ChatProtocol.participant(it.getJSONObject("profile"))==target}
+        val bans=b.optJSONArray("bannedIds")?.strings()?.toMutableSet()?:mutableSetOf()
+        when(kind){
+            "APPROVE_JOIN"->{require(target !in bans);val request=joinRequests(b.getString("id")).first{ChatProtocol.participant(it.getJSONObject("request").getJSONObject("body").getJSONObject("participant"))==target};val person=request.getJSONObject("request").getJSONObject("body").getJSONObject("participant");if(member==null){require(members.length()<16);members.put(obj("profile" to person,"role" to "MEMBER","joinedAt" to now().toString(),"removedAt" to null))}else member.put("removedAt",JSONObject.NULL).put("profile",person).put("joinedAt",now().toString());request.put("resolved",true);save("chat-join-inbox",request.getString("id"),request)}
+            "REJECT_JOIN"->joinRequests(b.getString("id")).filter{ChatProtocol.participant(it.getJSONObject("request").getJSONObject("body").getJSONObject("participant"))==target}.forEach{it.put("resolved",true);save("chat-join-inbox",it.getString("id"),it)}
+            "REMOVE","BAN"->{require(member!=null);member.put("removedAt",now().toString());if(kind=="BAN")bans.add(target)}
+            "UNBAN"->bans.remove(target)
+            "SET_ROLE"->{require(member!=null && member.isNull("removedAt"));member.put("role",a.getString("role"))}
+        }
+        val moderation=b.optJSONObject("moderation")?:obj("lockedThreads" to JSONArray(),"hiddenMessages" to JSONArray())
+        if(kind in listOf("LOCK_THREAD","UNLOCK_THREAD","HIDE_MESSAGE","RESTORE_MESSAGE")){
+            val field=if(kind in listOf("LOCK_THREAD","UNLOCK_THREAD"))"lockedThreads"else"hiddenMessages";val values=moderation.getJSONArray(field).strings().toMutableSet();if(kind in listOf("LOCK_THREAD","HIDE_MESSAGE"))values.add(target)else values.remove(target);require(values.size<=100);moderation.put(field,JSONArray(values.toList()))
+        }
+        b.put("bannedIds",JSONArray(bans.toList())).put("moderation",moderation).put("appliedActions",JSONArray(((b.optJSONArray("appliedActions")?.strings()?:emptyList())+a.getString("id")).distinct().takeLast(100)))
+        val next=revised(obj("body" to b,"signature" to policy.getString("signature")),b.getString("name"),b.getString("visibility"),members);applyPolicy(next,true)
+        if(session.confirmed && peer?.let{ChatProtocol.member(policy,ChatProtocol.participant(it)) || ChatProtocol.member(next,ChatProtocol.participant(it))}==true){session.send("CHAT_POLICY",next);if(peer?.let{!ChatProtocol.member(policy,ChatProtocol.participant(it))}==true)session.send("CHAT_ACTION_PROOF",obj("action" to envelope,"policy" to policy))}
+    }
     suspend fun membership(id:String,personId:String?,delete:Boolean=false)=withContext(Dispatchers.IO) { lock.withLock {
+        if(personId!=null){moderateUnlocked(id,"REMOVE",personId);return@withLock}
         val p=current(id)?:error("Channel is unavailable."); val b=p.getJSONObject("body")
         if(ChatProtocol.participant(b.getJSONObject("owner"))==self()) {
             val members=JSONArray(b.getJSONArray("members").toString())
@@ -283,23 +402,29 @@ class ChatRepository(private val context: Context, private val repository: Repos
         }
         announceUnlocked(); onChange()
     } }
-    suspend fun send(id:String,payload:JSONObject,format:String="TEXT"):String=withContext(Dispatchers.IO) { lock.withLock { sendUnlocked(id,payload,format) } }
-    private suspend fun sendUnlocked(id:String,payload:JSONObject,format:String):String {
+    suspend fun send(id:String,payload:JSONObject,format:String="TEXT",threadRootId:String?=null):String=withContext(Dispatchers.IO) { lock.withLock { sendUnlocked(id,payload,format,threadRootId) } }
+    private suspend fun sendUnlocked(id:String,payload:JSONObject,format:String,threadRootId:String?=null):String {
         ChatProtocol.payload(payload,format); val conversation=store.get("chat-conversations",id)?:error("Open a conversation first.")
         require(conversation.optBoolean("joined")) { "Join this channel before sending." }
         val direct=conversation.getString("type")=="DIRECT"; val peerId=if(direct)conversation.getString("peerId") else null
         require(peerId==null || !blocked(peerId)) { "Unblock this person before sending." }
         val p=if(direct)null else current(id)?:error("Channel membership is unavailable.")
         if(p!=null) require(live(p)) { "Waiting for the channel owner to refresh membership. Your conversation is safe." }
+        if(p!=null)require(!pendingMembership(p)) {"Membership is changing. Waiting for fresh channel keys."}
+        if(threadRootId!=null){require(p!=null && !threadLocked(id,threadRootId));val root=store.get("chat-messages",threadRootId)?.getJSONObject("envelope")?.getJSONObject("body")?:error("Open the original post before replying.");require(root.getString("conversationId")==id && !root.has("threadRootId") && Instant.parse(root.getString("expiresAt"))>now());require(ChannelGovernance.capabilities(p,self()).getBoolean("canCreateThreads") || messages().filter{it.getJSONObject("envelope").getJSONObject("body").getString("conversationId")==id}.any{it.getJSONObject("envelope").getJSONObject("body").optString("threadRootId")==threadRootId}){"Your role can reply to existing threads, but cannot start one."}}
         val messageId=UUID.randomUUID().toString(); val pb=p?.getJSONObject("body"); val hash=p?.let { Protocol.hash(it) }
         val encrypted=direct || pb?.getString("visibility")=="INVITE"
         val kid=if(direct)"dm:$id:$messageId:$peerId" else "channel:$id:${pb!!.getString("epoch")}:$messageId"
         val recipient=if(direct) store.get("chat-contacts",peerId!!)?.getJSONObject("profile")?:error("This person's identity is unavailable.") else null
         val content=if(!encrypted) payload.toString() else ChatProtocol.encrypt(payload,recipient?.getJSONObject("body")?.getJSONObject("encryptionKey"),if(direct)null else Protocol.decode(store.get("chat-keys",hash!!)!!.getString("key")),kid)
-        val time=now(); val sequence=(store.get("chat-sequences",id)?.optInt("value")?:0)+1
+        // A recently received policy can be slightly ahead of this phone's clock.
+        // Keep the existing five-minute validator bound and never date a post before its authority.
+        val observed=now();val time=if(pb==null)observed else maxOf(observed,Instant.parse(pb.getString("issuedAt")))
+        val sequence=(store.get("chat-sequences",id)?.optInt("value")?:0)+1
         val body=obj("v" to 1,"kind" to "CHAT_MESSAGE","id" to messageId,"conversationId" to id,"author" to profile(),"recipientId" to peerId,"policyHash" to hash,"channelVersion" to (pb?.getInt("version")?:0),"epoch" to pb?.getString("epoch"),"sequence" to sequence,"createdAt" to time.toString(),"expiresAt" to time.plusSeconds(604800).toString(),"format" to format,"encrypted" to encrypted,"content" to content)
-        val envelope=signed(body); ChatProtocol.message(envelope,p,time)
-        save("chat-messages",messageId,obj("id" to messageId,"envelope" to envelope,"payload" to payload,"owned" to true,"hops" to 0,"receivedAt" to time.toString(),"serverSaved" to false))
+        if(threadRootId!=null)body.put("threadRootId",threadRootId)
+        val envelope=signed(body); ChatProtocol.message(envelope,p,observed)
+        save("chat-messages",messageId,obj("id" to messageId,"envelope" to envelope,"payload" to payload,"owned" to true,"hops" to 0,"receivedAt" to observed.toString(),"serverSaved" to false))
         store.put("chat-sequences",id,obj("value" to sequence)); onChange()
         runCatching { sendRecord(store.get("chat-messages",messageId)!!) }; return messageId
     }
@@ -309,7 +434,7 @@ class ChatRepository(private val context: Context, private val repository: Repos
         if(!b.isNull("recipientId"))return b.getString("recipientId")==personId && message.getBoolean("owned")
         val current=current(b.getString("conversationId"))?:return false
         val historic=store.get("chat-policy-history",b.getString("policyHash"))?.getJSONObject("policy")?:return false
-        return live(current) && ChatProtocol.member(current,personId) && (historic.getJSONObject("body").getString("visibility")=="OPEN" || ChatProtocol.member(historic,personId))
+        return live(current) && !pendingMembership(current) && ChatProtocol.member(current,personId) && (historic.getJSONObject("body").getString("visibility")=="OPEN" || ChatProtocol.member(historic,personId))
     }
     private suspend fun sendRecord(record:JSONObject) {
         val person=peer?:return; if(!session.confirmed || !eligible(record,ChatProtocol.participant(person)))return
@@ -332,10 +457,16 @@ class ChatRepository(private val context: Context, private val repository: Repos
         val p=if(b.isNull("policyHash"))null else store.get("chat-policy-history",b.getString("policyHash"))?.getJSONObject("policy")?:error("Channel history is unavailable.")
         val cp=if(p==null)null else current(b.getString("conversationId"))
         if(p!=null) require(cp!=null && live(cp)) { "Channel membership needs a refresh." }
+        if(!server && cp!=null)require(ChatProtocol.member(cp,author)){"This author's membership has been removed. Held earlier history remains available."}
+        if(cp!=null && Protocol.hash(cp)==b.getString("policyHash")){
+            require(!pendingMembership(cp)) {"Waiting for fresh membership."}
+            if(b.has("threadRootId"))require(!threadLocked(b.getString("conversationId"),b.getString("threadRootId"))) {"Thread is locked."}
+        }
         ChatProtocol.message(envelope,p,now(),history=true)
         val old=store.get("chat-messages",id)
         require(old==null || Protocol.hash(old.getJSONObject("envelope"))==Protocol.hash(envelope)) { "Conflicting message identifier." }
         if(old!=null){ if(!old.optBoolean("owned"))sendReceipt(old,"DELIVERED");return }
+        if(p!=null && b.has("threadRootId") && !ChannelGovernance.capabilities(p,author).getBoolean("canCreateThreads"))require(messages().any{it.getJSONObject("envelope").getJSONObject("body").let{held->held.getString("conversationId")==b.getString("conversationId") && held.optString("threadRootId")==b.getString("threadRootId")}}){"Receive the existing thread before this reply."}
         if(p==null)require(b.getString("recipientId")==self()) { "This private message belongs to another person." }
         val kid=if(p==null)"dm:${b.getString("conversationId")}:$id:${b.getString("recipientId")}" else "channel:${b.getString("conversationId")}:${b.getString("epoch")}:$id"
         val payload=if(!b.getBoolean("encrypted"))JSONObject(b.getString("content")) else ChatProtocol.decrypt(b.getString("content"),if(p==null)store.get("chat","encryption")!! else null,if(p==null)null else Protocol.decode(store.get("chat-keys",b.getString("policyHash"))?.getString("key")?:error("Older private history is not shared with new members.")),kid)
@@ -366,7 +497,9 @@ class ChatRepository(private val context: Context, private val repository: Repos
     } }
     suspend fun mute(id:String)=withContext(Dispatchers.IO) { lock.withLock { val c=store.get("chat-conversations",id)!!;c.put("muted",!c.optBoolean("muted"));save("chat-conversations",id,c);onChange() } }
     suspend fun block(id:String)=withContext(Dispatchers.IO) { lock.withLock { if(blocked(id))store.remove("chat-blocks",id) else save("chat-blocks",id,obj("id" to id));onChange() } }
-    suspend fun report(messageId:String,reason:String)=withContext(Dispatchers.IO) { lock.withLock { require(reason in listOf("ABUSE","SPAM","SAFETY") && store.get("chat-messages",messageId)!=null);val id=UUID.randomUUID().toString();save("chat-reports",id,obj("id" to id,"messageId" to messageId,"reason" to reason));onChange() } }
+    suspend fun report(messageId:String,reason:String)=withContext(Dispatchers.IO) { lock.withLock { require(reason in listOf("ABUSE","SPAM","SAFETY","OTHER") && store.get("chat-messages",messageId)!=null);require(store.all("chat-reports").size<100){"Report queue is full. Connect to send pending reports."};val id=UUID.randomUUID().toString();save("chat-reports",id,obj("id" to id,"messageId" to messageId,"reason" to reason));onChange() } }
+    suspend fun reportPerson(personId:String,reason:String)=withContext(Dispatchers.IO){lock.withLock{require(reason in listOf("ABUSE","SPAM","SAFETY","OTHER") && personId!=self() && store.get("chat-contacts",personId)!=null);require(store.all("chat-reports").size<100){"Report queue is full. Connect to send pending reports."};val id=UUID.randomUUID().toString();save("chat-reports",id,obj("id" to id,"personId" to personId,"reason" to reason));onChange()}}
+    fun reports(channelId:String)=store.all("chat-report-inbox").filter{report->report.getString("channelId")==channelId && !actions(channelId).any{a->val b=a.getJSONObject("envelope").getJSONObject("body");b.getString("action")=="REVIEW_REPORT" && b.getString("targetId")==report.getString("messageId") && b.getString("issuedAt")>=report.getString("createdAt")}}
     suspend fun clearConversation(id:String)=withContext(Dispatchers.IO) { lock.withLock { require(store.get("chat-conversations",id)?.optBoolean("joined")==false || id.startsWith("dm:")); messages().filter { it.getJSONObject("envelope").getJSONObject("body").getString("conversationId")==id }.forEach { store.remove("chat-messages",it.getString("id")) }; onChange() } }
     suspend fun announce()=withContext(Dispatchers.IO) { lock.withLock { announceUnlocked() } }
     private suspend fun announceUnlocked() {
@@ -379,6 +512,14 @@ class ChatRepository(private val context: Context, private val repository: Repos
         if(blocked(person))return
         for(p in policies()) if(ChatProtocol.member(p,person))session.send("CHAT_POLICY",p)
         for(join in store.all("chat-joins")) if(Instant.parse(join.getJSONObject("request").getJSONObject("body").getString("expiresAt"))>now())session.send("CHAT_JOIN",join.getJSONObject("request"))
+        for(p in policies())if(ChatProtocol.member(p,person)){
+            if(ChannelGovernance.capabilities(p,person).getBoolean("canManageMembers"))for(j in joinRequests(p.getJSONObject("body").getString("id")))session.send("CHAT_JOIN",j.getJSONObject("request"))
+            for(a in actions(p.getJSONObject("body").getString("id")).takeLast(100)){
+                val e=a.getJSONObject("envelope");val proof=store.get("chat-policy-history",e.getJSONObject("body").getString("policyHash"))?.getJSONObject("policy")
+                if(proof!=null && p.getJSONObject("body").optJSONArray("appliedActions")?.strings()?.contains(e.getJSONObject("body").getString("id"))==true)session.send("CHAT_ACTION_PROOF",obj("action" to e,"policy" to proof))else session.send("CHAT_ACTION",e)
+            }
+        }
+        for(a in store.all("chat-actions")){val e=a.getJSONObject("envelope");val b=e.getJSONObject("body");if(b.getString("action")=="REJECT_JOIN" && b.getString("targetId")==person && ChatProtocol.participant(b.getJSONObject("actor"))==self() && Instant.parse(b.getString("expiresAt"))>now())session.send("CHAT_ADMISSION_REJECTION",e)}
         val inventory=messages().filter { eligible(it,person) }.map { obj("id" to it.getString("id"),"conversationId" to it.getJSONObject("envelope").getJSONObject("body").getString("conversationId")) }
         session.send("CHAT_INVENTORY",JSONArray(inventory.take(500)))
     }
@@ -392,6 +533,8 @@ class ChatRepository(private val context: Context, private val repository: Repos
         val person=peer?.let { ChatProtocol.participant(it) }?:return@withLock
         if(blocked(person))return@withLock
         when(kind){
+            "CHAT_ADMISSION_REJECTION"->{val e=frame.getJSONObject("value");val b=e.getJSONObject("body");val join=store.get("chat-joins",b.getString("channelId"))?.getJSONObject("request")?:return@withLock;val invite=join.getJSONObject("body").optJSONObject("invitation")?:return@withLock;val descriptor=invite.getJSONObject("body");val owner=descriptor.getJSONObject("owner");ChatProtocol.profile(owner,now());require(b.get("v")==1 && b.getString("kind")=="CHAT_ACTION" && b.getString("action")=="REJECT_JOIN" && b.getString("targetId")==self() && b.getString("policyHash")==descriptor.getString("policyHash") && ChatProtocol.participant(b.getJSONObject("actor"))==ChatProtocol.participant(owner) && Instant.parse(b.getString("expiresAt"))>now() && Instant.parse(b.getString("issuedAt"))<=now().plusSeconds(300) && Protocol.verify(b,e.getString("signature"),owner.getJSONObject("body").getJSONObject("publicKey"))){"Join decision could not be verified."};store.get("chat-conversations",b.getString("channelId"))?.let{it.put("pendingJoin",false).put("joinStatus","REJECTED");save("chat-conversations",it.getString("id"),it)};store.remove("chat-joins",b.getString("channelId"))}
+            "CHAT_ACTION_PROOF"->{val value=frame.getJSONObject("value");value.exact("action","policy");val e=value.getJSONObject("action");val eb=e.getJSONObject("body");val p=current(eb.getString("channelId"))?:error("Channel is unavailable.");require(p.getJSONObject("body").optJSONArray("appliedActions")?.strings()?.contains(eb.getString("id"))==true);val proof=ChatProtocol.policy(value.getJSONObject("policy"),Instant.parse(eb.getString("issuedAt")));require(Protocol.hash(proof)==eb.getString("policyHash") && proof.getJSONObject("body").getString("id")==eb.getString("channelId") && ChatProtocol.participant(proof.getJSONObject("body").getJSONObject("owner"))==ChatProtocol.participant(p.getJSONObject("body").getJSONObject("owner")));save("chat-policy-history",Protocol.hash(proof),obj("id" to Protocol.hash(proof),"policy" to proof));receiveAction(e,false)}
             "CHAT_ATTACHMENT_META" -> {val manifest=frame.getJSONObject("value");val id=manifest.getJSONObject("body").getString("messageId");val record=store.get("chat-messages",id)?:return@withLock;verifyManifest(manifest,record);save("chat-manifests",id,obj("id" to id,"manifest" to manifest))}
             "CHAT_INVITE" -> { val link=frame.getString("value"); decodeInvite(link); onInvite(link) }
             "CHAT_DISCOVERY" -> {
@@ -408,6 +551,7 @@ class ChatRepository(private val context: Context, private val repository: Repos
                 ChatProtocol.policy(p,Instant.parse(b.getString("issuedAt")));require(b.getString("visibility")=="OPEN" || ChatProtocol.member(p,self())&&ChatProtocol.member(p,person));archive(p)
             }
             "CHAT_JOIN" -> {handleJoin(frame.getJSONObject("value"));onChange()}
+            "CHAT_ACTION" -> {receiveAction(frame.getJSONObject("value"),false)}
             "CHAT_INVENTORY" -> {
                 val values=frame.getJSONArray("value").objects(); require(values.size<=500)
                 val needed=values.filter { it.exact("id","conversationId");UUID.fromString(it.getString("id")); val c=store.get("chat-conversations",it.getString("conversationId"));c?.optBoolean("joined")==true && store.get("chat-messages",it.getString("id"))==null }.map { it.getString("id") }
@@ -422,6 +566,7 @@ class ChatRepository(private val context: Context, private val repository: Repos
         prune();renewOwned()
         val time=now();val held=messages()
         val body=obj("v" to 1,"kind" to "CHAT_SYNC","id" to UUID.randomUUID().toString(),"profile" to profile(),"issuedAt" to time.toString(),"channelIds" to JSONArray(conversations().filter{it.getString("type")=="CHANNEL"}.sortedBy{if(it.optBoolean("joined")||it.optBoolean("pendingJoin"))0 else 1}.take(16).map{it.getString("id")}),"knownMessages" to JSONArray(held.map{it.getString("id")}),"receiptMessageIds" to JSONArray(held.filter{it.optBoolean("owned")&&!it.has("readAt")}.sortedByDescending{it.getString("receivedAt")}.take(50).map{it.getString("id")}),"peers" to JSONArray(),"policies" to JSONArray(),"messages" to JSONArray(),"receipts" to JSONArray(),"joins" to JSONArray(),"blocks" to JSONArray(store.all("chat-blocks").take(100).map { it.getString("id") }),"reports" to JSONArray(store.all("chat-reports").take(8)))
+        body.put("actions",JSONArray())
         fun add(field:String,value:JSONObject,limit:Int):Boolean{
             val array=body.getJSONArray(field);if(array.length()>=limit)return false
             array.put(value);if(Protocol.canonical(body).size>82000){array.remove(array.length()-1);return false};return true
@@ -431,7 +576,9 @@ class ChatRepository(private val context: Context, private val repository: Repos
         for(contact in contacts().sortedBy{if(it.getString("id") in needed)0 else 1}){
             val p=contact.getJSONObject("profile");if(store.get("chat-server-contacts",contact.getString("id"))?.optString("hash")!=Protocol.hash(p))add("peers",p,16)
         }
-        for(p in policies()) {
+        val unsavedActions=store.all("chat-actions").filter{!it.optBoolean("serverSaved")&&!it.optBoolean("rejected")}
+        val actionPolicies=unsavedActions.mapNotNull{store.get("chat-policy-history",it.getJSONObject("envelope").getJSONObject("body").getString("policyHash"))?.getJSONObject("policy")}.distinctBy{Protocol.hash(it)}
+        for(p in (actionPolicies+policies()).distinctBy{Protocol.hash(it)}.sortedBy{it.getJSONObject("body").getInt("version")}) {
             val b=p.getJSONObject("body");val hash=Protocol.hash(p)
             if(Instant.parse(b.getString("expiresAt"))>time && (ChatProtocol.member(p,self()) || ChatProtocol.participant(b.getJSONObject("owner"))==self()) && store.get("chat-server-policies",hash)==null)add("policies",p,8)
         }
@@ -443,30 +590,41 @@ class ChatRepository(private val context: Context, private val repository: Repos
         }
         for(r in store.all("chat-receipts"))if(!r.optBoolean("serverSaved") && ChatProtocol.participant(r.getJSONObject("receipt").getJSONObject("body").getJSONObject("recipient"))==self())add("receipts",r.getJSONObject("receipt"),30)
         for(join in store.all("chat-joins"))if(Instant.parse(join.getJSONObject("request").getJSONObject("body").getString("expiresAt"))>time)add("joins",join.getJSONObject("request"),8)
+        for(p in policies())if(ChannelGovernance.capabilities(p,self()).getBoolean("canManageMembers"))for(join in joinRequests(p.getJSONObject("body").getString("id")))add("joins",join.getJSONObject("request"),8)
+        for(a in unsavedActions)if(Instant.parse(a.getJSONObject("envelope").getJSONObject("body").getString("expiresAt"))>time)add("actions",a.getJSONObject("envelope"),8)
         require(Protocol.canonical(body).size<88000) { "Too much chat work for one check. Share nearby or review an old conversation." }
         val response=JSONObject(repository.api("/chat/sync",signed(body),false)); require(response.getInt("v")==1)
         body.getJSONArray("peers").objects().forEach {save("chat-server-contacts",ChatProtocol.participant(it),obj("id" to ChatProtocol.participant(it),"hash" to Protocol.hash(it)))}
         response.getJSONArray("acceptedPolicies").strings().forEach{save("chat-server-policies",it,obj("id" to it))}
         response.getJSONArray("acceptedReceipts").strings().forEach{id->store.get("chat-receipts",id)?.let{it.put("serverSaved",true);save("chat-receipts",id,it)}}
+        response.optJSONArray("acceptedActions")?.strings()?.forEach{id->store.get("chat-actions",id)?.let{it.put("serverSaved",true);save("chat-actions",id,it)}}
+        response.optJSONArray("rejectedActions")?.objects()?.forEach{r->store.get("chat-actions",r.getString("id"))?.let{it.put("rejected",true).put("rejection",r.getString("reason"));save("chat-actions",it.getString("id"),it)}}
         response.getJSONArray("policies").objects().forEach { p-> if(store.get("chat-conversations",p.getJSONObject("body").getString("id"))!=null)applyPolicy(p) }
         response.getJSONArray("historyPolicies").objects().forEach { p-> val b=p.getJSONObject("body");val cp=current(b.getString("id"));if(cp!=null && live(cp) && ChatProtocol.participant(b.getJSONObject("owner"))==ChatProtocol.participant(cp.getJSONObject("body").getJSONObject("owner"))) {ChatProtocol.policy(p,Instant.parse(b.getString("issuedAt")));if(b.getString("visibility")=="OPEN"||ChatProtocol.member(p,self()))archive(p)} }
         response.getJSONArray("removed").strings().forEach { id-> store.get("chat-conversations",id)?.let { it.put("joined",false);save("chat-conversations",id,it) } }
+        response.optJSONArray("joinStates")?.objects()?.forEach{decision->store.get("chat-conversations",decision.getString("channelId"))?.let{c->if(!c.optBoolean("joined")){c.put("joinStatus",decision.getString("status"));if(decision.getString("status")=="REJECTED"){c.put("pendingJoin",false);store.remove("chat-joins",c.getString("id"))};save("chat-conversations",c.getString("id"),c)}}}
         response.getJSONArray("accepted").strings().forEach { id-> store.get("chat-messages",id)?.let { it.put("serverSaved",true);save("chat-messages",id,it) } }
+        response.optJSONArray("acceptedReports")?.strings()?.forEach{store.remove("chat-reports",it)}
+        response.optJSONArray("reports")?.objects()?.let{reports->store.all("chat-report-inbox").forEach{store.remove("chat-report-inbox",it.getString("id"))};reports.take(100).forEach{r->if(capabilities(r.getString("channelId"))?.optBoolean("canModerate")==true)save("chat-report-inbox",r.getString("id"),r)}}
         response.getJSONArray("rejected").objects().forEach { rejected->store.get("chat-messages",rejected.getString("id"))?.let { it.put("attention",true).put("serverSaved",true);save("chat-messages",it.getString("id"),it) } }
+        response.getJSONArray("joins").objects().forEach { join->runCatching {handleJoin(join)} }
         response.getJSONArray("messages").objects().forEach { message->runCatching {receiveMessage(message,0,true)} }
+        response.optJSONArray("actions")?.objects()?.forEach { a->runCatching {receiveAction(a,true)} }
         response.getJSONArray("receipts").objects().forEach { receipt->runCatching {receiveReceipt(receipt)} }
         response.getJSONArray("joins").objects().forEach { join->runCatching {handleJoin(join)} }
         announceUnlocked(); prune();onChange()
     } }
     private suspend fun prune() {
         val time=now();val expired=store.all("chat-messages").filter { Instant.parse(it.getJSONObject("envelope").getJSONObject("body").getString("expiresAt"))<=time }
+        store.all("chat-actions").filter{Instant.parse(it.getJSONObject("envelope").getJSONObject("body").getString("issuedAt"))<time.minusSeconds(7*86400)}.forEach{store.remove("chat-actions",it.getString("id"))}
+        store.all("chat-joins").filter{Instant.parse(it.getJSONObject("request").getJSONObject("body").getString("expiresAt"))<=time}.forEach{j->store.remove("chat-joins",j.getString("id"));store.get("chat-conversations",j.getString("id"))?.takeIf{!it.optBoolean("joined")}?.let{it.put("pendingJoin",false).put("joinStatus","EXPIRED");save("chat-conversations",it.getString("id"),it)}}
         expired.forEach { store.remove("chat-messages",it.getString("id"));store.remove("chat-manifests",it.getString("id"));store.remove("chat-media-progress",it.getString("id")) }
         store.all("chat-invites").filter { Instant.parse(it.getString("expiresAt"))<=time }.forEach { store.remove("chat-invites",it.getString("id")) }
         val messages=store.all("chat-messages");val ids=messages.map{it.getString("id")}.toSet()
         val attachmentIds=messages.mapNotNull{it.getJSONObject("payload").optJSONObject("attachment")?.optString("id")}.toSet()
         expired.mapNotNull{it.getJSONObject("payload").optJSONObject("attachment")?.optString("id")}.filter{it !in attachmentIds}.forEach{session.removeFile(it)}
         store.all("chat-receipts").filter{it.getJSONObject("receipt").getJSONObject("body").getString("messageId") !in ids}.forEach{store.remove("chat-receipts",it.getString("id"))}
-        val retained=messages.mapNotNull{val b=it.getJSONObject("envelope").getJSONObject("body");if(b.isNull("policyHash"))null else b.getString("policyHash")}.toSet()+policies().map{Protocol.hash(it)}
+        val retained=messages.mapNotNull{val b=it.getJSONObject("envelope").getJSONObject("body");if(b.isNull("policyHash"))null else b.getString("policyHash")}.toSet()+policies().map{Protocol.hash(it)}+store.all("chat-actions").map{it.getJSONObject("envelope").getJSONObject("body").getString("policyHash")}
         store.all("chat-policy-history").filter{it.getString("id") !in retained}.forEach{store.remove("chat-policy-history",it.getString("id"));store.remove("chat-keys",it.getString("id"));store.remove("chat-server-policies",it.getString("id"))}
     }
     private fun renewOwned(){

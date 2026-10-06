@@ -35,10 +35,10 @@ const output = execFileSync(
     '-w',
     '-e',
     'class',
-    'org.saathi.android.ChatStoreTest,org.saathi.android.SecureStoreTest,org.saathi.android.ChatReadUiTest',
+    'org.saathi.android.ChatStoreTest,org.saathi.android.SecureStoreTest,org.saathi.android.ChatReadUiTest,org.saathi.android.ChannelGovernanceStoreTest,org.saathi.android.CommunityStoreTest',
     'org.saathi.android.dev.test/androidx.test.runner.AndroidJUnitRunner',
   ],
-  { encoding: 'utf8', timeout: 180000 },
+  { encoding: 'utf8', timeout: 240000 },
 );
 console.log(`Encrypted store instrumentation on ${model}:\n${output}`);
-if (!/OK \(5 tests\)/.test(output)) process.exitCode = 1;
+if (!/OK \(13 tests\)/.test(output)) process.exitCode = 1;

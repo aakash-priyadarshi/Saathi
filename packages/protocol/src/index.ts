@@ -18,6 +18,7 @@ export * from './crypto';
 export * from './chat';
 export * from './chat-encryption';
 export * from './chat-attachments';
+export * from './community';
 import { publicKeySchema, bytes, hash, sign, verify, exportPublic, type PublicKey } from './crypto';
 export const MAX_EVENT_BYTES = 65536;
 const common = {
@@ -79,6 +80,8 @@ export const receiptBodySchema = z
     signatureHash: z.string().regex(/^[a-f0-9]{64}$/),
     status: z.enum(['PUBLISHED', 'ACCEPTED', 'REJECTED', 'CONFLICT', 'INVALIDATED']),
     recordedAt: z.string().datetime(),
+    receivedAt: z.string().datetime().optional(),
+    publishedAt: z.string().datetime().optional(),
     publicId: z.string().optional(),
     fieldId: z.string().uuid().optional(),
     message: z.string().max(400),
@@ -117,7 +120,11 @@ export async function validEnvelope(envelope: Envelope) {
     (await verify(envelope.body, envelope.signature, envelope.publicKey))
   );
 }
-export async function validReceipt(receipt: Receipt, key: PublicKey, envelope: Envelope) {
+export async function validReceipt(
+  receipt: Receipt,
+  key: PublicKey,
+  envelope: { body: { id: string; payloadHash: string }; signature: string },
+) {
   return (
     receipt.body.eventId === envelope.body.id &&
     receipt.body.payloadHash === envelope.body.payloadHash &&

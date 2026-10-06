@@ -1,0 +1,83 @@
+package org.saathi.android
+
+import android.app.Application
+import androidx.lifecycle.viewModelScope
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.*
+import org.json.JSONObject
+import org.junit.Assert.*
+import org.junit.Test
+import org.junit.runner.RunWith
+import java.util.UUID
+
+@RunWith(AndroidJUnit4::class)
+class ChannelGovernanceStoreTest {
+    @Test fun qrRoundTripPreservesRecipientApprovalAndForgeryChecks():Unit=runBlocking {
+        val context=InstrumentationRegistry.getInstrumentation().targetContext;val names=List(2){"test-qr-${UUID.randomUUID()}"};val scope=CoroutineScope(SupervisorJob()+Dispatchers.Default);val repos=names.map{Repository(context,it)};val chats=repos.map{ChatRepository(context,it,PeerSession(context,it,scope))}
+        try{chats[0].rename("Fictional QR inviter");chats[1].rename("Fictional QR applicant");val channel=chats[0].create("QR approval test","INVITE","DISCUSSION","INVITE_PLUS_APPROVAL");val link=chats[0].invite(channel,chats[1].profile());assertTrue(link.toByteArray().size<=1800);val matrix=com.google.zxing.MultiFormatWriter().encode(link,com.google.zxing.BarcodeFormat.QR_CODE,800,800);val pixels=IntArray(800*800){i->if(matrix[i%800,i/800])android.graphics.Color.BLACK else android.graphics.Color.WHITE};val decoded=com.google.zxing.MultiFormatReader().decode(com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(com.google.zxing.RGBLuminanceSource(800,800,pixels))),mapOf(com.google.zxing.DecodeHintType.POSSIBLE_FORMATS to listOf(com.google.zxing.BarcodeFormat.QR_CODE),com.google.zxing.DecodeHintType.TRY_HARDER to true)).text;assertEquals(link,decoded);assertEquals("CHAT_ADMISSION",chats[1].decodeInvite(decoded).getJSONObject("body").getString("kind"));assertTrue(runCatching{chats[0].decodeInvite(decoded)}.isFailure)
+            val altered=chats[1].decodeInvite(decoded);altered.getJSONObject("body").put("name","Forged channel");val forged="cjpswarm://invite/"+Protocol.b64(altered.toString().toByteArray());assertTrue(runCatching{chats[1].decodeInvite(forged)}.isFailure);chats[1].acceptInvite(decoded);assertNull(chats[1].current(channel));assertTrue(chats[1].conversations().single().optBoolean("pendingJoin"));assertTrue(runCatching{chats[1].acceptInvite(decoded)}.isFailure)
+        }finally{scope.cancel();repos.forEachIndexed{i,r->r.store.clearPrivate();r.store.close();context.deleteDatabase("saathi-${names[i]}.db")}}
+    }
+    private class Sink:PeerTransport {
+        val frames=mutableListOf<JSONObject>()
+        override val connected=true;override val mediaAvailable=false;override val session=UUID.randomUUID().toString()
+        override suspend fun send(frame:JSONObject){frames.add(JSONObject(frame.toString()))}
+        override fun disconnect(){}
+    }
+    @Test fun keystoreBackedAdmissionThreadsBanAndFreshKeyExclusion():Unit=runBlocking {
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val scope=CoroutineScope(SupervisorJob()+Dispatchers.Default)
+        val names=listOf("test-governance-owner-${UUID.randomUUID()}","test-governance-member-${UUID.randomUUID()}")
+        val repositories=names.map{Repository(context,it)}
+        val sessions=repositories.map{PeerSession(context,it,scope).apply{transport=Sink();confirmed=true}}
+        val owner=ChatRepository(context,repositories[0],sessions[0]);val member=ChatRepository(context,repositories[1],sessions[1])
+        suspend fun exchangeProfiles(){owner.receive(obj("kind" to "CHAT_PROFILE","value" to member.profile()));member.receive(obj("kind" to "CHAT_PROFILE","value" to owner.profile()))}
+        suspend fun policy(id:String){member.receive(obj("kind" to "CHAT_POLICY","value" to owner.current(id)!!))}
+        try{
+            owner.rename("Fictional owner");member.rename("Fictional applicant");exchangeProfiles()
+            repositories[0].store.put("trust","clock",obj("time" to java.time.Instant.now().plusSeconds(30).toString()))
+            val channel=owner.create("Fictional private announcements","INVITE","ANNOUNCEMENT","INVITE_PLUS_APPROVAL")
+            val link=owner.invite(channel,member.profile());val descriptor=member.decodeInvite(link)
+            assertEquals("CHAT_ADMISSION",descriptor.getJSONObject("body").getString("kind"));assertFalse(descriptor.toString().contains("\"keys\""))
+            member.acceptInvite(link);assertNull(member.current(channel));assertTrue(member.messages().isEmpty())
+            assertTrue(runCatching{member.acceptInvite(link)}.isFailure)
+            owner.receive(obj("kind" to "CHAT_JOIN","value" to repositories[1].store.get("chat-joins",channel)!!.getJSONObject("request")))
+            assertEquals(1,owner.joinRequests(channel).size)
+            val sent=(sessions[0].transport as Sink).frames;sent.clear()
+            owner.moderate(channel,"APPROVE_JOIN",ChatProtocol.participant(member.profile()))
+            assertTrue("Approval must deliver the new policy to the newly admitted peer",sent.any{it.optString("kind")=="CHAT_POLICY"})
+            sent.filter{it.optString("kind") in listOf("CHAT_POLICY","CHAT_ACTION_PROOF")}.forEach{member.receive(it)}
+            assertTrue(member.conversations().single().optBoolean("joined"));assertNull(repositories[1].store.get("chat-joins",channel))
+            assertTrue(runCatching{member.send(channel,obj("text" to "Raw forbidden announcement"))}.isFailure)
+            val root=owner.send(channel,obj("text" to "Fictional announcement"));member.receive(obj("kind" to "CHAT_MESSAGE","value" to obj("envelope" to owner.messages().single().getJSONObject("envelope"),"hops" to 1)))
+            val reply=member.send(channel,obj("text" to "Fictional thread reply"),threadRootId=root);assertTrue(reply.isNotBlank())
+            val replyEnvelope=member.messages().first{it.getString("id")==reply}.getJSONObject("envelope")
+            assertTrue(java.time.Instant.parse(replyEnvelope.getJSONObject("body").getString("createdAt"))>=java.time.Instant.parse(owner.current(channel)!!.getJSONObject("body").getString("issuedAt")))
+            ChatProtocol.message(replyEnvelope,owner.current(channel))
+            owner.moderate(channel,"LOCK_THREAD",root);policy(channel)
+            assertTrue(member.threadLocked(channel,root));assertTrue(runCatching{member.send(channel,obj("text" to "Raw forbidden locked reply"),threadRootId=root)}.isFailure)
+            val identity=ChatProtocol.participant(member.profile());owner.moderate(channel,"BAN",identity);val removed=owner.current(channel)!!;policy(channel)
+            assertFalse(member.conversations().single().optBoolean("joined"));assertNull(repositories[1].store.get("chat-keys",Protocol.hash(removed)))
+            member.rename("Fictional renamed applicant");assertEquals(identity,ChatProtocol.participant(member.profile()))
+            assertTrue(runCatching{owner.invite(channel,member.profile())}.isFailure)
+            owner.moderate(channel,"UNBAN",identity);val next=owner.invite(channel,member.profile());member.acceptInvite(next)
+            assertTrue(member.conversations().single().optBoolean("pendingJoin"));assertFalse(member.conversations().single().optBoolean("joined"))
+        }finally{scope.cancel();repositories.forEachIndexed{i,r->r.store.clearPrivate();r.store.close();context.deleteDatabase("saathi-${names[i]}.db")}}
+    }
+    @Test fun appearanceAndRelayPreferencesSurviveReopenWithoutChangingIdentity():Unit=runBlocking {
+        val app=InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as Application
+        val namespace="test-settings-${UUID.randomUUID()}"
+        val vm=SaathiViewModel(app,namespace,false)
+        try{
+            val identity=ChatProtocol.participant(vm.chat.profile())
+            vm.preference("appearance","DARK");vm.preference("relay","WIFI");vm.preference("dailyLimitMiB",25)
+            assertEquals("DARK",vm.state.value.preferences.getString("appearance"))
+            withTimeout(5000){while(vm.preferences().optInt("dailyLimitMiB")!=25 || vm.preferences().optString("appearance")!="DARK" || vm.preferences().optString("relay")!="WIFI")delay(25)}
+            val reopened=Repository(app,namespace)
+            try{assertEquals("DARK",reopened.store.get("preferences","local")!!.getString("appearance"));assertEquals(identity,ChatProtocol.participant(reopened.store.get("chat","profile")!!))}finally{reopened.store.close()}
+            vm.preference("appearance","LIGHT");assertEquals("LIGHT",vm.state.value.preferences.getString("appearance"));vm.preference("appearance","SYSTEM");assertEquals("SYSTEM",vm.state.value.preferences.getString("appearance"))
+            withTimeout(5000){while(vm.preferences().optString("appearance")!="SYSTEM")delay(25)}
+        }finally{vm.viewModelScope.cancel();vm.disconnect();vm.repository.store.clearPrivate();vm.repository.store.close();app.deleteDatabase("saathi-$namespace.db")}
+    }
+}

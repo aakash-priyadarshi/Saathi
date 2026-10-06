@@ -84,7 +84,10 @@ export class PublicReadService {
       where: {
         moderation: 'APPROVED',
         publishAt: { lte: new Date() },
-        organization: { active: true, verified: true },
+        OR: [
+          { organization: { active: true, verified: true } },
+          { organizationId: null, participantName: { not: null } },
+        ],
       },
       include: {
         organization: true,
@@ -96,14 +99,32 @@ export class PublicReadService {
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
+    const participants = await this.db.communityEvent.findMany({
+      where: {
+        id: { in: posts.filter((p) => p.participantName).map((p) => p.id) },
+        type: 'REPORT',
+      },
+      select: { id: true, authorId: true },
+    });
     const base = env.STORAGE_PROVIDER === 'local' ? '/api/v1/public/media' : env.S3_PUBLIC_URL;
     return posts.map((p) => ({
       id: p.id,
       caption: p.caption,
       createdAt: p.createdAt.toISOString(),
-      organization: { name: p.organization.name, verified: p.organization.verified },
-      author: p.author,
-      reliefPoint: { name: p.reliefPoint.name, publicLocation: p.reliefPoint.publicLocation },
+      organization: {
+        name: p.organization?.name ?? 'Participant report',
+        verified: p.organization?.verified ?? false,
+      },
+      author: p.author ?? { displayName: p.participantName ?? 'Participant' },
+      reliefPoint: {
+        name: p.reliefPoint?.name ?? p.publicArea ?? 'Public area',
+        publicLocation: p.reliefPoint?.publicLocation ?? p.publicArea ?? 'Public area',
+      },
+      verificationState: p.participantName ? 'PARTICIPANT' : 'VERIFIED',
+      participantId: participants.find((r) => r.id === p.id)?.authorId ?? null,
+      receivedAt: p.receivedAt.toISOString(),
+      publishedAt: p.publishedAt?.toISOString() ?? p.publishAt.toISOString(),
+      contentWarning: p.contentWarning,
       requestPublicId: p.request?.publicId ?? null,
       media: p.media
         .filter((m) => m.publicKey)

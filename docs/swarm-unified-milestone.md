@@ -1,0 +1,37 @@
+# Unified CJP Swarm milestone
+
+Extended `main` baseline `8a9d99d` on 6 October 2026. Existing JOSE private chat, encrypted Android storage, signed receipts, stable conversation IDs, resumable files, transport adapters and verified relief/donation authority are preserved. This is a development/QA implementation; production security and hosted distribution remain gated.
+
+| Area          | Implemented behavior                                                                                                                                                                                 |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Communication | Five explicit role ceilings; discussion/announcement authorization; separate signed threads/unread; reactions, locks, hide and report review                                                         |
+| Membership    | Key-free recipient-bound approval descriptors, explicit review, delegated decisions, fresh owner policy/keys, stable-identity remove/ban/unban and separate personal block                           |
+| Needs         | Official Needs retained; signed temporary Nearby Help with edits, offers, assignment, resolution, cancellation, expiry, cooldown and bounded active requests; explicit authorized aggregation review |
+| Updates       | Unverified ordinary text/photo/video reports, original author/time across peers, sanitized bounded derivatives, resumable media, consenting gateway and existing central publication/moderation      |
+| QR            | Existing authenticated invite as QR; bounded local camera decoder, verification and explicit review; manual fallback and denial/error states                                                         |
+| More          | Immediate durable System/Light/Dark, presentation-only name edits, visibility/relay/media/battery/daily allowance controls and safe media-cache cleanup                                              |
+| Identity      | Supplied cream/tricolor ant lockup, finite 650 ms startup reveal, tap/Back skip and reduced-motion/touch-exploration immediate path                                                                  |
+
+See [community architecture](swarm-community-architecture.md), [brand provenance](swarm-brand-assets.md) and [group crypto/scale ADR](adr/0010-group-crypto-and-announcement-scale.md).
+
+## Automated evidence
+
+Current local verification passed 33 shared/API unit cases, 54 PostgreSQL integration cases and all 14 desktop/mobile-width browser regressions. Native build/lint and 16 JVM cases pass, including network consent, separate media consent, battery/storage bounds and conservative daily retry reservations. Physical storage/media and radio results below bind to their actual APK hashes in the final Android evidence record.
+
+Raw signed protocol cases cover permission bypass, stale/demoted authority, conflicting actions, thread-start versus reply permission, key exclusion, admission/replay, Help lifecycle/limits, altered public media and competing-gateway deduplication. Browser regression retains Needs, donations and offline relief behavior. Viewport emulation is not a physical browser test.
+
+## Physical evidence and corrections
+
+S24 (SM-S921B) and tablet (SM-X510), both Android 16, are explicitly approved. Thirteen storage/viewport/governance/community cases passed on each on the final build (S24 49.879 seconds; tablet 31.065 seconds). These include local QR image encode/decode, approval key delivery, identity/theme persistence, photo orientation/metadata removal and a two-second video remux. A real duration defect was corrected by preserving its final sample duration; selected original files remain unchanged.
+
+The first new nearby approval run exposed an owner-policy delivery bug: the previous-roster check excluded a newly admitted peer. Corrected radio runs passed approval, announcement reply, lock enforcement, stable-ID ban after rename, exclusion from a fresh post, unban, Help request/offer/assignment/resolution and sanitized photo transfer/hash. Reversing the devices exposed small clock skew at an immediate channel post. Posts now respect their signed policy's earliest authority time within the unchanged five-minute bound; local receipt time remains separate. Help offers similarly retain the original two-hour expiry while tolerating bounded clock skew. A real tablet ANR was fixed by conflating background encrypted-store reads and publishing one snapshot outside state-update retry loops; a burst-of-100 interaction regression passes.
+
+A combined 4 MiB encrypted server regression reached its fixture time limit before the new community steps; it is not a full passing run. An earlier run passed encrypted radio resume and server upload/download before its admission failure. Those scopes remain separate. The community-only fixture retains DM/read/dedup/open/private/photo/AAC checks and skips the separately recorded large encrypted server transfer. The tablet lacked validated internet, so its gateway correctly refused forwarding. The final reversed run passed completely with the S24 as consenting carrier (63.267 seconds tablet; 63.908 seconds S24), including original-author text/media acceptance, relay-OFF refusal and peer withdrawal. The tablet remained attached to the fixture API through USB; this is not an author-absent test. Exact artifact and barrier scope are recorded in the [radio measurements](benchmarks/android-community-nearby.json).
+
+## Remaining qualification gates
+
+Actual camera-to-tablet-screen QR scanning passed with the owner positioning the S24: “Invitation captured”, followed by an authenticated pending-approval channel state with no history access. This single physical scan has a separate preceding-build hash; it does not qualify every camera/lighting condition. Three-native-peer report relay, range, battery endurance, screen lock/reboot, background execution, difficult real videos and full internet-loss transitions remain separate hardware qualification. Two devices cannot prove three-device forwarding. Earlier hardware calls retain their own artifact scope; no general internet-call service is introduced.
+
+Private groups remain capped at 16 policy entries, including removed members. Known high-consequence actions pause posting until fresh owner-issued material arrives. An isolated peer can retain its previous policy until its six-hour expiry. There is no owner-independent rekeying, forward secrecy, post-compromise security, universal deletion or independently audited sensitive-group claim. Release private chat remains disabled pending independent review.
+
+Railway staging is not deployed. Hosted QA needs approved deployment, TLS/bootstrap, external trust and persistent signing. Production also needs provider/decoder containment, retention, backups, alerts and load/security review. Public participant fingerprints remain linkable; report verification labels and carrier receipts must not be overstated.

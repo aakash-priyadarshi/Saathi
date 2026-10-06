@@ -10,6 +10,7 @@ import {
   type ChannelPolicy,
   type ChatMessage,
   type ChatSync,
+  type ChatAction,
 } from '../packages/protocol/src';
 export async function chatPerson(name: string) {
   const signing = await generateKeys(),
@@ -143,4 +144,28 @@ export async function chatBatch(person: Person, fields: Partial<ChatSync['body']
     ...fields,
   };
   return { body, signature: await sign(body, person.signing.privateKey) };
+}
+export async function channelAction(
+  actor: Person,
+  policy: ChannelPolicy,
+  action: ChatAction['body']['action'],
+  targetId: string,
+  role?: ChatAction['body']['role'],
+) {
+  const body: ChatAction['body'] = {
+    v: 1,
+    kind: 'CHAT_ACTION',
+    id: randomUUID(),
+    channelId: policy.body.id,
+    actor: actor.profile,
+    policyHash: await hash(policy),
+    version: policy.body.version,
+    action,
+    targetId,
+    issuedAt: new Date().toISOString(),
+    expiresAt: policy.body.expiresAt,
+    ...(role ? { role } : {}),
+    ...(['REACT', 'UNREACT'].includes(action) ? { reaction: 'THANKS' as const } : {}),
+  };
+  return { body, signature: await sign(body, actor.signing.privateKey) };
 }

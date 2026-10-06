@@ -101,13 +101,13 @@ class Repository(context: Context, storageScope: String = BuildConfig.ENVIRONMEN
             return String(buffer)
         }
     }
-    suspend fun api(path: String, body: JSONObject? = null, authenticated: Boolean = false, method: String = if (body == null) "GET" else "POST", idempotencyKey: String? = null): String = withContext(Dispatchers.IO) {
+    suspend fun api(path: String, body: JSONObject? = null, authenticated: Boolean = false, method: String = if (body == null) "GET" else "POST", idempotencyKey: String? = null, responseLimit:Int=2*1024*1024): String = withContext(Dispatchers.IO) {
         val config = configuration ?: error("Verified service information is unavailable. Saved work is safe.")
         try { ServiceConfiguration.verify(config, root, environment, BuildConfig.VERSION_CODE, config, config.getJSONObject("body").getLong("version"), clock()) } catch (e: Exception) { reachable = false; throw e }
         val endpoints = config.getJSONObject("body").getJSONArray("apiEndpoints").strings()
         var failure: Exception? = null
         for (endpoint in endpoints) {
-            try { return@withContext fetch(endpoint.trimEnd('/') + "/api/v1" + path, body, authenticated, method = method, idempotencyKey = idempotencyKey).also { reachable = true; lastChecked = Instant.now().toString() } }
+            try { return@withContext fetch(endpoint.trimEnd('/') + "/api/v1" + path, body, authenticated, limit=responseLimit, method = method, idempotencyKey = idempotencyKey).also { reachable = true; lastChecked = Instant.now().toString() } }
             catch (e: Exception) {
                 if (e is ApiFailure) { reachable = true; lastChecked = Instant.now().toString(); throw e }
                 failure = if (e is java.io.IOException) IllegalStateException("Swarm could not be reached. Saved work is safe. Reconnect and retry the original action.", e) else e; if (body != null) break /* Signed event retries are explicit; ordinary writes never guess across endpoints. */

@@ -68,27 +68,30 @@ object ChatProtocol {
     }
     fun participant(profile: JSONObject) = profile.getJSONObject("body").getString("id")
     fun dm(a: String, b: String): String { id(a); id(b); require(a != b); return "dm:" + Protocol.hash(JSONArray(listOf("SWARM_DM_V1") + listOf(a,b).sorted())) }
-    fun member(policy: JSONObject, person: String): Boolean = !policy.getJSONObject("body").getBoolean("deleted") && policy.getJSONObject("body").getJSONArray("members").objects().any { participant(it.getJSONObject("profile")) == person && it.isNull("removedAt") }
+    fun member(policy: JSONObject, person: String): Boolean = ChannelGovernance.capabilities(policy,person).getBoolean("canRead")
     fun policy(policy: JSONObject, now: Instant = Instant.now()): JSONObject {
         require(Protocol.canonical(policy).size <= 22000)
-        val b = signed(policy); b.exact("v","kind","id","name","visibility","owner","version","epoch","issuedAt","expiresAt","deleted","members","keys")
+        val b = signed(policy); b.exactOptional(listOf("v","kind","id","name","visibility","owner","version","epoch","issuedAt","expiresAt","deleted","members","keys"),listOf("settings","bannedIds","appliedActions","moderation"))
         require(b.get("v") == 1 && b.getString("kind") == "CHAT_CHANNEL"); uuid(b.getString("id")); uuid(b.getString("epoch"))
         val name=text(b,"name",48); require(name.trim()==name && b.getString("visibility") in listOf("OPEN","INVITE") && b.get("deleted") is Boolean && b.get("version") is Number && b.getLong("version") in 1..Int.MAX_VALUE && b.getDouble("version")==b.getLong("version").toDouble())
         plainName(name)
         time(b.getString("issuedAt"),b.getString("expiresAt"),21600,now)
         val owner=profile(b.getJSONObject("owner"),now); require(Protocol.verify(b,policy.getString("signature"),owner.getJSONObject("body").getJSONObject("publicKey")))
         val members=b.getJSONArray("members").objects(); require(members.size in 1..16)
-        members.forEach { it.exact("profile","role","joinedAt","removedAt"); profile(it.getJSONObject("profile"),now); require(it.getString("role") in listOf("OWNER","MODERATOR","MEMBER")); require(Instant.parse(it.getString("joinedAt")) <= now.plusSeconds(300)); if(!it.isNull("removedAt")) require(Instant.parse(it.getString("removedAt")) >= Instant.parse(it.getString("joinedAt")) && Instant.parse(it.getString("removedAt"))<=now.plusSeconds(300)) }
+        members.forEach { it.exact("profile","role","joinedAt","removedAt"); profile(it.getJSONObject("profile"),now); require(it.getString("role") in ChannelGovernance.roles); require(Instant.parse(it.getString("joinedAt")) <= now.plusSeconds(300)); if(!it.isNull("removedAt")) require(Instant.parse(it.getString("removedAt")) >= Instant.parse(it.getString("joinedAt")) && Instant.parse(it.getString("removedAt"))<=now.plusSeconds(300)) }
         require(members.map { participant(it.getJSONObject("profile")) }.distinct().size==members.size)
         require(members.count { it.getString("role")=="OWNER" }==1 && members.any { it.getString("role")=="OWNER" && participant(it.getJSONObject("profile"))==participant(owner) && it.isNull("removedAt") })
         val active=members.filter { it.isNull("removedAt") }.map { participant(it.getJSONObject("profile")) }.sorted()
+        ChannelGovernance.settings(b,active)
         val keys=b.getJSONArray("keys").objects(); require(keys.size<=16)
         keys.forEach { it.exact("participantId","jwe"); id(it.getString("participantId")); require(text(it,"jwe",2048).length>=100) }
         keys.forEach{header(it.getString("jwe"),"ECDH-ES","channel:${b.getString("id")}:${b.getString("epoch")}:${it.getString("participantId")}")}
-        require(if(b.getString("visibility")=="OPEN") keys.isEmpty() else keys.map { it.getString("participantId") }.sorted()==active)
+        val readers=active.filter{ChannelGovernance.capabilities(obj("body" to JSONObject(b.toString()).put("deleted",false)),it).getBoolean("canRead")}
+        require(if(b.getString("visibility")=="OPEN") keys.isEmpty() else keys.map { it.getString("participantId") }.sorted()==readers)
         return policy
     }
     fun invite(invite: JSONObject, recipient: String, now: Instant=Instant.now()): JSONObject {
+        if(invite.getJSONObject("body").optString("kind")=="CHAT_ADMISSION") return ChannelGovernance.admission(invite,recipient,now)
         val b=signed(invite); b.exact("v","kind","id","policy","recipientId","issuedAt","expiresAt")
         require(b.get("v")==1 && b.getString("kind")=="CHAT_INVITE"); uuid(b.getString("id"))
         time(b.getString("issuedAt"),b.getString("expiresAt"),21600,now)
@@ -99,19 +102,22 @@ object ChatProtocol {
     }
     fun message(message: JSONObject, policy: JSONObject?, now: Instant=Instant.now(), history: Boolean=false): JSONObject {
         require(Protocol.canonical(message).size<=22000)
-        val b=signed(message); b.exact("v","kind","id","conversationId","author","recipientId","policyHash","channelVersion","epoch","sequence","createdAt","expiresAt","format","encrypted","content")
+        val b=signed(message); b.exactOptional(listOf("v","kind","id","conversationId","author","recipientId","policyHash","channelVersion","epoch","sequence","createdAt","expiresAt","format","encrypted","content"),listOf("threadRootId"))
+        if(b.has("threadRootId"))uuid(b.getString("threadRootId"))
         require(b.get("v")==1 && b.getString("kind")=="CHAT_MESSAGE"); uuid(b.getString("id"))
         text(b,"conversationId",80); text(b,"content",14000); require(b.get("encrypted") is Boolean && b.get("sequence") is Number && b.getDouble("sequence")==b.getLong("sequence").toDouble() && b.getLong("sequence") in 1..Int.MAX_VALUE)
         time(b.getString("createdAt"),b.getString("expiresAt"),604800,now)
         require(b.getString("format") in listOf("TEXT","PHOTO","VIDEO","VOICE","FILE","SYSTEM","RELIEF"))
         val author=profile(b.getJSONObject("author"),now); require(Protocol.verify(b,message.getString("signature"),author.getJSONObject("body").getJSONObject("publicKey")))
         if(!b.isNull("recipientId")) {
-            require(b.getString("conversationId")==dm(participant(author),b.getString("recipientId")) && b.getBoolean("encrypted") && b.isNull("policyHash") && b.get("channelVersion")==0 && b.isNull("epoch"))
+            require(b.getString("conversationId")==dm(participant(author),b.getString("recipientId")) && b.getBoolean("encrypted") && b.isNull("policyHash") && b.get("channelVersion")==0 && b.isNull("epoch") && !b.has("threadRootId"))
         } else {
             val p=policy ?: error("Channel membership is unavailable.")
             policy(p,if(history) Instant.parse(b.getString("createdAt")) else now); val pb=p.getJSONObject("body")
             require(member(p,participant(author)) && b.getString("conversationId")==pb.getString("id") && b.getString("policyHash")==Protocol.hash(p) && b.getInt("channelVersion")==pb.getInt("version") && b.getString("epoch")==pb.getString("epoch") && b.getBoolean("encrypted")==(pb.getString("visibility")=="INVITE"))
             require(Instant.parse(b.getString("createdAt"))>=Instant.parse(pb.getString("issuedAt")) && Instant.parse(b.getString("createdAt"))<Instant.parse(pb.getString("expiresAt")))
+            val caps=ChannelGovernance.capabilities(p,participant(author))
+            require(caps.getBoolean(if(b.has("threadRootId"))"canReplyInThreads" else "canPostTopLevel") && (b.getString("format") !in listOf("PHOTO","VIDEO","VOICE","FILE") || caps.getBoolean("canAttachMedia"))) {"Your channel role does not permit this post."}
         }
         if(b.getBoolean("encrypted"))header(b.getString("content"),if(b.isNull("recipientId"))"dir" else "ECDH-ES",if(b.isNull("recipientId"))"channel:${b.getString("conversationId")}:${b.getString("epoch")}:${b.getString("id")}" else "dm:${b.getString("conversationId")}:${b.getString("id")}:${b.getString("recipientId")}")
         else payload(JSONObject(b.getString("content")),b.getString("format"))
@@ -127,9 +133,10 @@ object ChatProtocol {
         return receipt
     }
     fun join(join: JSONObject, now: Instant=Instant.now()): JSONObject {
-        val b=signed(join); b.exact("v","kind","id","channelId","participant","action","issuedAt","expiresAt")
+        val b=signed(join); b.exactOptional(listOf("v","kind","id","channelId","participant","action","issuedAt","expiresAt"),listOf("invitation"))
         require(b.get("v")==1 && b.getString("kind")=="CHAT_JOIN" && b.getString("action") in listOf("JOIN","LEAVE")); uuid(b.getString("id")); uuid(b.getString("channelId"))
         time(b.getString("issuedAt"),b.getString("expiresAt"),21600,now); val p=profile(b.getJSONObject("participant"),now)
+        b.optJSONObject("invitation")?.let {ChannelGovernance.admission(it,participant(p),now);require(b.getString("action")=="JOIN" && it.getJSONObject("body").getString("channelId")==b.getString("channelId"))}
         require(Protocol.verify(b,join.getString("signature"),p.getJSONObject("body").getJSONObject("publicKey")))
         return join
     }

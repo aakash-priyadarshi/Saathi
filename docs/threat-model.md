@@ -1,5 +1,22 @@
 # Threat model
 
+The unified community milestone adds public participant statements alongside
+verified relief work. A valid signing identity is neither a verified volunteer
+nor a promise that a report is true. Original-author signatures, strict field and
+media bounds, requester-owned revisions, expiry, quotas, review and visible
+unverified labeling address impersonation, spam and unsafe public distribution.
+Public fingerprints remain linkable. Personal blocks filter future public posts;
+they do not remotely erase copies or become global bans.
+
+Private approval descriptors expose neither keys nor roster. Fresh owner-issued
+epochs exclude removed/banned readers once learned; isolated peers can retain
+their older policy until its six-hour expiry. Conflicting delegated actions
+pause affected work for a fresh owner policy. Historical action proofs disclose
+only signed authority metadata to current members and do not supply older keys.
+Owner-independent rekeying, forward secrecy, post-compromise security, universal
+deletion and large private audiences remain outside the current security claim.
+See [community design](swarm-community-architecture.md) for relay/resource bounds.
+
 Native Android adds an independently pinned configuration root, encrypted local records and non-exportable Keystore author identities. Unlocked/compromised devices can still expose plaintext and invoke keys. Browser IndexedDB remains origin-script accessible and is not claimed encrypted at rest. See [native architecture](android-architecture.md), [root/receipt lifecycle](adr/0003-signed-service-configuration.md) and [deployment gates](deployment-resilience.md).
 
 Hosted operations now fail closed without a durable matching signer, signed keyring/configuration and root public key. Retired/revoked verification windows and rollback/equivocation/expiry checks address routine rotation and forged migration metadata. Offline clients cannot learn an unseen revocation. Public API mode omits private handlers but needs separate deployment/read-only DB credentials for infrastructure isolation. Carrier observations never duplicate domain effects or publish peer identity.

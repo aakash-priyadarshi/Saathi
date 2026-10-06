@@ -25,6 +25,7 @@ fun obj(vararg pairs: Pair<String, Any?>) = JSONObject().apply { pairs.forEach {
 fun JSONArray.objects() = (0 until length()).map { getJSONObject(it) }
 fun JSONArray.strings() = (0 until length()).map { getString(it) }
 fun JSONObject.exact(vararg fields: String) { require(keys().asSequence().toSet() == fields.toSet()) { "Unrecognized or incomplete information." } }
+fun JSONObject.exactOptional(required: List<String>, optional: List<String>) { exact(*(required + optional.filter { has(it) }).toTypedArray()) }
 
 /** RFC 8785 JSON, P-256/SHA-256, IEEE P1363 signatures: identical to @saathi/protocol. */
 object Protocol {

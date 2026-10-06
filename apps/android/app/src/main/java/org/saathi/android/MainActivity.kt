@@ -29,12 +29,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,12 +51,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); enableEdgeToEdge()
         val fixtureScope=if(BuildConfig.DEBUG&&BuildConfig.ENVIRONMENT=="development")intent.getStringExtra("swarmUiFixture")?.takeIf{it.matches(Regex("test-ui-[a-z0-9-]{1,48}"))}else null
-        setContent { SaathiTheme {
+        setContent {
             val vm: SaathiViewModel = if(fixtureScope==null)viewModel() else viewModel(factory=object:androidx.lifecycle.ViewModelProvider.Factory{
-                @Suppress("UNCHECKED_CAST") override fun <T:androidx.lifecycle.ViewModel> create(modelClass:Class<T>):T=SaathiViewModel(application,fixtureScope) as T
+                @Suppress("UNCHECKED_CAST") override fun <T:androidx.lifecycle.ViewModel> create(modelClass:Class<T>):T=SaathiViewModel(application,fixtureScope,startServices=false) as T
             })
-            model = vm; SaathiApp(vm)
-        } }
+            val state by vm.state.collectAsStateWithLifecycle()
+            model = vm
+            SaathiTheme(state.preferences.optString("appearance","SYSTEM")) {SwarmStartup(savedInstanceState==null && fixtureScope==null){SaathiApp(vm)}}
+        }
     }
     override fun onStop() { model?.foregroundLost(); super.onStop() }
     override fun onStart() { super.onStart(); model?.foregroundActive() }
@@ -87,6 +91,7 @@ private val tabs = listOf(Triple("Updates", Icons.Outlined.Feed, "Public field u
     LaunchedEffect(Unit){vm.receiveInvite((context as? MainActivity)?.intent?.dataString)}
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 600.dp
+        val largeNavigationText = LocalDensity.current.fontScale >= 1.5f
         val inConversation = conversation != null && form == null && detail == null
         Row {
             if (wide) NavigationRail(Modifier.fillMaxHeight().width(104.dp).statusBarsPadding(), containerColor = MaterialTheme.colorScheme.surface) {
@@ -100,7 +105,7 @@ private val tabs = listOf(Triple("Updates", Icons.Outlined.Feed, "Public field u
                     else Column { Text(BuildConfig.BRAND_DISPLAY, style = MaterialTheme.typography.titleLarge); Text(BuildConfig.BRAND_BYLINE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 } }, navigationIcon = { if (detail != null || form != null || conversation!=null || page in listOf("Team","Saved","Connection")) IconButton(onClick = navigateBack) { Icon(Icons.Outlined.ArrowBack, "Back") } },
                     actions = { if(!inConversation) TextButton(onClick = { page = "Team"; detail = null; form = null;conversation=null }) { Text(if (state.preparation == null) "Team sign in" else "My team") } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)) },
-                bottomBar = { if (!wide && !inConversation) NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) { tabs.forEach { (name, icon, description) -> NavigationBarItem(page == name, { page = name; detail = null; form = null;conversation=null }, { Icon(icon, "$name · $description") }, label = { Text(name, maxLines=1, overflow=TextOverflow.Ellipsis) }) } } }
+                bottomBar = { if (!wide && !inConversation) NavigationBar(modifier=Modifier.heightIn(min=if(largeNavigationText)112.dp else 80.dp),containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) { tabs.forEach { (name, icon, description) -> NavigationBarItem(page == name, { page = name; detail = null; form = null;conversation=null }, { Icon(icon, "$name · $description") }, label = { Text(name, maxLines=if(largeNavigationText)2 else 1, overflow=TextOverflow.Ellipsis,textAlign=TextAlign.Center) }) } } }
             ) { padding ->
                 Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
                     if (BuildConfig.ENVIRONMENT != "production") Surface(color = MaterialTheme.colorScheme.errorContainer) { Text("${BuildConfig.ENVIRONMENT.uppercase()} · Test relief data only", Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onErrorContainer) }
@@ -113,8 +118,8 @@ private val tabs = listOf(Triple("Updates", Icons.Outlined.Feed, "Public field u
                             form != null -> DraftForm(vm, form!!, { form = null }, content)
                             detail != null -> RequestDetail(vm, JSONObject(detail!!), { form = "update:" + detail!! }, content,{need->vm.discuss(obj("type" to "NEED","id" to need.getString("publicId"),"title" to need.getString("title")),openChat)})
                             conversation!=null -> ConversationScreen(vm,state,conversation!!,askCall,askRecord,{message->vm.needFromChat(message){form=it}},{id->state.requests.plus(state.completed).firstOrNull{it.optString("publicId")==id}?.let{detail=it.toString()}?:vm.notice("Refresh Needs to check this reference’s latest public status.")},content)
-                            page == "Needs" -> NeedsScreen(state, vm, { detail = it.toString() }, wide, content)
-                            page == "Updates" -> FieldScreen(state, { page = "Team"; form = "field" }, content,{post->vm.discuss(obj("type" to "UPDATE","id" to post.getString("id"),"title" to post.getString("caption").take(120)),openChat)})
+                            page == "Needs" -> NeedsHub(vm,state,{detail=it.toString()},wide,content,{form=it})
+                            page == "Updates" -> UpdatesHub(vm,state,content,{page="Team";form="field"},{post->vm.discuss(obj("type" to "UPDATE","id" to post.getString("id"),"title" to post.getString("caption").take(120)),openChat)})
                             page == "Chats" -> ChatsScreen(vm,state,openChat,{page="Nearby"},{createChannel=true},content)
                             page == "Nearby" -> NearbyPeopleScreen(vm,state,askNearby,openChat,{createChannel=true},{invite=true},{page="Connection"},content)
                             page == "Connection" -> NearbyScreen(vm, state, askNearby, askCall, content)
@@ -127,8 +132,8 @@ private val tabs = listOf(Triple("Updates", Icons.Outlined.Feed, "Public field u
             }
         }
     }
-    if(createChannel)ChannelCreate({name,visibility->vm.createChannel(name,visibility){createChannel=false;openChat(it)}},{createChannel=false},state.busy)
-    if(invite || state.incomingInvite!=null)JoinInvite(state.incomingInvite?:"",{link->vm.joinInvite(link){invite=false;vm.dismissInvite();openChat(it)}},{invite=false;vm.dismissInvite()},state.busy)
+    if(createChannel)ChannelCreate({name,visibility,mode,admission->vm.createChannel(name,visibility,mode,admission){createChannel=false;openChat(it)}},{createChannel=false},state.busy)
+    if(invite || state.incomingInvite!=null)JoinInvite(vm,state.incomingInvite?:"",{link->vm.joinInvite(link){invite=false;vm.dismissInvite();openChat(it)}},{invite=false;vm.dismissInvite()},state.busy)
     state.pairCode?.let { code -> AlertDialog(onDismissRequest = { vm.nearby.confirm(false) }, title = { Text("Compare both device codes") }, text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { Text(code, style = MaterialTheme.typography.headlineMedium); Text("Accept only when the other device shows this same code. A connection does not verify volunteer identity.") } }, confirmButton = { TextButton(onClick = { vm.nearby.confirm(true) }) { Text("Codes match") } }, dismissButton = { TextButton(onClick = { vm.nearby.confirm(false) }) { Text("Decline") } }) }
     if (state.localCode.isNotBlank() && !state.confirmed) AlertDialog(onDismissRequest = { vm.disconnect() }, title = { Text("Compare both device codes") }, text = { Column { Text(state.localCode, style = MaterialTheme.typography.headlineMedium); Text("Confirm this same code with the other person before sharing.") } }, confirmButton = { TextButton(onClick = { vm.confirmLocal() }) { Text("Codes match") } }, dismissButton = { TextButton(onClick = { vm.disconnect() }) { Text("Decline") } })
     state.fileOffer?.let { offer -> AlertDialog(onDismissRequest = { vm.declineFile() }, title = { Text("Receive a nearby file?") }, text = { Text("${offer.getString("name")} · ${fileSize(offer.getLong("size"))}\n\nOnly accept files from someone you trust. Received files stay private on this phone.") }, confirmButton = { TextButton(onClick = { vm.acceptFile() }) { Text("Receive") } }, dismissButton = { TextButton(onClick = { vm.declineFile() }) { Text("Decline") } }) }
@@ -143,7 +148,7 @@ private val tabs = listOf(Triple("Updates", Icons.Outlined.Feed, "Public field u
     }}
 }
 
-@Composable private fun NeedsScreen(state: AppState, vm: SaathiViewModel, open: (JSONObject) -> Unit, wide: Boolean, modifier: Modifier) {
+@Composable fun NeedsScreen(state: AppState, vm: SaathiViewModel, open: (JSONObject) -> Unit, wide: Boolean, modifier: Modifier) {
     var completed by rememberSaveable { mutableStateOf(false) }; var search by rememberSaveable { mutableStateOf("") }; var category by rememberSaveable { mutableStateOf("All") }
     val source = if (completed) state.completed else state.requests
     val needs = source.filter { (category == "All" || it.optString("category") == category.uppercase()) && (it.optString("title") + it.optJSONObject("reliefPoint")?.optString("publicLocation")).contains(search, true) }

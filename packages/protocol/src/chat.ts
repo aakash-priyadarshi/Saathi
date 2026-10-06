@@ -5,6 +5,39 @@ import { validChatJweHeader } from './chat-encryption';
 export const participantIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const signature = z.string().regex(/^[A-Za-z0-9_-]{86}$/);
 const instant = z.string().datetime();
+export const channelRoleSchema = z.enum(['OWNER', 'ADMIN', 'MODERATOR', 'MEMBER', 'READ_ONLY']);
+export type ChannelRole = z.infer<typeof channelRoleSchema>;
+export const channelCapabilitiesSchema = z
+  .object({
+    canRead: z.boolean(),
+    canPostTopLevel: z.boolean(),
+    canReplyInThreads: z.boolean(),
+    canCreateThreads: z.boolean(),
+    canAttachMedia: z.boolean(),
+    canReact: z.boolean(),
+    canInvite: z.boolean(),
+    canModerate: z.boolean(),
+    canStartCalls: z.boolean(),
+    canJoinCalls: z.boolean(),
+    canManageMembers: z.boolean(),
+  })
+  .strict();
+export type ChannelCapabilities = z.infer<typeof channelCapabilitiesSchema>;
+export const channelSettingsSchema = z
+  .object({
+    mode: z.enum(['DISCUSSION', 'ANNOUNCEMENT']),
+    admission: z.enum(['OPEN', 'INVITE_AUTO', 'INVITE_PLUS_APPROVAL', 'APPROVAL_ONLY']),
+    capabilities: z
+      .object({
+        ADMIN: channelCapabilitiesSchema.optional(),
+        MODERATOR: channelCapabilitiesSchema.optional(),
+        MEMBER: channelCapabilitiesSchema.optional(),
+        READ_ONLY: channelCapabilitiesSchema.optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 const displayName = (max: number) =>
   z
     .string()
@@ -56,12 +89,22 @@ export const channelPolicySchema = z
         issuedAt: instant,
         expiresAt: instant,
         deleted: z.boolean(),
+        settings: channelSettingsSchema.optional(),
+        bannedIds: z.array(participantIdSchema).max(100).optional(),
+        appliedActions: z.array(z.string().uuid()).max(100).optional(),
+        moderation: z
+          .object({
+            lockedThreads: z.array(z.string().uuid()).max(100),
+            hiddenMessages: z.array(z.string().uuid()).max(100),
+          })
+          .strict()
+          .optional(),
         members: z
           .array(
             z
               .object({
                 profile: chatProfileSchema,
-                role: z.enum(['OWNER', 'MODERATOR', 'MEMBER']),
+                role: channelRoleSchema,
                 joinedAt: instant,
                 removedAt: instant.nullable(),
               })
@@ -82,6 +125,155 @@ export const channelPolicySchema = z
   })
   .strict();
 export type ChannelPolicy = z.infer<typeof channelPolicySchema>;
+/** Role ceilings are enforced even when a channel supplies explicit capability sets. */
+export function channelCapabilities(
+  policy: ChannelPolicy,
+  participant: string,
+): ChannelCapabilities {
+  const role = policy.body.members.find(
+    (m) => m.profile.body.id === participant && !m.removedAt,
+  )?.role;
+  const admitted = !!role && !policy.body.deleted && !policy.body.bannedIds?.includes(participant);
+  const manager = role === 'OWNER' || role === 'ADMIN';
+  const moderator = manager || role === 'MODERATOR';
+  const writer = admitted && role !== 'READ_ONLY';
+  const ceiling: ChannelCapabilities = {
+    canRead: admitted,
+    canPostTopLevel: writer && (policy.body.settings?.mode !== 'ANNOUNCEMENT' || moderator),
+    canReplyInThreads: writer,
+    canCreateThreads: writer,
+    canAttachMedia: writer,
+    canReact: admitted,
+    canInvite: admitted && manager,
+    canModerate: admitted && moderator,
+    canStartCalls: false,
+    canJoinCalls: false,
+    canManageMembers: admitted && moderator,
+  };
+  const configured =
+    role && role !== 'OWNER' ? policy.body.settings?.capabilities?.[role] : undefined;
+  const result = { ...ceiling };
+  for (const key of Object.keys(result) as (keyof ChannelCapabilities)[]) {
+    result[key] =
+      ceiling[key] && (configured?.[key] ?? (key === 'canManageMembers' ? manager : true));
+  }
+  if (!result.canRead)
+    for (const key of Object.keys(result) as (keyof ChannelCapabilities)[]) result[key] = false;
+  return result;
+}
+export const chatAdmissionSchema = z
+  .object({
+    body: z
+      .object({
+        v: z.literal(1),
+        kind: z.literal('CHAT_ADMISSION'),
+        id: z.string().uuid(),
+        channelId: z.string().uuid(),
+        name: displayName(48),
+        owner: chatProfileSchema,
+        issuer: chatProfileSchema.optional(),
+        recipientId: participantIdSchema,
+        policyHash: participantIdSchema,
+        admission: z.enum(['INVITE_PLUS_APPROVAL', 'APPROVAL_ONLY']),
+        issuedAt: instant,
+        expiresAt: instant,
+      })
+      .strict(),
+    signature,
+  })
+  .strict();
+export type ChatAdmission = z.infer<typeof chatAdmissionSchema>;
+export async function validChatAdmission(input: unknown, recipient: string, now = Date.now()) {
+  const invite = chatAdmissionSchema.parse(input),
+    b = invite.body;
+  boundedTime(b.issuedAt, b.expiresAt, 6 * 3600000, now);
+  await validChatProfile(b.owner, now);
+  if (b.issuer) await validChatProfile(b.issuer, now);
+  if (
+    b.recipientId !== recipient ||
+    !(await verify(b, invite.signature, (b.issuer ?? b.owner).body.publicKey))
+  )
+    throw new Error('Invitation is not authorized for this participant.');
+  return invite;
+}
+export const chatActionSchema = z
+  .object({
+    body: z
+      .object({
+        v: z.literal(1),
+        kind: z.literal('CHAT_ACTION'),
+        id: z.string().uuid(),
+        channelId: z.string().uuid(),
+        actor: chatProfileSchema,
+        policyHash: participantIdSchema,
+        version: z.number().int().positive(),
+        action: z.enum([
+          'APPROVE_JOIN',
+          'REJECT_JOIN',
+          'REMOVE',
+          'BAN',
+          'UNBAN',
+          'SET_ROLE',
+          'LOCK_THREAD',
+          'UNLOCK_THREAD',
+          'HIDE_MESSAGE',
+          'RESTORE_MESSAGE',
+          'REVIEW_REPORT',
+          'REACT',
+          'UNREACT',
+        ]),
+        targetId: z.union([participantIdSchema, z.string().uuid()]),
+        role: channelRoleSchema.optional(),
+        reaction: z.enum(['THANKS', 'SUPPORT']).optional(),
+        issuedAt: instant,
+        expiresAt: instant,
+      })
+      .strict(),
+    signature,
+  })
+  .strict();
+export type ChatAction = z.infer<typeof chatActionSchema>;
+export async function validChatAction(input: unknown, policy: ChannelPolicy, now = Date.now()) {
+  const action = chatActionSchema.parse(input),
+    b = action.body;
+  boundedTime(b.issuedAt, b.expiresAt, 6 * 3600000, now);
+  await validChatProfile(b.actor, now);
+  await validChannelPolicy(policy, now);
+  const actor = b.actor.body.id,
+    caps = channelCapabilities(policy, actor);
+  const role = policy.body.members.find((m) => m.profile.body.id === actor)?.role;
+  const target = policy.body.members.find((m) => m.profile.body.id === b.targetId)?.role;
+  if (
+    b.channelId !== policy.body.id ||
+    b.version !== policy.body.version ||
+    b.policyHash !== (await hash(policy)) ||
+    !(await verify(b, action.signature, b.actor.body.publicKey))
+  )
+    throw new Error('Stale or invalid channel action.');
+  const membership = ['APPROVE_JOIN', 'REJECT_JOIN', 'REMOVE', 'BAN', 'UNBAN', 'SET_ROLE'].includes(
+    b.action,
+  );
+  const reaction = ['REACT', 'UNREACT'].includes(b.action);
+  if (!(membership ? caps.canManageMembers : reaction ? caps.canReact : caps.canModerate))
+    throw new Error('Channel action is not permitted.');
+  if (
+    membership &&
+    (!participantIdSchema.safeParse(b.targetId).success ||
+      target === 'OWNER' ||
+      (target === 'ADMIN' && role !== 'OWNER') ||
+      (b.action === 'SET_ROLE' &&
+        (!b.role ||
+          b.role === 'OWNER' ||
+          (b.role === 'ADMIN' && role !== 'OWNER') ||
+          role === 'MODERATOR')))
+  )
+    throw new Error('Role authority is not permitted.');
+  if (!membership && !z.string().uuid().safeParse(b.targetId).success)
+    throw new Error('Message target is invalid.');
+  if (reaction !== !!b.reaction || (b.action === 'SET_ROLE') !== !!b.role)
+    throw new Error('Unexpected action fields.');
+  return action;
+}
 export const chatInviteSchema = z
   .object({
     body: z
@@ -118,6 +310,7 @@ export const chatMessageSchema = z
         format: z.enum(['TEXT', 'PHOTO', 'VIDEO', 'VOICE', 'FILE', 'SYSTEM', 'RELIEF']),
         encrypted: z.boolean(),
         content: z.string().min(1).max(14000),
+        threadRootId: z.string().uuid().optional(),
       })
       .strict(),
     signature,
@@ -206,6 +399,7 @@ export const chatJoinSchema = z
         channelId: z.string().uuid(),
         participant: chatProfileSchema,
         action: z.enum(['JOIN', 'LEAVE']),
+        invitation: chatAdmissionSchema.optional(),
         issuedAt: instant,
         expiresAt: instant,
       })
@@ -231,16 +425,22 @@ export const chatSyncSchema = z
         messages: z.array(chatMessageSchema).max(20),
         receipts: z.array(chatReceiptSchema).max(30),
         joins: z.array(chatJoinSchema).max(8),
+        actions: z.array(chatActionSchema).max(8).optional(),
         blocks: z.array(participantIdSchema).max(100),
         reports: z
           .array(
             z
               .object({
                 id: z.string().uuid(),
-                messageId: z.string().uuid(),
-                reason: z.enum(['ABUSE', 'SPAM', 'SAFETY']),
+                messageId: z.string().uuid().optional(),
+                personId: participantIdSchema.optional(),
+                reason: z.enum(['ABUSE', 'SPAM', 'SAFETY', 'OTHER']),
               })
-              .strict(),
+              .strict()
+              .refine(
+                (r) => Boolean(r.messageId) !== Boolean(r.personId),
+                'Choose a message or a person to report.',
+              ),
           )
           .max(8),
       })
@@ -253,6 +453,11 @@ export async function validChatJoin(input: unknown, now = Date.now()): Promise<C
   const join = chatJoinSchema.parse(input);
   boundedTime(join.body.issuedAt, join.body.expiresAt, 6 * 3600000, now);
   await validChatProfile(join.body.participant, now);
+  if (join.body.invitation) {
+    await validChatAdmission(join.body.invitation, join.body.participant.body.id, now);
+    if (join.body.action !== 'JOIN' || join.body.invitation.body.channelId !== join.body.channelId)
+      throw new Error('Invalid admission request.');
+  }
   if (!(await verify(join.body, join.signature, join.body.participant.body.publicKey)))
     throw new Error('Invalid membership request.');
   return join;
@@ -322,10 +527,22 @@ export async function validChannelPolicy(input: unknown, now = Date.now()): Prom
     .map((member) => member.profile.body.id)
     .sort();
   const keyIds = body.keys.map((key) => key.participantId).sort();
+  const readers = active.filter(
+    (id) => channelCapabilities({ ...policy, body: { ...body, deleted: false } }, id).canRead,
+  );
+  if (
+    new Set(body.bannedIds ?? []).size !== (body.bannedIds?.length ?? 0) ||
+    active.some((id) => body.bannedIds?.includes(id)) ||
+    (body.settings &&
+      (body.visibility === 'OPEN'
+        ? !['OPEN', 'APPROVAL_ONLY'].includes(body.settings.admission)
+        : body.settings.admission === 'OPEN'))
+  )
+    throw new Error('Invalid channel admission policy.');
   if (
     body.visibility === 'OPEN'
       ? keyIds.length !== 0
-      : JSON.stringify(keyIds) !== JSON.stringify(active)
+      : JSON.stringify(keyIds) !== JSON.stringify(readers)
   )
     throw new Error('Invalid channel key recipients.');
   for (const key of body.keys)
@@ -374,7 +591,8 @@ export async function validChatMessage(
       !body.encrypted ||
       body.policyHash !== null ||
       body.channelVersion !== 0 ||
-      body.epoch !== null
+      body.epoch !== null ||
+      body.threadRootId
     )
       throw new Error('Invalid direct conversation.');
   } else {
@@ -394,6 +612,12 @@ export async function validChatMessage(
       )
     )
       throw new Error('Channel message is not authorized by current membership.');
+    const caps = channelCapabilities(policy, body.author.body.id);
+    if (
+      !(body.threadRootId ? caps.canReplyInThreads : caps.canPostTopLevel) ||
+      (['PHOTO', 'VIDEO', 'VOICE', 'FILE'].includes(body.format) && !caps.canAttachMedia)
+    )
+      throw new Error('Channel posting capability is required.');
   }
   if (body.encrypted)
     validChatJweHeader(

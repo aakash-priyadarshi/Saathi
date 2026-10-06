@@ -99,7 +99,7 @@ export class AuthService {
     }
     return session.user;
   }
-  requireOrg(actor: Actor, organizationId: string, coordinator = false) {
+  requireOrg(actor: Actor, organizationId: string | null, coordinator = false) {
     if (actor.role === 'ADMIN') return;
     const membership = actor.memberships.find(
       (m) =>

@@ -1,0 +1,169 @@
+{
+  "testedAt": "2026-10-06T11:39:37.577Z",
+  "models": ["SM-X510", "SM-S921B"],
+  "transport": "nearby",
+  "thirdPeer": null,
+  "completed": true,
+  "scope": "Community milestone; encrypted 4 MiB server/resume regression is separate",
+  "appSha256": "cb98308fe909ba2d80329f3808ab90113e5fd9e8da1fa7a8cb7563beed1539c2",
+  "steps": [
+    {
+      "step": "prepared",
+      "milliseconds": 1002,
+      "authorInternetValidated": false,
+      "carrierInternetValidated": true
+    },
+    {
+      "step": "pair-ready-1",
+      "milliseconds": 6
+    },
+    {
+      "step": "code-1",
+      "milliseconds": 24
+    },
+    {
+      "step": "connected-1",
+      "milliseconds": 198,
+      "authorInternetValidated": false,
+      "carrierInternetValidated": true
+    },
+    {
+      "step": "logical-dm",
+      "milliseconds": 30
+    },
+    {
+      "step": "private-dm-delivered-read",
+      "milliseconds": 6
+    },
+    {
+      "step": "dm-server-saved",
+      "milliseconds": 472
+    },
+    {
+      "step": "online-radio-deduplicated",
+      "milliseconds": 284
+    },
+    {
+      "step": "repository-reopened-identity-and-history",
+      "milliseconds": 46
+    },
+    {
+      "step": "open-created",
+      "milliseconds": 535
+    },
+    {
+      "step": "open-owner-signed-join",
+      "milliseconds": 463
+    },
+    {
+      "step": "open-channel-messages",
+      "milliseconds": 9
+    },
+    {
+      "step": "recipient-invite-replay-idempotent",
+      "milliseconds": 1986
+    },
+    {
+      "step": "private-channel-decrypted",
+      "milliseconds": 452
+    },
+    {
+      "step": "photo-and-aac-voice-note-verified",
+      "milliseconds": 2892
+    },
+    {
+      "step": "approval-request-without-key",
+      "milliseconds": 522
+    },
+    {
+      "step": "physical-approval-fresh-key-delivered",
+      "milliseconds": 331
+    },
+    {
+      "step": "announcement-root",
+      "milliseconds": 24
+    },
+    {
+      "step": "physical-authorized-thread-reply",
+      "milliseconds": 900
+    },
+    {
+      "step": "physical-thread-lock-enforced",
+      "milliseconds": 457
+    },
+    {
+      "step": "physical-ban-excludes-fresh-key-after-rename",
+      "milliseconds": 2229
+    },
+    {
+      "step": "post-after-ban-created",
+      "milliseconds": 344
+    },
+    {
+      "step": "physical-banned-recipient-excluded-from-future-post",
+      "milliseconds": 307
+    },
+    {
+      "step": "physical-authorized-unban",
+      "milliseconds": 502
+    },
+    {
+      "step": "help-created",
+      "milliseconds": 110
+    },
+    {
+      "step": "physical-help-request-and-offer",
+      "milliseconds": 396
+    },
+    {
+      "step": "physical-help-responder-assigned",
+      "milliseconds": 615
+    },
+    {
+      "step": "physical-help-resolved",
+      "milliseconds": 630
+    },
+    {
+      "step": "public-report-authored",
+      "milliseconds": 321
+    },
+    {
+      "step": "physical-public-derivative-hash-verified",
+      "milliseconds": 1405
+    },
+    {
+      "step": "physical-carrier-relay-off-enforced",
+      "milliseconds": 2663
+    },
+    {
+      "step": "physical-consenting-carrier-original-author-upload",
+      "milliseconds": 3138
+    },
+    {
+      "step": "physical-report-withdrawal-relayed",
+      "milliseconds": 13161
+    },
+    {
+      "step": "private-member-removal-applied",
+      "milliseconds": 504
+    },
+    {
+      "step": "blocked-recipient",
+      "milliseconds": 55
+    },
+    {
+      "step": "block-prevents-new-delivery",
+      "milliseconds": 200
+    },
+    {
+      "step": "complete",
+      "milliseconds": 4,
+      "authorBaselineMessages": 8,
+      "authorMilestoneMessages": 11,
+      "authorResumedBytes": 0,
+      "carrierBaselineMessages": 8,
+      "carrierMilestoneMessages": 10,
+      "carrierResumedBytes": 0
+    }
+  ]
+}

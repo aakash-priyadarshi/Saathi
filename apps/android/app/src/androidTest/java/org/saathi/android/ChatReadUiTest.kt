@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
@@ -24,6 +26,30 @@ import java.util.UUID
 @RunWith(AndroidJUnit4::class)
 class ChatReadUiTest {
     @get:Rule val ui=createComposeRule()
+
+    @Test fun channelSettingsRemainInteractiveDuringIncomingRefreshBurst() {
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        val context=instrumentation.targetContext
+        val storageScope="test-chat-refresh-${UUID.randomUUID()}"
+        lateinit var vm:SaathiViewModel
+        val viewModels=ViewModelStore();val shown=mutableStateOf(true)
+        instrumentation.runOnMainSync{vm=SaathiViewModel(context.applicationContext as Application,storageScope,startServices=false);viewModels.put("fixture",vm)}
+        try {
+            val channel=runBlocking{vm.chat.rename("Fictional refresh tester");vm.chat.create("Refresh briefing","INVITE","ANNOUNCEMENT","INVITE_PLUS_APPROVAL")}
+            ui.waitUntil(15000){vm.state.value.chatPolicies.any{it.getJSONObject("body").getString("id")==channel}}
+            ui.setContent{if(shown.value){val state by vm.state.collectAsState();SaathiTheme{ConversationScreen(vm,state,channel,{_,_->},{},{},{},Modifier.fillMaxSize())}}}
+            // Real frame/file callbacks can arrive faster than hardware Keystore reads finish.
+            repeat(100){vm.refreshLocal()}
+            ui.onNodeWithContentDescription("Conversation settings").performClick()
+            ui.onNodeWithText("Channel settings").assertIsDisplayed()
+            ui.onNodeWithText("Done").performClick()
+            ui.onNodeWithText("Channel settings").assertDoesNotExist()
+            assertNull(vm.state.value.notice)
+        } finally {
+            ui.runOnIdle{shown.value=false;viewModels.clear()}
+            SecureStore(context,storageScope).use{it.clearPrivate()};context.deleteDatabase("saathi-$storageScope.db")
+        }
+    }
 
     @Test fun unseenHistoryStaysUnreadAndNewMessagesDoNotDisplaceHistory() {
         val instrumentation=InstrumentationRegistry.getInstrumentation()

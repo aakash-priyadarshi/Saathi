@@ -20,5 +20,6 @@ function run(args) {
   });
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
+run(['build:packages']);
 run(['--filter', '@saathi/database', 'exec', 'prisma', 'migrate', 'deploy']);
 run(['exec', 'vitest', 'run', '--config', 'vitest.integration.config.ts']);

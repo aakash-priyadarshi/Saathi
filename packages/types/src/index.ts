@@ -53,6 +53,11 @@ export type PublicPost = {
   id: string;
   caption: string;
   createdAt: string;
+  verificationState?: 'PARTICIPANT' | 'VERIFIED';
+  participantId?: string | null;
+  receivedAt?: string;
+  publishedAt?: string;
+  contentWarning?: boolean;
   organization: { name: string; verified: boolean };
   author: { displayName: string };
   reliefPoint: { name: string; publicLocation: string };

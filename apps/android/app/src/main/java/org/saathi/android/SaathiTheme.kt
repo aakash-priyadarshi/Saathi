@@ -3,6 +3,9 @@ package org.saathi.android
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -19,9 +22,18 @@ val Manrope = FontFamily(
 val Lora = FontFamily(Font(R.font.lora))
 private val light = lightColorScheme(primary = Color(0xff216352), onPrimary = Color(0xfffffefa), primaryContainer = Color(0xffeaf0e7), onPrimaryContainer = Color(0xff243d35), background = Color(0xfff8f7f2), onBackground = Color(0xff243d35), surface = Color(0xfffffefa), onSurface = Color(0xff243d35), surfaceVariant = Color(0xffeaf0e7), onSurfaceVariant = Color(0xff626e64), outline = Color(0xffdedfd5), error = Color(0xff923d31), errorContainer = Color(0xfffae9e4), onErrorContainer = Color(0xff923d31))
 private val dark = darkColorScheme(primary = Color(0xffa0d7bd), onPrimary = Color(0xff15221e), primaryContainer = Color(0xff273b31), onPrimaryContainer = Color(0xffe6eee6), background = Color(0xff15221e), onBackground = Color(0xffe6eee6), surface = Color(0xff1d2e27), onSurface = Color(0xffe6eee6), surfaceVariant = Color(0xff273b31), onSurfaceVariant = Color(0xffb3bfb5), outline = Color(0xff3b4d41), error = Color(0xffffc0ad), errorContainer = Color(0xff482c27), onErrorContainer = Color(0xffffc0ad))
-@Composable fun SaathiTheme(content: @Composable () -> Unit) {
+@Composable fun SaathiTheme(appearance:String="SYSTEM",content: @Composable () -> Unit) {
     val defaults = Typography()
-    val base = if (isSystemInDarkTheme()) dark else light
+    val darkTheme = appearance=="DARK" || (appearance!="LIGHT" && isSystemInDarkTheme())
+    val base = if (darkTheme) dark else light
+    val view=LocalView.current
+    SideEffect {
+        var context=view.context
+        while(context is android.content.ContextWrapper && context !is android.app.Activity)context=context.baseContext
+        (context as? android.app.Activity)?.window?.let{window->WindowCompat.getInsetsController(window,view).apply{
+            isAppearanceLightStatusBars=!darkTheme;isAppearanceLightNavigationBars=!darkTheme
+        }}
+    }
     MaterialTheme(colorScheme = base.copy(secondary = base.primary, onSecondary = base.onPrimary, secondaryContainer = base.primaryContainer, onSecondaryContainer = base.onPrimaryContainer, outlineVariant = base.outline, surfaceTint = base.primary, surfaceContainer = base.surface, surfaceContainerHigh = base.surfaceVariant, surfaceContainerHighest = base.surfaceVariant, surfaceContainerLow = base.background, surfaceContainerLowest = base.surface),
         typography = Typography(
             displaySmall = defaults.displaySmall.copy(fontFamily = Lora, fontSize = 32.sp, lineHeight = 40.sp),

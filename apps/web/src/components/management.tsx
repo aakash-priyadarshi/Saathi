@@ -16,7 +16,8 @@ type Review = {
   id: string;
   caption: string;
   moderation: string;
-  author: { displayName: string };
+  author: { displayName: string } | null;
+  participantName?: string | null;
   media: { id: string; mimeType: string; processingState: string }[];
 };
 type Audit = { id: string; event: string; entityType: string; entityId: string; createdAt: string };
@@ -111,7 +112,9 @@ function ManagementContent({ user }: { user: CurrentUser }) {
           <div className="moderation-item" key={p.id}>
             <p>{p.caption}</p>
             <small>
-              {p.author.displayName} · {p.moderation}
+              {p.author?.displayName ?? p.participantName ?? 'Participant'} ·{' '}
+              {p.participantName ? 'Participant report · ' : ''}
+              {p.moderation}
             </small>
             {p.media.map((m) => (
               <button

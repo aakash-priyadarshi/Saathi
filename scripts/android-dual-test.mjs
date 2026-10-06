@@ -12,13 +12,14 @@ import { parse } from 'dotenv';
 
 // Explicitly opt in with two approved model names; never select somebody's phone implicitly.
 const [authorModel, carrierModel, transport = 'nearby', fixture] = process.argv.slice(2);
-const chatFixture = fixture === 'chat';
+const chatFixture = fixture === 'chat' || fixture === 'community';
 const extraPeer = fixture === 'browser' ? fixture : null;
 if (!authorModel || !carrierModel || !['nearby', 'wifi'].includes(transport))
   throw new Error(
     'Usage: node scripts/android-dual-test.mjs AUTHOR_MODEL CARRIER_MODEL nearby|wifi',
   );
-if (fixture && !['chat', 'browser'].includes(fixture)) throw new Error('Unknown fixture.');
+if (fixture && !['chat', 'community', 'browser'].includes(fixture))
+  throw new Error('Unknown fixture.');
 if (extraPeer && transport !== 'wifi')
   throw new Error('The optional browser third peer requires wifi mode.');
 const adb = join(
@@ -163,6 +164,9 @@ const server = createServer(async (req, res) => {
           safe[`${role}AudioBytes`] = current.value.audioBytes;
         if (typeof current.value.videoFrames === 'number')
           safe[`${role}VideoFrames`] = current.value.videoFrames;
+        for (const key of ['baselineMessages', 'milestoneMessages', 'resumedBytes'])
+          if (Number.isSafeInteger(current.value[key]) && current.value[key] >= 0)
+            safe[`${role}${key[0].toUpperCase()}${key.slice(1)}`] = current.value[key];
       }
       measurements.push(safe);
       console.log(`Physical ${transport}: ${safe.step}`);
@@ -234,6 +238,9 @@ try {
         'class',
         chatFixture ? 'org.saathi.android.NativeChatDualTest' : 'org.saathi.android.NativeDualTest',
         '-e',
+        'milestoneOnly',
+        fixture === 'community' ? 'true' : 'false',
+        '-e',
         'dualFixture',
         'true',
         '-e',
@@ -280,7 +287,7 @@ try {
   await browser?.close();
   mkdirSync('.data/android-measurements', { recursive: true });
   writeFileSync(
-    `.data/android-measurements/${chatFixture ? 'chat' : 'dual'}-${transport}${extraPeer ? '-browser' : ''}.json`,
+    `.data/android-measurements/${fixture === 'community' ? 'community' : chatFixture ? 'chat' : 'dual'}-${transport}${extraPeer ? '-browser' : ''}.json`,
     JSON.stringify(
       {
         testedAt: new Date().toISOString(),
@@ -288,6 +295,10 @@ try {
         transport,
         thirdPeer: extraPeer ? 'Windows Chromium' : null,
         completed,
+        scope:
+          fixture === 'community'
+            ? 'Community milestone; encrypted 4 MiB server/resume regression is separate'
+            : 'Full transport fixture',
         appSha256: testedAppHash,
         steps: measurements,
       },
