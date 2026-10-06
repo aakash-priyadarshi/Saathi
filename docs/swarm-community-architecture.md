@@ -152,7 +152,7 @@ See [group crypto/scale ADR](adr/0010-group-crypto-and-announcement-scale.md),
 chat threat models for release limits. Physical radio evidence and synthetic
 layout captures must remain explicitly distinguishable.
 
-# Database migration compatibility
+## Database migration compatibility
 
 The community migration is `202610050006_community`, which follows the dated foundation migrations on a fresh database. Its SQL is unchanged from the short-lived `0012_community` name in commit `4c33f8d`; the earlier name sorted before the base `FieldUpdate` table on fresh installations. Fresh-schema migration plus all 54 integration cases now pass locally.
 

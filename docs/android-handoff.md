@@ -44,6 +44,8 @@ Local checks pass 33 shared/API unit, 54 PostgreSQL integration, 14 browser and 
 
 The final APK completed the two-device Nearby community fixture: tablet author 63.267 seconds, S24 carrier 63.908 seconds. It passed fresh-key approval, thread/lock authorization, ban after rename and future-key exclusion, Help offer/assignment/resolution, sanitized public-photo hash, relay-OFF refusal, consenting gateway text/media acceptance with original authorship, withdrawal and block. The tablet had no validated default internet and the S24 did; USB still supplied fixture configuration/API coordination. This does not prove author-absent relay, three-native-peer forwarding, full internet-loss transitions or video radio transfer. The [radio measurement](benchmarks/android-community-nearby.json) preserves the exact APK and barrier scope.
 
+Implementation source is [dc6a64e](https://github.com/aakash-priyadarshi/Saathi/commit/dc6a64e0c46247a38a1cad537675fcd5bc38a020). Both [web/API verification](https://github.com/aakash-priyadarshi/Saathi/actions/runs/37459226863) and [Android product verification](https://github.com/aakash-priyadarshi/Saathi/actions/runs/37459226668) passed on that exact commit, including fresh-database migration/integration, browser regressions, native build/lint/JVM checks and API 36 emulator instrumentation. The final handoff update is documentation only; no implementation changes follow those green runs. Local APK/device hashes retain their separate artifact scope. Hosted QA distribution and Railway deployment remain gated.
+
 ## Earlier communication/foundation evidence
 
 Physical S24 (SM-S921B) and tablet (SM-X510), both Android 16/API 36:

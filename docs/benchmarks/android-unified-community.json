@@ -103,5 +103,17 @@
     "freshSchemaPassed": true,
     "existingIsolatedSchemasReconciledByChecksum": true,
     "dataReset": false
+  },
+  "ci": {
+    "implementationCommit": "dc6a64e0c46247a38a1cad537675fcd5bc38a020",
+    "webApi": {
+      "result": "PASS",
+      "url": "https://github.com/aakash-priyadarshi/Saathi/actions/runs/37459226863"
+    },
+    "androidProduct": {
+      "result": "PASS",
+      "url": "https://github.com/aakash-priyadarshi/Saathi/actions/runs/37459226668"
+    },
+    "scope": "Same final implementation source; Linux/API36 emulator checks are separate from the installed local APK and physical-device proof. Final handoff commit is documentation only."
   }
 }

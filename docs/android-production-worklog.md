@@ -1,5 +1,7 @@
 # Android product milestone work record
 
+Implementation source is [dc6a64e](https://github.com/aakash-priyadarshi/Saathi/commit/dc6a64e0c46247a38a1cad537675fcd5bc38a020). Both [web/API verification](https://github.com/aakash-priyadarshi/Saathi/actions/runs/37459226863) and [Android product verification](https://github.com/aakash-priyadarshi/Saathi/actions/runs/37459226668) passed on that exact commit, including fresh-database migration/integration, browser regressions, native build/lint/JVM checks and API 36 emulator instrumentation. The final handoff update is documentation only; no implementation changes follow those green runs. Local APK/device hashes retain their separate artifact scope. Hosted QA distribution and Railway deployment remain gated.
+
 ## Unified community milestone — 6 October 2026
 
 Continued current main baseline `8a9d99d`. Five-role channel governance, key-free approval invitations, announcement threads, temporary Nearby Help, ordinary unverified photo/video reports, consented public-media relay, local QR scanning, durable theme/profile/data controls and the supplied animated brand lockup extend the incumbent native runtime. [Unified milestone](swarm-unified-milestone.md) records behavior and qualification limits; [current evidence](benchmarks/android-unified-community.json) binds verification to exact artifacts.
