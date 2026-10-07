@@ -74,6 +74,7 @@ import SwarmCore
         decide?(match); decide = nil; pairCode = nil
         if !match { pending = nil; status = "Pairing declined. Choose the person again when ready." }
     }
+    func stop() { stopRadios(); peers = [:]; generation += 1; status = "Stopped. Search again when the other person is ready." }
     func disconnect() {
         if let c = connected { manager.disconnect(from: c) }
         stopRadios(); finish()

@@ -224,8 +224,14 @@ struct NearbyView: View {
                 Section {
                     Text(nearby.status).font(.callout)
                     if nearby.connected == nil {
-                        Button("Be visible to a nearby phone") { nearby.start(visible: true, name: chat.name) }
-                        Button("Search for a nearby phone") { nearby.start(visible: false, name: chat.name) }
+                        if nearby.searching {
+                            // Restarting cancels a Bluetooth handshake that can take 5–15 s; offer Stop instead.
+                            ProgressView("Keep both phones open. Finding over Bluetooth can take up to 30 seconds.")
+                            Button("Stop", role: .destructive) { nearby.stop() }
+                        } else {
+                            Button("Be visible to a nearby phone") { nearby.start(visible: true, name: chat.name) }
+                            Button("Search for a nearby phone") { nearby.start(visible: false, name: chat.name) }
+                        }
                     }
                 } footer: {
                     Text("Works without internet over Bluetooth and Wi-Fi. Keep Swarm open on both phones. One person at a time; messages travel on as people meet.")
