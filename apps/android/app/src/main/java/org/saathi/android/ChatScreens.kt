@@ -22,6 +22,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -221,8 +223,14 @@ private fun AppState.channelReports(id:String)=chatReportInbox.filter{report->re
                 val thanksCount=reactionsByPerson.values.count{it.last().getJSONObject("envelope").getJSONObject("body").getString("action")=="REACT"}
                 val thankedByMe=state.chatProfile?.let{profile->reactionsByPerson[ChatProtocol.participant(profile)]?.last()?.getJSONObject("envelope")?.getJSONObject("body")?.getString("action")=="REACT"}==true
                 Row(Modifier.fillMaxWidth().animateItem(fadeInSpec=tween(140),placementSpec=null,fadeOutSpec=null),horizontalArrangement=if(owned)Arrangement.End else Arrangement.Start){
-                    val bubbleColor=if(owned)MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer
-                    val bubbleContentColor=if(owned)MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
+                    val darkTheme=MaterialTheme.colorScheme.background.luminance()<.5f
+                    val bubbleColor=when {
+                        darkTheme && owned -> Color(0xff3e765d)
+                        darkTheme -> Color(0xff806740)
+                        owned -> MaterialTheme.colorScheme.primaryContainer
+                        else -> MaterialTheme.colorScheme.secondaryContainer
+                    }
+                    val bubbleContentColor=if(darkTheme)Color(0xfff7f4e8) else if(owned)MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
                     val bubbleShape=RoundedCornerShape(topStart=18.dp,topEnd=18.dp,bottomStart=if(owned)18.dp else 4.dp,bottomEnd=if(owned)4.dp else 18.dp)
                     Surface(Modifier.widthIn(max=520.dp).testTag(if(owned)"chat-bubble-sent-$messageId" else "chat-bubble-received-$messageId"),shape=bubbleShape,color=bubbleColor,contentColor=bubbleContentColor){
                         Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){

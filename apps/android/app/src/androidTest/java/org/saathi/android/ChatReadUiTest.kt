@@ -5,6 +5,9 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -27,6 +30,15 @@ import java.util.UUID
 @RunWith(AndroidJUnit4::class)
 class ChatReadUiTest {
     @get:Rule val ui=createComposeRule()
+
+    @Composable private fun ThemedChatSurface(content:@Composable ()->Unit) {
+        Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background,content=content)
+    }
+
+    private fun saveReviewCapture(context:android.content.Context,name:String,image:Bitmap) {
+        val review=Bitmap.createScaledBitmap(image,(image.width*.75f).toInt(),(image.height*.75f).toInt(),true)
+        File(context.cacheDir,name).outputStream().use{review.compress(Bitmap.CompressFormat.PNG,100,it)}
+    }
 
     @Test fun messageActionsStayOutOfTheTranscriptUntilRequested() {
         val context=InstrumentationRegistry.getInstrumentation().targetContext
@@ -54,20 +66,20 @@ class ChatReadUiTest {
             vm.refreshLocal()
             ui.waitUntil(15000){vm.state.value.chatMessages.any{it.getJSONObject("envelope").getJSONObject("body").getString("conversationId")==channel&&it.getJSONObject("payload").has("attachment")}}
             val attachmentMessageId=vm.state.value.chatMessages.first{it.getJSONObject("payload").has("attachment")}.getString("id")
-            ui.setContent { if(shown.value){val state by vm.state.collectAsState();SaathiTheme{ConversationScreen(vm,state,channel,{_,_->},{},{},{},androidx.compose.ui.Modifier.fillMaxSize())}} }
+            ui.setContent { if(shown.value){val state by vm.state.collectAsState();SaathiTheme{ThemedChatSurface{ConversationScreen(vm,state,channel,{_,_->},{},{},{},androidx.compose.ui.Modifier.fillMaxSize())}}} }
             ui.onNodeWithText("Fictional coordination: meet at the public entrance.").assertIsDisplayed()
             ui.waitUntil(15000){ui.onAllNodesWithTag("chat-photo-$attachmentMessageId").fetchSemanticsNodes().isNotEmpty()}
             ui.onNodeWithTag("chat-photo-$attachmentMessageId").assertIsDisplayed()
             ui.onNodeWithText("Fictional field photo.png").assertDoesNotExist()
             listOf("0 replies","Thanks","Lock thread","Hide","Report","Export verified attachment","Sync encrypted attachment","Create Help Request").forEach{ui.onNodeWithText(it).assertDoesNotExist()}
-            ui.onRoot().captureToImage().asAndroidBitmap().let{capture->File(context.cacheDir,"chat-simple-message.png").outputStream().use{capture.compress(Bitmap.CompressFormat.PNG,100,it)}}
+            ui.onRoot().captureToImage().asAndroidBitmap().let{saveReviewCapture(context,"chat-simple-message.png",it)}
             ui.onNodeWithTag("chat-photo-$attachmentMessageId").performClick()
             ui.onNodeWithContentDescription("Close photo preview").assertIsDisplayed()
             ui.onNodeWithContentDescription("Close photo preview").performClick()
             val textMessageId=vm.state.value.chatMessages.first{it.getJSONObject("payload").optString("text").contains("Fictional coordination")}.getString("id")
             ui.onNodeWithTag("message-actions-$textMessageId").performClick()
             listOf("Copy message","Reply in thread","Thank sender","Lock replies","Hide message").forEach{ui.onNodeWithText(it).assertIsDisplayed()}
-            ui.onRoot().captureToImage().asAndroidBitmap().let{capture->File(context.cacheDir,"chat-simple-actions.png").outputStream().use{capture.compress(Bitmap.CompressFormat.PNG,100,it)}}
+            ui.onRoot().captureToImage().asAndroidBitmap().let{saveReviewCapture(context,"chat-simple-actions.png",it)}
             ui.onNodeWithText("Copy message").performClick()
             ui.onNodeWithTag("message-actions-$attachmentMessageId").performClick()
             listOf("Save attachment","Check for updates").forEach{ui.onNodeWithText(it).assertIsDisplayed()}
@@ -87,7 +99,7 @@ class ChatReadUiTest {
         try {
             val channel=runBlocking{vm.chat.rename("Fictional refresh tester");vm.chat.create("Refresh briefing","INVITE","ANNOUNCEMENT","INVITE_PLUS_APPROVAL")}
             ui.waitUntil(15000){vm.state.value.chatPolicies.any{it.getJSONObject("body").getString("id")==channel}}
-            ui.setContent{if(shown.value){val state by vm.state.collectAsState();SaathiTheme{ConversationScreen(vm,state,channel,{_,_->},{},{},{},Modifier.fillMaxSize())}}}
+            ui.setContent{if(shown.value){val state by vm.state.collectAsState();SaathiTheme{ThemedChatSurface{ConversationScreen(vm,state,channel,{_,_->},{},{},{},Modifier.fillMaxSize())}}}}
             // Real frame/file callbacks can arrive faster than hardware Keystore reads finish.
             repeat(100){vm.refreshLocal()}
             ui.onNodeWithContentDescription("Conversation settings").performClick()
@@ -113,6 +125,7 @@ class ChatReadUiTest {
         val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main)
         val counterpart=ChatRepository(context,other,PeerSession(context,other,scope))
         val shown=mutableStateOf(true)
+        val appearance=mutableStateOf("LIGHT")
         try{
             val direct=runBlocking{vm.chat.rename("Fictional recipient");counterpart.rename("Fictional sender");vm.chat.direct(counterpart.profile())}
             val reverse=runBlocking{counterpart.direct(vm.chat.profile())}
@@ -121,13 +134,21 @@ class ChatReadUiTest {
             val incoming=other.store.get("chat-messages",incomingId)!!
             ChatProtocol.message(incoming.getJSONObject("envelope"),null);incoming.put("owned",false)
             vm.repository.store.put("chat-messages",incomingId,incoming);vm.refreshLocal()
-            ui.setContent{if(shown.value){val state by vm.state.collectAsState();SaathiTheme{ConversationScreen(vm,state,direct,{_,_->},{},{},{},Modifier.fillMaxSize())}}}
+            ui.setContent{if(shown.value){val state by vm.state.collectAsState();SaathiTheme(appearance.value){ThemedChatSurface{ConversationScreen(vm,state,direct,{_,_->},{},{},{},Modifier.fillMaxSize())}}}}
             ui.onNodeWithText("Fictional: heading to the public gate.").assertIsDisplayed()
             ui.onNodeWithText("Fictional: I’m at the public gate.").assertIsDisplayed()
             val sent=ui.onNodeWithTag("chat-bubble-sent-$sentId").assertIsDisplayed().captureToImage().asAndroidBitmap()
             val received=ui.onNodeWithTag("chat-bubble-received-$incomingId").assertIsDisplayed().captureToImage().asAndroidBitmap()
             assertNotEquals("Sent and received bubbles should use different Material tones",sent.getPixel(sent.width/2,2),received.getPixel(received.width/2,2))
-            ui.onRoot().captureToImage().asAndroidBitmap().let{image->File(context.cacheDir,"chat-bubble-directions.png").outputStream().use{image.compress(Bitmap.CompressFormat.PNG,100,it)}}
+            ui.onRoot().captureToImage().asAndroidBitmap().let{image->saveReviewCapture(context,"chat-bubble-directions.png",image)}
+            appearance.value="DARK"
+            ui.waitForIdle()
+            val darkSent=ui.onNodeWithTag("chat-bubble-sent-$sentId").assertIsDisplayed().captureToImage().asAndroidBitmap()
+            val darkReceived=ui.onNodeWithTag("chat-bubble-received-$incomingId").assertIsDisplayed().captureToImage().asAndroidBitmap()
+            assertEquals("Dark chat should use the dark app surface",android.graphics.Color.rgb(21,34,30),ui.onRoot().captureToImage().asAndroidBitmap().getPixel(1,1))
+            assertEquals("Outgoing dark bubble should use the brighter forest tone",android.graphics.Color.rgb(62,118,93),darkSent.getPixel(darkSent.width/2,2))
+            assertEquals("Incoming dark bubble should use the warm contrasting tone",android.graphics.Color.rgb(128,103,64),darkReceived.getPixel(darkReceived.width/2,2))
+            ui.onRoot().captureToImage().asAndroidBitmap().let{image->saveReviewCapture(context,"chat-bubble-directions-dark.png",image)}
         }finally{
             ui.runOnIdle{shown.value=false;viewModels.clear()};scope.cancel();other.store.close()
             SecureStore(context,storageScope).use{it.clearPrivate()};context.deleteDatabase("saathi-$storageScope.db")
@@ -192,7 +213,7 @@ class ChatReadUiTest {
             repeat(20){appendIncoming(it+1)}
             phase("history-created")
             val screen=mutableStateOf(AppState(conversations=vm.chat.conversations(),chatMessages=incoming.toList(),chatProfile=vm.chat.profile()))
-            ui.setContent { if(shown.value)SaathiTheme { if(statusProof.value)Column(Modifier.fillMaxSize()){androidx.compose.material3.Text("DEVELOPMENT · Fictional connection-state preview");ConnectionStatus(AppState(confirmed=true))} else ConversationScreen(vm,screen.value,dm,{_,_->},{},{},{},Modifier.fillMaxSize(),onVisibleMessages={observed.add(it);vm.readChat(dm,it)}) } }
+            ui.setContent { if(shown.value)SaathiTheme { ThemedChatSurface { if(statusProof.value)Column(Modifier.fillMaxSize()){androidx.compose.material3.Text("DEVELOPMENT · Fictional connection-state preview");ConnectionStatus(AppState(confirmed=true))} else ConversationScreen(vm,screen.value,dm,{_,_->},{},{},{},Modifier.fillMaxSize(),onVisibleMessages={observed.add(it);vm.readChat(dm,it)}) } } }
             phase("content-set")
             ui.onNodeWithText(incoming.last().getJSONObject("payload").getString("text")).assertIsDisplayed()
             ui.waitUntil(10000){vm.repository.store.get("chat-messages",incoming.last().getString("id"))?.optBoolean("readLocally")==true}

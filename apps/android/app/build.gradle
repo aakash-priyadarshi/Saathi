@@ -17,8 +17,8 @@ android {
         targetSdk 36
         // Keep QA updates installable over the same package. Reserve 1.0.0 for
         // the first stable production release; increment versionCode on every build.
-        versionCode 5
-        versionName '0.1.3'
+        versionCode 6
+        versionName '0.1.4'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         buildConfigField 'String', 'CONFIG_ROOT', quote(configRoot)
         buildConfigField 'String', 'BOOTSTRAP', quote(bootstrap)
