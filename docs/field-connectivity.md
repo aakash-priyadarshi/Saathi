@@ -71,6 +71,27 @@ message relay or group-audio fanout.
   A→B→C requires B to subsequently connect to C in the current one-peer client.
   Membership size does not imply immediate delivery to all 200 people.
 
+## Internet gateway status and eventual delivery
+
+When a confirmed encounter starts, Android peers exchange signed gateway
+leases. A lease says that a particular device recently reached the service and
+whether it accepts text or opted-in media relay; it expires after 120 seconds.
+Nodes gossip at most 16 gateway hints and stop advertisements after 16 hops.
+These hints are not a source-routed end-to-end path. The displayed gateway and
+hop count are recent observations, not a live global map. A status update
+spreads only as devices meet, and can be stale or missing.
+
+An offline event can reach the service through relay only if it is carried over
+successive encounters to a phone with validated internet and relay enabled,
+before the event expires and within the hop limit. If no such contact occurs,
+Swarm keeps the event queued and retries on a later encounter. This is
+eventual, opportunistic delivery when a path becomes available; it does not
+send to 1,000 phones at once or guarantee that every phone or server receives an
+event. Queues, deduplication, signatures, expiration, relay opt-in, battery
+guards and daily data budgets bound the work. Internet relaying is limited to
+the approved public help/update event and media flows; it is not a general
+internet proxy for private chat.
+
 On 7 October 2026, SM-S921B and SM-X510 passed direct Nearby DM/channel text and
 saved photo/synthetic AAC/video transfers with no infrastructure Wi-Fi address
 and no validated internet. Wi-Fi remained enabled; no manual hotspot or API was

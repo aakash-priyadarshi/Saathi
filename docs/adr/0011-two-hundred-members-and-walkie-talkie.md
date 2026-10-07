@@ -39,9 +39,9 @@ Controls are `PTT_READY`, `PTT_REQUEST`, `PTT_GRANT`, `PTT_BUSY`, `PTT_STOP`, `P
 
 Touch uses hold/release. Keyboard uses held Space/Enter; accessibility activation starts a bounded turn and a second activation stops it. Waiting/receiving states keep the microphone off and expose readable status. The controller releases the WebRTC microphone source after each turn. Idle mode retains the existing local connection rather than repeatedly opening microphones.
 
-## Group walkie-talkie follow-on
+## Group walkie-talkie: out of scope
 
-A 200-member message roster is not a 200-listener live-audio service. Group PTT needs one elected, identity-authenticated floor coordinator and one audio fanout host per connected network partition. Use a local Wi-Fi router/SFU with authorized channel membership, one Opus uplink, receive-only listeners, participant encryption and explicit failover; add online SFU hosting separately. Merely forwarding audio through 200 phones increases battery and airtime costs. Ordinary TURN relays do not implement group fanout. A disconnected partition has its own floor and cannot guarantee a single global speaker. Retain recorded group voice notes for delayed delivery across partitions.
+Group PTT is explicitly excluded from the current product scope. Do not treat a coordinator, SFU, audio fanout or partition-floor design as a planned implementation milestone. A 200-member asynchronous message roster is not a live-audio service, and recorded group voice notes can use the existing delayed message-delivery model.
 
 ## Verification boundary
 

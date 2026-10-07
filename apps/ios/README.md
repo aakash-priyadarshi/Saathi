@@ -2,6 +2,18 @@
 
 This directory contains a buildable Swift core package, Android-compatible BLE packet decoder, synthetic packet fixture, capability routing tests and the implementation architecture below. The native iOS application, transport adapters, signing/storage integration and microphone UI still need implementation on a Mac. No iPhone radio, audio or App Store release qualification has been performed.
 
+## Implementation boundary and Mac handoff
+
+Swarm's purpose is protest-site and field coordination when internet is absent, unreliable or disrupted. Preserve the offline-first product: do not replace nearby communication or durable local queues with cloud-only chat, and do not require a server connection for nearby pairing and local message exchange. The online service supports selected account/configuration and public help/update workflows; it is not a general private-message relay. Use the transport, relay-consent, delivery and test limits documented below; do not promise instant reach across a crowd. This requirement does not override security gates: Android private chat is currently a development/QA preview and remains disabled in release pending independent security review. Keep iOS chat similarly gated until its implementation is reviewed.
+
+This project is currently being worked on from Windows, without Xcode, an iOS Simulator, Apple signing access or an attached iPhone. Do not try to build the native iOS app here, and do not describe this Swift core package as a completed iOS app or as proof of iOS transport support. Windows work may maintain shared protocol documentation and fixtures; the iOS application and all Apple-platform integration must be implemented and qualified on Rohan's Mac.
+
+**Instructions for an AI working on Rohan's Mac:** If macOS, Xcode and an iPhone or simulator are available, implement the actual native iOS app described below. Start by reading this handoff, `docs/chat-channel-architecture.md`, `docs/offline-protocol.md`, `docs/field-connectivity.md`, `docs/android-architecture.md` and ADR 0011. Treat the existing Android implementation, shared protocol vectors and signed service configuration as the interoperability authority. Build a usable SwiftUI app target with secure identity/storage, chats, Nearby, Updates, Needs and More; implement the adapters, durable outbox, signed identity verification, receipts, feature configuration, transfer resume and lifecycle handling rather than stopping at another library or design document. Preserve stable participant IDs and wire formats; do not introduce a second backend or invent iOS-only message semantics.
+
+Implement and report the actual capability boundaries: integrate and qualify Google's cross-platform Nearby SDK for direct offline discovery and transfer; BLE may carry bounded text/control/receipts, while saved media waits for a file-capable path; local WebRTC requires a reachable shared LAN and does not itself create a mesh. Direct-chat hold-to-talk is foreground-only and Wi-Fi-only. **Group walkie-talkie is out of product scope; do not build it as a follow-on.** Exchange signed, expiring gateway reachability hints and eligible public help/update events under the existing relay opt-in and byte-budget rules. Events move opportunistically over successive peer encounters until an opted-in phone with validated internet can upload them; this is one peer session at a time, not a live broadcast or source-routed path. Private chat is not uploaded through an internet gateway.
+
+Run the Swift package and protocol-vector tests, add and build the native app target, and use Simulator plus real iPhone↔S24/Tab tests for each claimed transport and lifecycle behavior. Exercise offline reopen, pairing-code confirmation, text and media integrity, reconnect/inventory/receipts, BLE fallback limits, PTT release/interruption, and stale gateway-route handling. Test three-device forwarding only when three devices are available; otherwise record it as unverified. Do not claim 1,000-device scale from unit tests or two-device tests. Add macOS app-build CI after it builds reliably, keep signing credentials outside this public repository, and submit the implementation as a PR. If the Mac or iPhone is unavailable, leave the app explicitly unimplemented and report the blocker instead of claiming completion.
+
 ## Fetch and run the foundation on a Mac
 
 Install the Xcode version compatible with your macOS from [Apple's requirements](https://developer.apple.com/xcode/system-requirements), select its command-line tools, then:
@@ -14,7 +26,7 @@ swift test --package-path apps/ios
 open apps/ios/Package.swift
 ```
 
-The GitHub `Swarm iOS foundation` workflow runs the same tests on macOS. It builds the core library; an IPA needs an iOS app target and Apple provisioning. Keep certificates, provisioning profiles, signing private keys and account tokens out of this public repository. Windows can edit shared source and inspect CI; Xcode builds, Simulator checks and physical iPhone tests run on Rohan's Mac.
+The GitHub `Swarm iOS foundation` workflow runs the same tests on macOS. It builds the core library; an IPA needs an iOS app target and Apple provisioning. Keep certificates, provisioning profiles, signing private keys and account tokens out of this public repository. The foundation workflow is not app-build or device-interoperability evidence. Xcode builds, Simulator checks and physical iPhone tests run on Rohan's Mac.
 
 Create a SwiftUI iOS app target (iOS 16+ provisional minimum), official display name **CJP Swarm**, visual branding **SWARM by CJP**. Add this local `SwarmCore` package. Choose distinct staging/production bundle IDs and Keychain namespaces with Rohan's Apple team. The Android app uses Kotlin/Compose; rebuilding it with a JavaScript wrapper will not supply native iOS radio support.
 
@@ -48,7 +60,7 @@ The included decoder/fixture verifies this framing and corruption rejection. It 
 
 ## Walkie-talkie and background behavior
 
-Begin with foreground direct-chat PTT on local WebRTC: both users opt in, one speaker, 30-second turns, microphone off while waiting/listening, stop on chat change/background/disconnect/interruption. Port the tests in `WalkieTalkieTest.kt`, including the delayed grant after release and simultaneous press cases. Never capture camera/audio merely because a peer sends READY. Group PTT is the separate coordinator/SFU design in ADR 0011.
+Implement foreground direct-chat PTT on a confirmed local Wi-Fi WebRTC connection: both users opt in, one speaker, 30-second turns, microphone off while waiting/listening, stop on chat change/background/disconnect/interruption. Port the tests in `WalkieTalkieTest.kt`, including the delayed grant after release and simultaneous press cases. Never capture camera/audio merely because a peer sends READY. Group PTT is explicitly out of scope; do not implement a group coordinator or audio fanout.
 
 [Apple Push to Talk](https://developer.apple.com/documentation/pushtotalk/creating-a-push-to-talk-app) can support system-managed background audio after a user joins a channel, with its own entitlement/session/APNs rules. It does not supply Swarm's audio transport or offline relay. Qualify it after foreground parity; avoid promising APNs-based wakeup when there is no internet. [CoreBluetooth background execution](https://developer.apple.com/library/archive/documentation/NetworkingInternetWeb/Conceptual/CoreBluetooth_concepts/CoreBluetoothBackgroundProcessingForIOSApps/PerformingTasksWhileYourAppIsInTheBackground.html) also has different scanning/advertising behavior. Test foreground, screen lock, suspension, force quit and permission revocation separately.
 
@@ -60,7 +72,7 @@ Begin with foreground direct-chat PTT on local WebRTC: both users opt in, one sp
 4. Remove internet while keeping shared Wi-Fi. Transfer text, recorded audio, photo/video and interrupted private files; verify hashes and recipient-signed receipts after durable saves.
 5. Disable Wi-Fi and test supported BLE text/control; media stays queued. Restore Wi-Fi and resume without duplicate messages.
 6. Test PTT both directions, simultaneous presses, immediate release/cancel, screen lock, phone-call interruption, navigation and transport loss. Measure latency/battery on devices.
-7. Use three devices to check asynchronous authorized store-and-forward and removal/key changes, then load-test 200 signed members. Group live audio waits for the router/coordinator milestone.
+7. When a third device is available, check asynchronous authorized store-and-forward and removal/key changes. Load-test the signed 200-member roster and record that this does not represent 200 simultaneous radio links or guarantee delivery time.
 8. Add iOS app build/Simulator CI once the app target exists. App Store/TestFlight signing and release are a separate step owned by the Apple team.
 
 Bring changes back as a PR from `codex/ios-native`; do not introduce another backend or change chat identities to fit iOS.
