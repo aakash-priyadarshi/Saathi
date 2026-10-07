@@ -312,6 +312,9 @@ class ChatRepository(private val context: Context, private val repository: Repos
         if(!ChannelGovernance.capabilities(p,self()).getBoolean("canManageMembers") || pb.getBoolean("deleted")) return
         val person=b.getJSONObject("participant"); val personId=ChatProtocol.participant(person); if(blocked(personId))return
         if(pb.optJSONArray("bannedIds")?.strings()?.contains(personId)==true)return
+        // Like WhatsApp: a removed member cannot rejoin on their own; their request waits for an admin's approval.
+        val previous=pb.getJSONArray("members").objects().firstOrNull{ChatProtocol.participant(it.getJSONObject("profile"))==personId}
+        if(b.getString("action")=="JOIN" && previous!=null && !previous.isNull("removedAt")){remember(person);save("chat-join-inbox",b.getString("id"),obj("id" to b.getString("id"),"request" to request,"resolved" to false));return}
         if(b.getString("action")=="JOIN") {
             val admission=pb.optJSONObject("settings")?.optString("admission")?:if(pb.getString("visibility")=="OPEN")"OPEN" else "INVITE_AUTO"
             val invitation=b.optJSONObject("invitation")
