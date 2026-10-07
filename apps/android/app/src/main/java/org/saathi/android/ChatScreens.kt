@@ -236,6 +236,10 @@ private fun AppState.channelReports(id:String)=chatReportInbox.filter{report->re
                     Surface(Modifier.widthIn(max=520.dp).testTag(if(owned)"chat-bubble-sent-$messageId" else "chat-bubble-received-$messageId"),shape=bubbleShape,color=bubbleColor,contentColor=bubbleContentColor){
                         Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                             if(channel)Text(body.getJSONObject("author").getJSONObject("body").getString("name"),style=MaterialTheme.typography.labelLarge,color=bubbleContentColor,fontWeight=FontWeight.SemiBold)
+                            Row(verticalAlignment=Alignment.CenterVertically){
+                                Text(timeLabel(body.getString("createdAt"))+if(owned)" · "+chatStatus(message) else "",Modifier.weight(1f),style=MaterialTheme.typography.labelSmall,color=bubbleContentColor.copy(alpha=.78f))
+                                IconButton(onClick={messageActionsId=messageId},modifier=Modifier.testTag("message-actions-$messageId")){Icon(Icons.Outlined.MoreVert,"More message actions")}
+                            }
                             if(hidden)Text("Hidden by a channel moderator",style=MaterialTheme.typography.bodyMedium)
                             else if(payload.has("text"))Text(payload.getString("text"),style=MaterialTheme.typography.bodyLarge)
                             if(!hidden)payload.optJSONObject("reference")?.let {r->Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Outlined.VolunteerActivism,null);TextButton(onClick={if(r.getString("type")=="NEED")openNeed(r.getString("id")) else vm.notice("Find this public update in Updates and check its latest status.")},colors=ButtonDefaults.textButtonColors(contentColor=bubbleContentColor)){Text(r.getString("title"))}}}
@@ -250,12 +254,6 @@ private fun AppState.channelReports(id:String)=chatReportInbox.filter{report->re
                                         if(attachmentComplete&&body.getString("format")=="VOICE")VoicePlayback(vm,messageId)
                                         if(!attachmentComplete)Text("Download when nearby or back online.",style=MaterialTheme.typography.bodySmall)
                                     }
-                                }
-                            }
-                            Row(verticalAlignment=Alignment.CenterVertically){
-                                Text(timeLabel(body.getString("createdAt"))+if(owned)" · "+chatStatus(message) else "",style=MaterialTheme.typography.labelSmall,color=bubbleContentColor.copy(alpha=.78f))
-                                Box {
-                                    IconButton(onClick={messageActionsId=messageId},modifier=Modifier.testTag("message-actions-$messageId")){Icon(Icons.Outlined.MoreVert,"More message actions")}
                                 }
                             }
                             if(replies.isNotEmpty())TextButton(onClick={thread=messageId;search="";followLatest=true}){Text("${replies.size} replies")}
