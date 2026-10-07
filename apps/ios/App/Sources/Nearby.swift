@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import NearbyConnections
 import SwarmCore
 
@@ -14,6 +15,8 @@ import SwarmCore
     @Published private(set) var connected: EndpointID?
     @Published private(set) var connectedName = ""
     @Published private(set) var searching = false
+    /// On a Wi-Fi network (e.g. a teammate's Swarm hotspot): phones on it find each other in both directions.
+    @Published private(set) var onWiFi = false
 
     var onFrame: (JSON) -> Void = { _ in }
     var onConnected: () -> Void = {}
@@ -39,8 +42,28 @@ import SwarmCore
     /// Frames that arrive between the peer's accept and our `.connected` callback (Android sends at once).
     private var early: [Data] = []
 
+    private let path = NWPathMonitor()
+    private var wifiName: String?
+
     init() {
         manager.delegate = bridge; advertiser.delegate = bridge; discoverer.delegate = bridge
+        path.pathUpdateHandler = { [weak self] update in
+            let wifi = update.status == .satisfied && update.usesInterfaceType(.wifi)
+            let name = update.availableInterfaces.first { $0.type == .wifi }?.name
+            Task { @MainActor in self?.networkChanged(wifi: wifi, interface: name) }
+        }
+        path.start(queue: .main)
+    }
+    /// Joining a hotspot mid-search: restart so Wi-Fi LAN discovery and visibility begin on the new network.
+    private func networkChanged(wifi: Bool, interface: String?) {
+        let changed = wifi != onWiFi || (wifi && interface != wifiName)
+        onWiFi = wifi; wifiName = interface
+        guard changed, searching, connected == nil, pending == nil else { return }
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard let self, self.searching, self.connected == nil, self.pending == nil else { return }
+            self.start()
+        }
     }
 
     /// Swarm came to the foreground: search automatically while it stays open.

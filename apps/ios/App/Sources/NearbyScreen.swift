@@ -17,6 +17,7 @@ struct NearbyView: View {
                     TopBar()
                     Heading(title: "Nearby", text: "Meet people around you. Keep your conversations when the connection changes.")
                     swarmCard(peer: peer)
+                    hotspotCard
                     Text("People").font(Type.titleLarge).foregroundStyle(Palette.ink)
                     people(peer: peer)
                     Divider().overlay(Palette.outline)
@@ -53,6 +54,25 @@ struct NearbyView: View {
                 .font(Type.bodySmall).foregroundStyle(Palette.onPrimaryContainer.opacity(0.8))
         }
         .padding(20).frame(maxWidth: .infinity, alignment: .leading).background(Palette.primaryContainer, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    /// Two-way discovery with Android: join a teammate's Swarm hotspot (no internet needed) with the Camera app.
+    var hotspotCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: nearby.onWiFi ? "wifi" : "wifi.exclamationmark").foregroundStyle(Palette.primary)
+                Text("Swarm hotspot").font(Type.titleMedium).foregroundStyle(Palette.ink)
+            }
+            if nearby.onWiFi {
+                Text("You're on a Wi-Fi network. Swarm phones on it find each other in both directions, and photos move at Wi-Fi speed.")
+                    .font(Type.bodySmall).foregroundStyle(Palette.muted)
+            } else {
+                Text("Without shared Wi-Fi, Android phones can't see this iPhone (it can still find them). For two-way discovery, ask an Android teammate to tap Start Swarm hotspot, point your iPhone Camera at its QR code and tap Join. Swarm searches the new network by itself.")
+                    .font(Type.bodySmall).foregroundStyle(Palette.muted)
+            }
+        }
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12)).overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.outline))
     }
 
     @ViewBuilder func people(peer: JSON?) -> some View {
