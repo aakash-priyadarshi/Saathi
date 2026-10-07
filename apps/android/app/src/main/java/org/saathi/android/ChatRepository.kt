@@ -379,17 +379,16 @@ class ChatRepository(private val context: Context, private val repository: Repos
         require(!b.getBoolean("deleted")) {"This group was deleted."}
         require(ChannelGovernance.capabilities(policy,self()).getBoolean("canInvite")) {"You do not have permission to create an invitation."}
         // One reusable link per group: share the current one while it has at least a day left, else sign a new 7-day link.
-        val issued=now();store.get("chat-join-links",id)?.takeIf{Instant.parse(it.getString("expiresAt"))>issued.plusSeconds(86400)}?.let{return@withLock it.getString("link")}
+        val issued=now();store.get("chat-join-links",id)?.takeIf{Instant.parse(it.getString("expiresAt"))>issued.plusSeconds(86400)}?.let{return@withLock InviteLink.WEB+InviteLink.token(it.getString("link"))}
         val admission=b.optJSONObject("settings")?.optString("admission")?:"INVITE_AUTO"
         // The document always asks for approval; the managers' phones apply the group's current setting when a request arrives.
         val invite=signed(obj("v" to 1,"kind" to "CHAT_ADMISSION","id" to UUID.randomUUID().toString(),"channelId" to id,"name" to b.getString("name"),"owner" to b.getJSONObject("owner"),"issuer" to profile(),"recipientId" to "*","policyHash" to Protocol.hash(policy),"admission" to when(admission){"INVITE_AUTO"->"INVITE_PLUS_APPROVAL";"OPEN"->"APPROVAL_ONLY";else->admission},"issuedAt" to issued.toString(),"expiresAt" to issued.plusSeconds(ChannelGovernance.JOIN_LINK_SECONDS).toString()))
         val link=encodeInvite(invite);save("chat-join-links",id,obj("id" to id,"link" to link,"expiresAt" to invite.getJSONObject("body").getString("expiresAt")))
         onChange();link
     } }
-    private fun encodeInvite(invite:JSONObject):String {val bytes=ByteArrayOutputStream(); GZIPOutputStream(bytes).use { it.write(invite.toString().toByteArray()) };return "cjpswarm://invite/"+Protocol.b64(bytes.toByteArray())}
+    private fun encodeInvite(invite:JSONObject):String {val bytes=ByteArrayOutputStream(); GZIPOutputStream(bytes).use { it.write(invite.toString().toByteArray()) };return InviteLink.WEB+Protocol.b64(bytes.toByteArray())}
     fun decodeInvite(link:String):JSONObject {
-        val uri=Uri.parse(link.trim()); require(uri.scheme=="cjpswarm" && uri.host=="invite" && uri.query==null && uri.fragment==null && link.length<=700000)
-        val token=uri.path?.removePrefix("/")?:error("Invitation is incomplete."); require(token.length in 1..699980 && !token.contains('/'))
+        require(link.length<=700000); val token=InviteLink.token(link)?:error("This is not a Swarm invitation.")
         val output=ByteArrayOutputStream(); GZIPInputStream(Protocol.decode(token).inputStream()).use { input -> val buffer=ByteArray(1024); while(true){val n=input.read(buffer);if(n<0)break;require(output.size()+n<=524288);output.write(buffer,0,n)} }
         val invite=JSONObject(output.toString(Charsets.UTF_8.name())); ChatProtocol.invite(invite,self(),now()); return invite
     }

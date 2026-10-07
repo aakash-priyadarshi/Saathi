@@ -21,6 +21,7 @@ struct SwarmApp: App {
             .preferredColorScheme(appearance == "LIGHT" ? .light : appearance == "DARK" ? .dark : nil)
             .tint(Palette.primary)
             .onOpenURL { url in model.openInvite(url.absoluteString) }
+            .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in if let url = activity.webpageURL { model.openInvite(url.absoluteString) } }
             // Search automatically whenever Swarm is on screen; iOS suspends radios in the background anyway.
             .onChange(of: phase) { value in
                 if value == .active { model.nearby.resumeIfVisible(); UNUserNotificationCenter.current().removeAllDeliveredNotifications() }
@@ -88,9 +89,12 @@ struct SwarmApp: App {
             failure = (error as? LocalizedError)?.errorDescription ?? "Swarm could not open this phone's identity."
         }
     }
+    private var opening: String?
+    /// A universal link can arrive through both `onOpenURL` and `onContinueUserActivity`; the same link opens once.
     func openInvite(_ link: String) {
-        guard let chat else { return }
-        Task { do { try await chat.acceptInvite(link) } catch { chat.notice = (error as? LocalizedError)?.errorDescription ?? "Invitation could not be used." } }
+        guard let chat, opening != link else { return }
+        opening = link
+        Task { do { try await chat.acceptInvite(link) } catch { chat.notice = (error as? LocalizedError)?.errorDescription ?? "Invitation could not be used." }; opening = nil }
     }
 }
 
@@ -177,7 +181,7 @@ struct TopBar<Trailing: View>: View {
 }
 extension TopBar where Trailing == EmptyView { init() { self.init { EmptyView() } } }
 
-/// Paste a `cjpswarm://invite/…` link from a channel admin.
+/// Paste a `https://swarm.cockroachjantaparty.org/join#…` (or older `cjpswarm://invite/…`) link from a channel admin.
 struct JoinInviteSheet: View {
     @ObservedObject var chat: ChatEngine
     @Binding var showing: Bool
@@ -186,7 +190,7 @@ struct JoinInviteSheet: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
                 Heading(title: "Join with invite", text: "Paste an invitation or join link from a group admin. Join requests wait for an admin's approval nearby.")
-                TextField("cjpswarm://invite/…", text: $link, axis: .vertical).lineLimit(3...6).font(Type.bodyMedium)
+                TextField("https://swarm.cockroachjantaparty.org/join#…", text: $link, axis: .vertical).lineLimit(3...6).font(Type.bodyMedium)
                     .autocorrectionDisabled().textInputAutocapitalization(.never)
                     .padding(14).background(Palette.surface, in: RoundedRectangle(cornerRadius: 10)).overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.outline))
                 HStack {

@@ -155,7 +155,7 @@ import SwarmCore
         changed()
         if session.confirmed { try? await session.send("CHAT_JOIN", request) }
     }
-    /// Accepts a `cjpswarm://invite/…` link from an Android admin (QR, message or nearby).
+    /// Accepts a `https://swarm.cockroachjantaparty.org/join#…` or `cjpswarm://invite/…` link from either app (QR, message or nearby).
     @discardableResult func acceptInvite(_ link: String) async throws -> String {
         let invite = try ChatDocuments.decodeInvite(link)
         try ChatRules.invite(invite, recipient: selfID, now: now())
