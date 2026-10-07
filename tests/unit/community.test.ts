@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { chatPerson } from '../chat-fixtures';
 import { communityEvent, helpPayload } from '../community-fixtures';
 import {
@@ -53,5 +54,43 @@ describe('Public participant statement boundary', () => {
     if (clone.body.type !== 'REPORT') throw new Error();
     clone.body.payloadHash = await hash({ caption: 'changed' });
     expect(await validCommunityEnvelope(clone)).toBe(false);
+  });
+  it('accepts short metadata-free AAC audio for public reports and rejects video-shaped audio', async () => {
+    const author = await chatPerson('Fictional audio reporter');
+    const media = {
+      id: randomUUID(),
+      mime: 'audio/mp4',
+      size: 1024,
+      hash: 'a'.repeat(64),
+      width: 1,
+      height: 1,
+      durationSeconds: 30,
+    };
+    const event = await communityEvent(author, 'REPORT', {
+      caption: 'A short audio update from the public area',
+      area: 'Fictional Gate 2',
+      contentWarning: false,
+      media,
+    });
+    expect(await validCommunityEnvelope(event)).toBe(true);
+    const invalid = structuredClone(event);
+    if (invalid.body.type !== 'REPORT') throw new Error();
+    invalid.body.payload.media!.width = 320;
+    expect(communityEnvelopeSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  it('allows bounded sixteen-hop store-and-forward events and rejects deeper routes', async () => {
+    const author = await chatPerson('Fictional relay author');
+    const event = await communityEvent(
+      author,
+      'REPORT',
+      { caption: 'Public update', area: 'Fictional Gate 2', contentWarning: false, media: null },
+      undefined,
+      { maxHops: 16 },
+    );
+    expect(await validCommunityEnvelope(event)).toBe(true);
+    const tooDeep = structuredClone(event);
+    tooDeep.body.maxHops = 17;
+    expect(communityEnvelopeSchema.safeParse(tooDeep).success).toBe(false);
   });
 });

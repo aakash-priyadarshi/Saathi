@@ -34,6 +34,7 @@ data class AppState(
     val chatPolicies:List<JSONObject> = emptyList(),val chatBlocks:Set<String> = emptySet(),
     val chatJoinInbox:List<JSONObject> = emptyList(),val chatReportInbox:List<JSONObject> = emptyList(),
     val relayReservedBytes:Long = 0,
+    val gatewayStatus:String = "No recent Swarm internet gateway is known.",
     val walkieConversation: String? = null, val walkieStatus: String = "OFF", val walkieAvailable: Boolean = false,
     val localWifiAddress: Boolean = false
 )
@@ -211,13 +212,22 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
             }
         }
     }
-    fun preferences()=repository.store.get("preferences","local")?:obj("appearance" to "SYSTEM","relay" to "OFF","mediaRelay" to false,"dailyLimitMiB" to 50,"batteryMinimum" to 20,"nearbyVisible" to true)
+    fun preferences():JSONObject {
+        val saved=repository.store.get("preferences","local")?:obj("appearance" to "SYSTEM","relay" to "OFF","mediaRelay" to false,"dailyLimitMB" to 500,"batteryMinimum" to 20,"nearbyVisible" to true)
+        if(!saved.has("dailyLimitMB")){
+            val previous=saved.optInt("dailyLimitMiB",50)
+            saved.put("dailyLimitMB",if(previous<500)500 else previous.coerceAtMost(5000)).remove("dailyLimitMiB")
+            repository.store.put("preferences","local",saved)
+        }
+        return saved
+    }
     fun preference(key:String,value:Any){
-        require(when(key){"appearance"->value in listOf("SYSTEM","LIGHT","DARK");"relay"->value in listOf("OFF","WIFI","ANY");"mediaRelay","nearbyVisible"->value is Boolean;"dailyLimitMiB"->value is Int && value in 1..500;"batteryMinimum"->value is Int && value in 10..80;else->false})
+        require(when(key){"appearance"->value in listOf("SYSTEM","LIGHT","DARK");"relay"->value in listOf("OFF","WIFI","ANY");"mediaRelay","nearbyVisible"->value is Boolean;"dailyLimitMB"->value is Int && value in 500..5000;"batteryMinimum"->value is Int && value in 10..80;else->false})
         val next=JSONObject(state.value.preferences.toString()).put(key,value);mutable.update{it.copy(preferences=next)}
         val version=synchronized(preferenceVersions){((preferenceVersions[key]?:0)+1).also{preferenceVersions[key]=it}}
         viewModelScope.launch(Dispatchers.IO){synchronized(preferenceVersions){if(preferenceVersions[key]==version)synchronized(repository.store){repository.store.put("preferences","local",preferences().put(key,value))}}}
         if(key=="nearbyVisible" && value==false){nearby.disconnect();session.reset();endMedia()}
+        if(key in setOf("relay","mediaRelay","dailyLimitMB"))mutable.update{it.copy(gatewayStatus=community.gatewayStatus())}
     }
     fun action(block: suspend () -> Unit) {
         if (state.value.busy) return
@@ -248,7 +258,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
                 mutable.update { it.copy(requests=requests,completed=completed,posts=posts,savedAt=savedAt,authenticated=authenticated,
                     chatProfile=profile,chatContacts=contacts,conversations=conversations,chatMessages=chatMessages,chatPeer=peer,nearbyChannels=channels,
                     chatActions=actions,localHelp=help,participantReports=reports,chatPolicies=policies,chatBlocks=blocks,chatJoinInbox=joins,chatReportInbox=reportInbox,relayReservedBytes=reserved,
-                    events=events,messages=messages,files=files,drafts=drafts,donations=donations,operations=operations,preparation=preparation,account=account,confirmed=confirmed,media=media,walkieAvailable=media&&session.remoteWalkieTalkie,needsEnabled=repository.needsEnabled,localWifiAddress=localWifiAddress) }
+                    events=events,messages=messages,files=files,drafts=drafts,donations=donations,operations=operations,preparation=preparation,account=account,confirmed=confirmed,media=media,walkieAvailable=media&&session.remoteWalkieTalkie,needsEnabled=repository.needsEnabled,localWifiAddress=localWifiAddress,gatewayStatus=community.gatewayStatus()) }
             } catch (_: Exception) { notice("Saved information could not be unlocked. Do not clear app storage if you need to recover work.") }
     }
     private suspend fun refreshRemote() {
@@ -269,7 +279,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     fun offerHelp(id:String)=chatAction{community.offer(id);runCatching{community.sync()}}
     fun checkHelpArea(area:String)=chatAction{require(CommunityProtocol.publicText(area,80)){"Choose an approximate public area without contact details."};repository.store.put("community-meta","area",obj("area" to area));community.sync()}
     fun helpStatus(id:String,status:String,responder:String?=null)=chatAction{community.status(id,status,responder);runCatching{community.sync()}}
-    fun participantReport(caption:String,area:String,warning:Boolean,uri:Uri?,video:Boolean,saved:()->Unit)=chatAction{val derivative=uri?.let{notice(if(video)"Optimising video…"else"Preparing a private-metadata-free photo…");FieldMedia.prepare(getApplication(),it,video)};community.report(caption,area,warning,derivative);saved();notice("Report saved. Public publication requires review.");runCatching{community.sync()}.onFailure{notice(it.message)} }
+    fun participantReport(caption:String,area:String,warning:Boolean,uri:Uri?,video:Boolean,audio:Boolean,saved:()->Unit)=chatAction{val derivative=uri?.let{notice(if(video)"Optimising video…"else if(audio)"Preparing private-metadata-free audio…"else"Preparing a private-metadata-free photo…");FieldMedia.prepare(getApplication(),it,video,audio)};community.report(caption,area,warning,derivative);saved();notice("Report saved. Public publication requires review.");runCatching{community.sync()}.onFailure{notice(it.message)} }
     fun withdrawReport(id:String)=chatAction{community.withdraw(id);runCatching{community.sync()}}
     fun shareReportMedia(id:String)=chatAction{community.announce();community.shareMedia(id)}
     fun flagStatement(id:String,reason:String)=chatAction{community.flag(id,reason);notice("Report saved for review. Offline review waits for a connection.")}

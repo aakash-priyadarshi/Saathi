@@ -20,15 +20,22 @@ class CommunityRelayPolicyTest {
     }
     @Test fun abandonedRequestsAndRetriesStillConsumeDailyAllowance(){
         var reserved=0L
-        repeat(3){reserved=CommunityRelayPolicy.nextReservation(reserved,1,16384+262144)}
+        repeat(3){reserved=CommunityRelayPolicy.nextReservation(reserved,500,16384+262144)}
         assertEquals(860160L,reserved)
-        assertTrue(runCatching{CommunityRelayPolicy.nextReservation(reserved,1,16384+262144)}.isFailure)
-        assertEquals(286720L,CommunityRelayPolicy.nextReservation(0,1,16384+262144))
+        assertEquals(286720L,CommunityRelayPolicy.nextReservation(0,500,16384+262144))
+    }
+    @Test fun dataAllowanceUsesDecimalMegabytesAndOffersHalfGigabyteSteps(){
+        assertEquals(500_000_000L,CommunityRelayPolicy.nextReservation(499_000_000L,500,991_808))
+        assertTrue(runCatching{CommunityRelayPolicy.nextReservation(499_000_000L,500,991_809)}.isFailure)
+        assertEquals(listOf(500,1000,1500,2000,2500,3000,3500,4000,4500,5000),CommunityRelayPolicy.dailyLimitPresetsMB)
+        assertEquals("500 MB",CommunityRelayPolicy.dailyLimitLabel(500))
+        assertEquals("1.5 GB",CommunityRelayPolicy.dailyLimitLabel(1500))
+        assertEquals("5 GB",CommunityRelayPolicy.dailyLimitLabel(5000))
     }
     @Test fun invalidSettingsFailClosed(){
         assertFalse(CommunityRelayPolicy.mayForward("UNKNOWN",true,false,true,true))
         assertFalse(CommunityRelayPolicy.resourcesReady(true,100,0,false,Long.MAX_VALUE))
-        assertTrue(runCatching{CommunityRelayPolicy.nextReservation(0,501,1)}.isFailure)
-        assertTrue(runCatching{CommunityRelayPolicy.nextReservation(-1,50,1)}.isFailure)
+        assertTrue(runCatching{CommunityRelayPolicy.nextReservation(0,5001,1)}.isFailure)
+        assertTrue(runCatching{CommunityRelayPolicy.nextReservation(-1,500,1)}.isFailure)
     }
 }

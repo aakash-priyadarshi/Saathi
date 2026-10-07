@@ -6,9 +6,36 @@ import org.junit.Test
 import org.junit.Assert.*
 import org.junit.runner.RunWith
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class SecureStoreTest {
+    @Test fun concurrentTransactionsAndStoreWritesUseOneLockOrder() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val scope = "test-${UUID.randomUUID()}"; val store = SecureStore(context, scope)
+        val pool = Executors.newFixedThreadPool(2); val start = CountDownLatch(1)
+        try {
+            val transaction = pool.submit {
+                start.await()
+                store.transaction {
+                    repeat(20) { store.put("public", "transaction-$it", obj("n" to it), false) }
+                }
+            }
+            val writer = pool.submit {
+                start.await()
+                repeat(20) { store.put("public", "writer-$it", obj("n" to it), false) }
+            }
+            start.countDown()
+            transaction.get(10, TimeUnit.SECONDS)
+            writer.get(10, TimeUnit.SECONDS)
+            assertEquals(40, store.all("public").size)
+        } finally {
+            pool.shutdownNow(); store.close(); context.deleteDatabase("saathi-$scope.db")
+        }
+    }
+
     @Test fun missingEncryptionKeyPreservesRecordsAndNeverRegeneratesOverPrivateWork() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val scope = "test-${UUID.randomUUID()}"; val first = SecureStore(context, scope)

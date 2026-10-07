@@ -138,6 +138,7 @@ model ReliefRequest {
   organization Organization @relation(fields:[organizationId], references:[id])
   reliefPointId String
   reliefPoint ReliefPoint @relation(fields:[reliefPointId], references:[id])
+  deliveryLocation String?
   category Category
   title String
   description String

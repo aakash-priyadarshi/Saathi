@@ -125,7 +125,7 @@ function ManagementContent({ user }: { user: CurrentUser }) {
                   window.open(r.url, '_blank', 'noopener,noreferrer');
                 }}
               >
-                Review {m.mimeType.startsWith('video') ? 'video' : 'photo'} ({m.processingState})
+                Review {m.mimeType.startsWith('audio') ? 'audio' : m.mimeType.startsWith('video') ? 'video' : 'photo'} ({m.processingState})
               </button>
             ))}
             <div className="button-row">

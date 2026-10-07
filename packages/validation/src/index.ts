@@ -17,6 +17,7 @@ export const loginSchema = z
 export const requestPayloadSchema = z
   .object({
     reliefPointId: z.string().uuid(),
+    deliveryLocation: z.string().trim().min(3).max(200).nullable().optional(),
     category: z.enum(categories),
     title: z.string().trim().min(3).max(100),
     description: z.string().trim().min(5).max(2000),
@@ -62,6 +63,7 @@ export const fieldSchema = z
 export const editSchema = z
   .object({
     version: z.number().int().positive(),
+    deliveryLocation: z.string().trim().min(3).max(200).nullable().optional(),
     title: z.string().trim().min(3).max(100).optional(),
     description: z.string().trim().min(5).max(2000).optional(),
     requestedQuantity: z.number().int().positive().max(1000000).optional(),

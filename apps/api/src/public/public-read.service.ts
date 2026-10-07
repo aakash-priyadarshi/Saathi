@@ -31,6 +31,7 @@ export function publicRequest(r: ExpandedRequest): PublicRequest {
     deadline: r.deadline.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
     canonicalUrl: `${env.PUBLIC_URL}/r/${r.publicId}`,
+    deliveryLocation: r.deliveryLocation,
     organization: {
       name: r.organization.name,
       verified: r.organization.verified && r.organization.active,
@@ -38,7 +39,7 @@ export function publicRequest(r: ExpandedRequest): PublicRequest {
     creator: r.creator,
     reliefPoint: {
       name: r.reliefPoint.name,
-      publicLocation: r.reliefPoint.publicLocation,
+      publicLocation: r.deliveryLocation ?? r.reliefPoint.publicLocation,
       instructions: r.reliefPoint.instructions,
       operatingHours: r.reliefPoint.operatingHours,
       ...(r.reliefPoint.exactLocationApproved &&

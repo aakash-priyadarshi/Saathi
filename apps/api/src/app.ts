@@ -200,7 +200,15 @@ export async function createApp(plane: typeof env.API_PLANE = env.API_PLANE) {
       try {
         const key = `${req.params.folder}/${req.params.key}`;
         const bytes = await app.get(S3Storage).readPublic(key);
-        res.type(key.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg').send(bytes);
+        res
+          .type(
+            key.endsWith('.m4a')
+              ? 'audio/mp4'
+              : key.endsWith('.mp4')
+                ? 'video/mp4'
+                : 'image/jpeg',
+          )
+          .send(bytes);
       } catch {
         res.sendStatus(404);
       }

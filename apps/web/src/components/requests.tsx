@@ -89,7 +89,7 @@ export function RequestCard({ request: r }: { request: PublicRequest }) {
       <div className="request-meta">
         <span>
           <MapPin size={15} />
-          {r.reliefPoint.name} · {r.reliefPoint.publicLocation}
+          {r.reliefPoint.name} · {r.deliveryLocation ?? r.reliefPoint.publicLocation}
         </span>
         <span>
           <Clock size={15} />
@@ -137,7 +137,9 @@ export function FieldPost({ post: p, compact = false }: { post: PublicPost; comp
       {!compact &&
         showMedia &&
         p.media.map((m) =>
-          m.mimeType.startsWith('video') ? (
+          m.mimeType.startsWith('audio') ? (
+            <audio key={m.id} controls preload="metadata" src={m.url} aria-label={p.caption} />
+          ) : m.mimeType.startsWith('video') ? (
             <video
               key={m.id}
               controls

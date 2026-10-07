@@ -188,7 +188,7 @@ function AdminContent({ user }: { user: CurrentUser }) {
                         window.open(result.url, '_blank', 'noopener,noreferrer');
                       }}
                     >
-                      Review {media.mimeType.startsWith('video') ? 'video' : 'photo'} ·{' '}
+                      Review {media.mimeType.startsWith('audio') ? 'audio' : media.mimeType.startsWith('video') ? 'video' : 'photo'} ·{' '}
                       {media.processingState.toLowerCase()}
                     </button>
                   ))}

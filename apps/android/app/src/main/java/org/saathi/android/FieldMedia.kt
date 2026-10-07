@@ -20,7 +20,7 @@ import java.nio.ByteBuffer
 data class FieldDerivative(val bytes:ByteArray,val mime:String,val width:Int,val height:Int,val durationSeconds:Int,val thumbnail:ByteArray)
 /** Conventional decoding/re-encoding only. Selected originals are never modified. */
 object FieldMedia {
-    suspend fun prepare(context:Context,uri:Uri,video:Boolean)=withContext(Dispatchers.IO){if(video)video(context,uri) else photo(context,uri)}
+    suspend fun prepare(context:Context,uri:Uri,video:Boolean,audio:Boolean=false)=withContext(Dispatchers.IO){if(video)video(context,uri) else if(audio)audio(context,uri) else photo(context,uri)}
     private fun jpeg(bitmap:Bitmap,quality:Int)=ByteArrayOutputStream().use{out->require(bitmap.compress(Bitmap.CompressFormat.JPEG,quality,out));out.toByteArray()}
     private fun thumb(bitmap:Bitmap):ByteArray {val scale=minOf(1f,600f/maxOf(bitmap.width,bitmap.height));val small=Bitmap.createScaledBitmap(bitmap,maxOf(1,(bitmap.width*scale).toInt()),maxOf(1,(bitmap.height*scale).toInt()),true);return jpeg(small,78).also{if(small!==bitmap)small.recycle()}}
     private fun photo(context:Context,uri:Uri):FieldDerivative {
@@ -57,5 +57,27 @@ object FieldMedia {
                 require(output.length() in 29..16777216);return FieldDerivative(output.readBytes(),"video/mp4",width,height,((duration+999)/1000).toInt(),thumbnail)
             }finally{extractor.release();muxer?.release();output.delete()}
         }finally{metadata.release()}
+    }
+    private fun audio(context:Context,uri:Uri):FieldDerivative {
+        context.contentResolver.openAssetFileDescriptor(uri,"r")?.use{require(it.length<0 || it.length<=16777216){"Choose audio smaller than 16 MB."}}
+        val metadata=MediaMetadataRetriever();val duration:Long
+        try{metadata.setDataSource(context,uri);duration=metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()?:0}
+        finally{metadata.release()}
+        require(duration in 1..60000){"Choose audio up to 60 seconds long."}
+        val extractor=MediaExtractor();val folder=File(context.cacheDir,"field-processing").apply{mkdirs()};val output=File.createTempFile("safe-audio-",".mp4",folder);var muxer:MediaMuxer?=null
+        try{
+            extractor.setDataSource(context,uri,null)
+            val index=(0 until extractor.trackCount).firstOrNull{extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)=="audio/mp4a-latm"}?:error("Choose AAC audio in an MP4 or M4A file.")
+            val source=extractor.getTrackFormat(index);val sampleRate=source.getInteger(MediaFormat.KEY_SAMPLE_RATE);val channels=source.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+            require(sampleRate in 8000..96000 && channels in 1..2){"Choose mono or stereo AAC audio."}
+            val clean=MediaFormat.createAudioFormat("audio/mp4a-latm",sampleRate,channels)
+            for(key in listOf("csd-0","csd-1"))if(source.containsKey(key))clean.setByteBuffer(key,source.getByteBuffer(key)!!.duplicate())
+            if(source.containsKey(MediaFormat.KEY_AAC_PROFILE))clean.setInteger(MediaFormat.KEY_AAC_PROFILE,source.getInteger(MediaFormat.KEY_AAC_PROFILE))
+            muxer=MediaMuxer(output.path,MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);val outTrack=muxer.addTrack(clean);muxer.start();extractor.selectTrack(index)
+            val buffer=ByteBuffer.allocate(256*1024);val info=MediaCodec.BufferInfo();var total=0L
+            while(true){val size=extractor.readSampleData(buffer,0);if(size<0)break;val timestamp=extractor.sampleTime;require(timestamp in 0..60_000_000 && extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_ENCRYPTED==0){"This audio cannot be prepared safely."};total+=size;require(total<=16777216){"Choose audio smaller than 16 MB."};info.set(0,size,timestamp,0);muxer.writeSampleData(outTrack,buffer,info);extractor.advance()}
+            muxer.stop();muxer.release();muxer=null;require(output.length() in 32..16777216){"This audio file could not be prepared."}
+            return FieldDerivative(output.readBytes(),"audio/mp4",1,1,((duration+999)/1000).toInt(),ByteArray(0))
+        }finally{extractor.release();muxer?.release();output.delete()}
     }
 }

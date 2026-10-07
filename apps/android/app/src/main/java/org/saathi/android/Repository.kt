@@ -122,14 +122,12 @@ class Repository(context: Context, storageScope: String = BuildConfig.ENVIRONMEN
         needsEnabled = enabled
         store.put("public", "runtime-config", value, false)
         if (!enabled) {
-            store.writableDatabase.beginTransaction()
-            try {
+            store.transaction {
                 for (bucket in listOf("requests", "completed")) {
                     store.all(bucket).forEach { row -> store.remove(bucket, row.optString("publicId", row.optString("id"))) }
                     store.remove("public", "$bucket-order")
                 }
-                store.writableDatabase.setTransactionSuccessful()
-            } finally { store.writableDatabase.endTransaction() }
+            }
         }
         changed
     }
@@ -140,13 +138,12 @@ class Repository(context: Context, storageScope: String = BuildConfig.ENVIRONMEN
             val list = JSONArray(api(path))
             withContext(Dispatchers.IO) {
                 // Snapshot replacement is atomic so withdrawn entries are not retained as active requests.
-                store.writableDatabase.beginTransaction()
-                try {
+                store.transaction {
                     list.objects().forEach { store.put(bucket, it.optString("publicId", it.optString("id")), it, false) }
                     store.put("public", "$bucket-order", obj("ids" to JSONArray(list.objects().map { it.optString("publicId", it.optString("id")) })), false)
                     store.all(bucket).filter { old -> list.objects().none { it.optString("publicId", it.optString("id")) == old.optString("publicId", old.optString("id")) } }.forEach { store.remove(bucket, it.optString("publicId", it.optString("id"))) }
-                    store.put("public", "freshness", obj("savedAt" to Instant.now().toString()), false); store.writableDatabase.setTransactionSuccessful()
-                } finally { store.writableDatabase.endTransaction() }
+                    store.put("public", "freshness", obj("savedAt" to Instant.now().toString()), false)
+                }
             }
         }
     }

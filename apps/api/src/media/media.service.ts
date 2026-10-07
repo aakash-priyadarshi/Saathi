@@ -145,12 +145,28 @@ export class MediaService {
     await scan(bytes);
     if (lease && asset.processingLease !== lease) throw new Error('Media lease changed.');
     const base = `sanitized/${id}${lease ? '-' + lease : ''}`,
-      publicKey = asset.mimeType === 'video/mp4' ? `${base}.mp4` : `${base}.jpg`,
-      thumbnailKey = `${base}-thumb.jpg`;
+      publicKey = asset.mimeType === 'video/mp4' ? `${base}.mp4` : asset.mimeType === 'audio/mp4' ? `${base}.m4a` : `${base}.jpg`;
+    const thumbnailKey: string | null = asset.mimeType === 'audio/mp4' ? null : `${base}-thumb.jpg`;
     if (asset.mimeType === 'image/jpeg') {
       const { safe, thumbnail } = await sanitizeImage(bytes);
       await this.storage.putPrivate(publicKey, safe, 'image/jpeg');
-      await this.storage.putPrivate(thumbnailKey, thumbnail, 'image/jpeg');
+      await this.storage.putPrivate(`${base}-thumb.jpg`, thumbnail, 'image/jpeg');
+    } else if (asset.mimeType === 'audio/mp4') {
+      const dir = await mkdtemp(join(tmpdir(), 'saathi-audio-'));
+      try {
+        const input = join(dir, 'input.m4a'),
+          output = join(dir, 'safe.m4a');
+        await writeFile(input, bytes);
+        await runFfmpeg([
+          '-nostdin', '-max_alloc', '67108864', '-protocol_whitelist', 'file,pipe', '-threads', '2',
+          '-y', '-i', input, '-map', '0:a:0', '-vn', '-t', '60', '-fs', '16777216',
+          '-c:a', 'aac', '-b:a', '96k', '-map_metadata', '-1', '-map_chapters', '-1',
+          '-movflags', '+faststart', output,
+        ]);
+        await this.storage.putPrivate(publicKey, await readFile(output), 'audio/mp4');
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
     } else {
       const dir = await mkdtemp(join(tmpdir(), 'saathi-media-'));
       try {
@@ -222,7 +238,7 @@ export class MediaService {
         ]);
         await this.storage.putPrivate(publicKey, await readFile(output), 'video/mp4');
         const { safe } = await sanitizeImage(await readFile(thumb));
-        await this.storage.putPrivate(thumbnailKey, safe, 'image/jpeg');
+        await this.storage.putPrivate(thumbnailKey!, safe, 'image/jpeg');
       } finally {
         await rm(dir, { recursive: true, force: true });
       }
@@ -239,7 +255,7 @@ export class MediaService {
     });
     if (finished.count !== 1) {
       await this.storage.deletePrivate(publicKey);
-      await this.storage.deletePrivate(thumbnailKey);
+      if (thumbnailKey) await this.storage.deletePrivate(thumbnailKey);
       throw new Error('Media lease changed.');
     }
   }

@@ -165,7 +165,7 @@ export function RequestDetail({ id }: { id: string }) {
               Where to deliver
             </h2>
             <h3>{r.reliefPoint.name}</h3>
-            <p>{r.reliefPoint.publicLocation}</p>
+            <p>{r.deliveryLocation ?? r.reliefPoint.publicLocation}</p>
             <p>{r.reliefPoint.instructions}</p>
             <p className="muted">Receiving hours: {r.reliefPoint.operatingHours}</p>
             <div className="deadline-note">

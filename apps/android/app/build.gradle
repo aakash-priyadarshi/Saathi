@@ -15,8 +15,10 @@ android {
         applicationId 'org.saathi.android'
         minSdk 26
         targetSdk 36
-        versionCode 1
-        versionName '1.0.0'
+        // Keep QA updates installable over the same package. Reserve 1.0.0 for
+        // the first stable production release; increment versionCode on every build.
+        versionCode 2
+        versionName '0.1.0'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         buildConfigField 'String', 'CONFIG_ROOT', quote(configRoot)
         buildConfigField 'String', 'BOOTSTRAP', quote(bootstrap)

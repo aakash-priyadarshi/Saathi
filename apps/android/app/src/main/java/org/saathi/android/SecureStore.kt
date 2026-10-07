@@ -55,6 +55,18 @@ class SecureStore(context: Context, private val storageScope: String = BuildConf
         buildList { while (it.moveToNext()) add(JSONObject(String(if (it.getInt(2) == 1) decrypt(it.getBlob(1), "$bucket/${it.getString(0)}") else it.getBlob(1)))) }
     }
     @Synchronized fun remove(bucket: String, id: String) { writableDatabase.delete("records", "bucket=? AND id=?", arrayOf(bucket, id)) }
+    /** Acquire the store monitor before the SQLite transaction so all callers use one lock order. */
+    @Synchronized fun <T> transaction(block: (SQLiteDatabase) -> T): T {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val result = block(db)
+            db.setTransactionSuccessful()
+            return result
+        } finally {
+            db.endTransaction()
+        }
+    }
     fun signingAlias(account: String) = "saathi.$storageScope.author.$account"
     fun hasIdentity(account: String) = keyStore.containsAlias(signingAlias(account))
     fun ensureIdentity(account: String) {

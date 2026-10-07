@@ -2,6 +2,10 @@ import { z } from 'zod';
 import { bytes, hash, verify } from './crypto';
 import { chatProfileSchema, participantIdSchema, validChatProfile } from './chat';
 
+// Bound asynchronous field relay depth while allowing events to cross several
+// disconnected encounter chains before reaching an internet gateway.
+export const MAX_COMMUNITY_HOPS = 16;
+
 // Public participant statements do not confer volunteer or relief authority.
 export const communityText = (max: number) =>
   z
@@ -44,7 +48,7 @@ export const helpPayloadSchema = z
 export const reportMediaSchema = z
   .object({
     id: z.string().uuid(),
-    mime: z.enum(['image/jpeg', 'video/mp4']),
+    mime: z.enum(['image/jpeg', 'video/mp4', 'audio/mp4']),
     size: z.number().int().min(1).max(16777216),
     hash: z.string().regex(/^[a-f0-9]{64}$/),
     width: z.number().int().min(1).max(1920),
@@ -52,7 +56,12 @@ export const reportMediaSchema = z
     durationSeconds: z.number().int().min(0).max(60),
   })
   .strict()
-  .refine((m) => (m.mime === 'image/jpeg' ? m.durationSeconds === 0 : m.durationSeconds > 0));
+  .refine((m) =>
+    m.mime === 'image/jpeg'
+      ? m.durationSeconds === 0
+      : m.durationSeconds > 0 &&
+        (m.mime !== 'audio/mp4' || (m.width === 1 && m.height === 1)),
+  );
 const common = {
   v: z.literal(1),
   kind: z.literal('COMMUNITY_EVENT'),
@@ -61,7 +70,7 @@ const common = {
   author: chatProfileSchema,
   createdAt: z.string().datetime(),
   expiresAt: z.string().datetime(),
-  maxHops: z.number().int().min(1).max(6),
+  maxHops: z.number().int().min(1).max(MAX_COMMUNITY_HOPS),
   payloadHash: z.string().regex(/^[a-f0-9]{64}$/),
 };
 export const communityBodySchema = z.discriminatedUnion('type', [

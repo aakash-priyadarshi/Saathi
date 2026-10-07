@@ -414,6 +414,15 @@ function RequestFields({ points, prefix = '' }: { points: Point[]; prefix?: stri
         </label>
       </div>
       <label>
+        Current public delivery point <span className="optional">optional</span>
+        <input
+          name={`${prefix}deliveryLocation`}
+          maxLength={200}
+          placeholder="e.g. Gate 2, Jantar Mantar, New Delhi"
+        />
+        <small>Shown publicly for this request. Use a safe public handoff point, never a personal or home address. Leave blank to use the relief point location.</small>
+      </label>
+      <label>
         What is needed?
         <input
           name={`${prefix}title`}
@@ -468,6 +477,7 @@ function RequestFields({ points, prefix = '' }: { points: Point[]; prefix?: stri
 function requestFromForm(f: FormData, prefix = '') {
   return {
     reliefPointId: String(f.get(`${prefix}reliefPointId`)),
+    deliveryLocation: String(f.get(`${prefix}deliveryLocation`) ?? '').trim() || null,
     category: String(f.get(`${prefix}category`)),
     title: String(f.get(`${prefix}title`)),
     description: String(f.get(`${prefix}description`)),
@@ -658,6 +668,7 @@ export function EditRequestPage({ id }: { id: string }) {
         description: String(f.get('description')),
         requestedQuantity: Number(f.get('quantity')),
         priority: String(f.get('priority')),
+        deliveryLocation: String(f.get('deliveryLocation') ?? '').trim() || null,
       },
       false,
       'PATCH',
@@ -711,6 +722,16 @@ export function EditRequestPage({ id }: { id: string }) {
                   <option key={p}>{p}</option>
                 ))}
               </select>
+            </label>
+            <label>
+              Current public delivery point
+              <input
+                name="deliveryLocation"
+                defaultValue={r.deliveryLocation ?? r.reliefPoint.publicLocation}
+                maxLength={200}
+                aria-describedby="delivery-location-help"
+              />
+              <small id="delivery-location-help">This appears on the public request. Use a safe public handoff point, never a personal or home address.</small>
             </label>
             {mutation.error && <ErrorNotice message={mutation.error} />}
             <button className="button" disabled={mutation.busy}>

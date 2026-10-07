@@ -45,6 +45,7 @@ export type PublicRequest = {
   updatedAt: string;
   version: number;
   canonicalUrl: string;
+  deliveryLocation: string | null;
   organization: { name: string; verified: boolean };
   creator: { displayName: string };
   reliefPoint: PublicPoint;

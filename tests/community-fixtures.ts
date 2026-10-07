@@ -35,7 +35,7 @@ export async function communityEvent(
     expiresAt: new Date(
       Date.now() + (type === 'HELP' || type === 'HELP_OFFER' ? 7200000 : 7 * 86400000),
     ).toISOString(),
-    maxHops: 6,
+    maxHops: 16,
     type,
     payload,
     payloadHash: await hash(payload),

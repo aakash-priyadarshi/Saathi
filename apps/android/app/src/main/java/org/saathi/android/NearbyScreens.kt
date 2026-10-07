@@ -28,6 +28,7 @@ import org.webrtc.SurfaceViewRenderer
     LazyColumn(modifier, contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         item { Heading("Here, even without internet", "Connect with another person using Swarm nearby. Your saved work stays on this phone.") }
         item { Notice(if (state.confirmed) "Connected nearby" else "Nearby Swarm", state.nearbyStatus, Icons.Outlined.WifiTethering) }
+        item { Notice("Internet relay", state.gatewayStatus, Icons.Outlined.CloudSync) }
         if (!state.connected) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {

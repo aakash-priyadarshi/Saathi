@@ -29,6 +29,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
     private val incoming = Channel<Received>(64)
     @Volatile private var generation = 0L
     @Volatile private var remoteMaximumFrameBytes = 24000
+    val negotiatedFrameBytes get() = minOf(24000, transport?.maximumFrameBytes ?: 0, remoteMaximumFrameBytes)
     @Volatile private var expectedPeerIdentity: String? = null
     @Volatile private var peerIdentityVerified = true
     val connectionGeneration get() = generation
