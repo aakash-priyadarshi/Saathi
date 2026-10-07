@@ -16,7 +16,7 @@ class ChatProtocolTest {
         val symmetric=ByteArray(32){it.toByte()};val group=ChatProtocol.encrypt(value,null,symmetric,"group")
         assertEquals(value.toString(),ChatProtocol.decrypt(group,null,symmetric,"group").toString())
         assertThrows(Exception::class.java){ChatProtocol.decrypt(group,null,ByteArray(32),"group")}
-        val parts=cipher.split('.').toMutableList();parts[3]=parts[3].dropLast(2)+"AA"
+        val parts=cipher.split('.').toMutableList();parts[3]=(if(parts[3][0]=='A')"B" else "A")+parts[3].substring(1)
         assertThrows(Exception::class.java){ChatProtocol.decrypt(parts.joinToString("."),key,null,"test-context")}
     }
     @Test fun typescriptJweAndCanonicalSignaturesInteroperateWithNimbusAndNativeValidators(){
