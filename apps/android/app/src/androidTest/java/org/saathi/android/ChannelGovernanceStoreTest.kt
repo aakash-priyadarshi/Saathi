@@ -52,6 +52,9 @@ class ChannelGovernanceStoreTest {
                         com.google.zxing.DecodeHintType.POSSIBLE_FORMATS to
                             listOf(com.google.zxing.BarcodeFormat.QR_CODE),
                         com.google.zxing.DecodeHintType.TRY_HARDER to true,
+                        // The image is a perfect render, not a camera photo: dense invitations (close to the
+                        // 1,800-byte limit) otherwise sometimes fail to locate on the emulator.
+                        com.google.zxing.DecodeHintType.PURE_BARCODE to true,
                     ),
                 ).text
 
