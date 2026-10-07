@@ -12,8 +12,46 @@ import {
   sign,
   hash,
   decryptChatValue,
+  bytes,
+  MAX_CHANNEL_POLICY_BYTES,
 } from '../../packages/protocol/src';
 describe('Swarm chat identities, policies and established encryption', () => {
+  it('supports 200 signed private members, rejects member 201, and excludes removed members from fresh keys', async () => {
+    const people = await Promise.all(
+      Array.from({ length: 201 }, (_, i) => chatPerson(`Member ${i}`)),
+    );
+    const owner = people[0]!,
+      last = people[199]!;
+    const channel = await chatPolicy(owner, people.slice(0, 200), 'INVITE');
+    expect(bytes(channel.policy).length).toBeGreaterThan(90000);
+    expect(bytes(channel.policy).length).toBeLessThan(MAX_CHANNEL_POLICY_BYTES);
+    await validChannelPolicy(channel.policy);
+    const wrapped = channel.policy.body.keys.find((k) => k.participantId === last.profile.body.id)!;
+    const kid = `channel:${channel.policy.body.id}:${channel.policy.body.epoch}:${last.profile.body.id}`;
+    expect(
+      await decryptChatValue(
+        wrapped.jwe,
+        await crypto.subtle.exportKey('jwk', last.ecdh.privateKey),
+        kid,
+      ),
+    ).toEqual({ key: Buffer.from(channel.key).toString('base64url') });
+    const tooMany = await chatPolicy(owner, people, 'INVITE');
+    await expect(validChannelPolicy(tooMany.policy)).rejects.toThrow();
+    const rotated = await chatPolicy(owner, people.slice(0, 199), 'INVITE', channel.policy);
+    await validChannelPolicy(rotated.policy);
+    expect(rotated.policy.body.keys.some((k) => k.participantId === last.profile.body.id)).toBe(
+      false,
+    );
+    expect(rotated.policy.body.epoch).not.toBe(channel.policy.body.epoch);
+    const message = await chatMessage(owner, rotated, 'Fresh epoch');
+    await expect(
+      decryptChatValue(
+        message.body.content,
+        channel.key,
+        `channel:${rotated.policy.body.id}:${rotated.policy.body.epoch}:${message.body.id}`,
+      ),
+    ).rejects.toThrow();
+  });
   it('keeps a DM identity unchanged when order and route change', async () => {
     const a = await chatPerson('A'),
       b = await chatPerson('B');

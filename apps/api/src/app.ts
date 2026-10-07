@@ -8,6 +8,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
@@ -134,9 +135,22 @@ class Errors implements ExceptionFilter {
 })
 export class AppModule {}
 export async function createApp(plane: typeof env.API_PLANE = env.API_PLANE) {
-  const app = await NestFactory.create(plane === 'public' ? PublicReadModule : AppModule, {
-    logger: ['error', 'warn', 'log'],
+  const app = await NestFactory.create<NestExpressApplication>(
+    plane === 'public' ? PublicReadModule : AppModule,
+    {
+      logger: ['error', 'warn', 'log'],
+      bodyParser: false,
+    },
+  );
+  // Only signed chat sync needs the larger roster budget; other routes retain 100 KiB.
+  app.useBodyParser('json', {
+    limit: 900000,
+    type: (req) =>
+      req.url?.split('?')[0] === '/api/v1/chat/sync' &&
+      req.headers['content-type']?.split(';')[0] === 'application/json',
   });
+  app.useBodyParser('json', { limit: '100kb' });
+  app.useBodyParser('urlencoded', { limit: '100kb', extended: true });
   app.enableShutdownHooks();
   app.use(cookieParser());
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));

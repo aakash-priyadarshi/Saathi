@@ -12,6 +12,8 @@ import java.util.UUID
 
 /** JOSE RFC 7516/7518. Static identity ECDH; no Signal/MLS/forward-secrecy claim. */
 object ChatProtocol {
+    const val MAX_CHANNEL_MEMBERS = 200
+    const val MAX_POLICY_BYTES = 384 * 1024
     fun newEncryptionKey() = JSONObject(ECKeyGenerator(Curve.P_256).generate().toJSONString())
     fun encryptionPublic(key: JSONObject): JSONObject {
         val k = ECKey.parse(key.toString()).toPublicJWK()
@@ -70,20 +72,20 @@ object ChatProtocol {
     fun dm(a: String, b: String): String { id(a); id(b); require(a != b); return "dm:" + Protocol.hash(JSONArray(listOf("SWARM_DM_V1") + listOf(a,b).sorted())) }
     fun member(policy: JSONObject, person: String): Boolean = ChannelGovernance.capabilities(policy,person).getBoolean("canRead")
     fun policy(policy: JSONObject, now: Instant = Instant.now()): JSONObject {
-        require(Protocol.canonical(policy).size <= 22000)
+        require(Protocol.canonical(policy).size <= MAX_POLICY_BYTES)
         val b = signed(policy); b.exactOptional(listOf("v","kind","id","name","visibility","owner","version","epoch","issuedAt","expiresAt","deleted","members","keys"),listOf("settings","bannedIds","appliedActions","moderation"))
         require(b.get("v") == 1 && b.getString("kind") == "CHAT_CHANNEL"); uuid(b.getString("id")); uuid(b.getString("epoch"))
         val name=text(b,"name",48); require(name.trim()==name && b.getString("visibility") in listOf("OPEN","INVITE") && b.get("deleted") is Boolean && b.get("version") is Number && b.getLong("version") in 1..Int.MAX_VALUE && b.getDouble("version")==b.getLong("version").toDouble())
         plainName(name)
         time(b.getString("issuedAt"),b.getString("expiresAt"),21600,now)
         val owner=profile(b.getJSONObject("owner"),now); require(Protocol.verify(b,policy.getString("signature"),owner.getJSONObject("body").getJSONObject("publicKey")))
-        val members=b.getJSONArray("members").objects(); require(members.size in 1..16)
+        val members=b.getJSONArray("members").objects(); require(members.size in 1..MAX_CHANNEL_MEMBERS)
         members.forEach { it.exact("profile","role","joinedAt","removedAt"); profile(it.getJSONObject("profile"),now); require(it.getString("role") in ChannelGovernance.roles); require(Instant.parse(it.getString("joinedAt")) <= now.plusSeconds(300)); if(!it.isNull("removedAt")) require(Instant.parse(it.getString("removedAt")) >= Instant.parse(it.getString("joinedAt")) && Instant.parse(it.getString("removedAt"))<=now.plusSeconds(300)) }
         require(members.map { participant(it.getJSONObject("profile")) }.distinct().size==members.size)
         require(members.count { it.getString("role")=="OWNER" }==1 && members.any { it.getString("role")=="OWNER" && participant(it.getJSONObject("profile"))==participant(owner) && it.isNull("removedAt") })
         val active=members.filter { it.isNull("removedAt") }.map { participant(it.getJSONObject("profile")) }.sorted()
         ChannelGovernance.settings(b,active)
-        val keys=b.getJSONArray("keys").objects(); require(keys.size<=16)
+        val keys=b.getJSONArray("keys").objects(); require(keys.size<=MAX_CHANNEL_MEMBERS)
         keys.forEach { it.exact("participantId","jwe"); id(it.getString("participantId")); require(text(it,"jwe",2048).length>=100) }
         keys.forEach{header(it.getString("jwe"),"ECDH-ES","channel:${b.getString("id")}:${b.getString("epoch")}:${it.getString("participantId")}")}
         val readers=active.filter{ChannelGovernance.capabilities(obj("body" to JSONObject(b.toString()).put("deleted",false)),it).getBoolean("canRead")}

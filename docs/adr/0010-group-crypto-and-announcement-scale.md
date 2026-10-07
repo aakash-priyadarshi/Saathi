@@ -3,6 +3,10 @@
 Status: retain the gated QA design; qualify an established MLS implementation
 before a production group-crypto migration. This does not approve a release.
 
+The requested 200-member QA ceiling in [ADR 0011](0011-two-hundred-members-and-walkie-talkie.md)
+supersedes the 16-member recommendation below. The cryptographic qualification
+and production release requirements in this ADR still apply.
+
 The current design uses signed owner policies, explicit capabilities, and fresh
 encrypted group keys after membership changes. Delegated membership actions
 pause new content until the owner incorporates them into a fresh policy/epoch.

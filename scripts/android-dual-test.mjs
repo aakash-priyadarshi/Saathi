@@ -12,13 +12,14 @@ import { parse } from 'dotenv';
 
 // Explicitly opt in with two approved model names; never select somebody's phone implicitly.
 const [authorModel, carrierModel, transport = 'nearby', fixture] = process.argv.slice(2);
-const chatFixture = fixture === 'chat' || fixture === 'community';
+const radioOnly = fixture === 'chat-radio';
+const chatFixture = fixture === 'chat' || fixture === 'community' || radioOnly;
 const extraPeer = fixture === 'browser' ? fixture : null;
 if (!authorModel || !carrierModel || !['nearby', 'wifi'].includes(transport))
   throw new Error(
     'Usage: node scripts/android-dual-test.mjs AUTHOR_MODEL CARRIER_MODEL nearby|wifi',
   );
-if (fixture && !['chat', 'community', 'browser'].includes(fixture))
+if (fixture && !['chat', 'community', 'browser', 'chat-radio'].includes(fixture))
   throw new Error('Unknown fixture.');
 if (extraPeer && transport !== 'wifi')
   throw new Error('The optional browser third peer requires wifi mode.');
@@ -42,7 +43,9 @@ const selected = [authorModel, carrierModel].map(
 );
 if (selected.some((x) => !x) || selected[0] === selected[1])
   throw new Error('Two distinct authorized requested devices are required.');
-const password = parse(readFileSync('.env', 'utf8')).SEED_PASSWORD;
+const password = radioOnly
+  ? 'unused-offline-fixture'
+  : parse(readFileSync('.env', 'utf8')).SEED_PASSWORD;
 if (!password)
   throw new Error('Set a development fixture password locally; never put it in an APK.');
 const testedAppHash = createHash('sha256')
@@ -210,7 +213,15 @@ try {
       'org.saathi.android.dev.test',
       'apps/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk',
     );
-    run('reverse', 'tcp:4000', 'tcp:4000');
+    if (!radioOnly) run('reverse', 'tcp:4000', 'tcp:4000');
+    else {
+      // Remove a previous fixture mapping too: this proof has no USB-local API path.
+      try {
+        run('reverse', '--remove', 'tcp:4000');
+      } catch {
+        /* already absent */
+      }
+    }
     run('reverse', 'tcp:4010', 'tcp:4010');
     for (const permission of [
       'BLUETOOTH_SCAN',
@@ -239,7 +250,10 @@ try {
         chatFixture ? 'org.saathi.android.NativeChatDualTest' : 'org.saathi.android.NativeDualTest',
         '-e',
         'milestoneOnly',
-        fixture === 'community' ? 'true' : 'false',
+        fixture === 'community' || radioOnly ? 'true' : 'false',
+        '-e',
+        'radioOnly',
+        radioOnly ? 'true' : 'false',
         '-e',
         'dualFixture',
         'true',
@@ -280,6 +294,16 @@ try {
   const results = await Promise.all(processes);
   if (!completed || results.some((x) => !x)) process.exitCode = 1;
 } finally {
+  for (const device of selected) {
+    try {
+      execFileSync(adb, ['-s', device, 'reverse', '--remove', 'tcp:4010'], {
+        stdio: 'pipe',
+        timeout: 20000,
+      });
+    } catch {
+      /* device may have disconnected */
+    }
+  }
   server.close();
   for (const step of pending.values())
     for (const item of Object.values(step.roles))
@@ -287,7 +311,7 @@ try {
   await browser?.close();
   mkdirSync('.data/android-measurements', { recursive: true });
   writeFileSync(
-    `.data/android-measurements/${fixture === 'community' ? 'community' : chatFixture ? 'chat' : 'dual'}-${transport}${extraPeer ? '-browser' : ''}.json`,
+    `.data/android-measurements/${radioOnly ? 'chat-radio' : fixture === 'community' ? 'community' : chatFixture ? 'chat' : 'dual'}-${transport}${extraPeer ? '-browser' : ''}.json`,
     JSON.stringify(
       {
         testedAt: new Date().toISOString(),
@@ -295,8 +319,9 @@ try {
         transport,
         thirdPeer: extraPeer ? 'Windows Chromium' : null,
         completed,
-        scope:
-          fixture === 'community'
+        scope: radioOnly
+          ? 'No API or infrastructure Wi-Fi; direct Nearby private DM/channel text, photo, AAC and video, recipient receipts, membership removal and block'
+          : fixture === 'community'
             ? 'Community milestone; encrypted 4 MiB server/resume regression is separate'
             : 'Full transport fixture',
         appSha256: testedAppHash,

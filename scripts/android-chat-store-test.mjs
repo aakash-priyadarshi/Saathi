@@ -41,4 +41,4 @@ const output = execFileSync(
   { encoding: 'utf8', timeout: 240000 },
 );
 console.log(`Encrypted store instrumentation on ${model}:\n${output}`);
-if (!/OK \(13 tests\)/.test(output)) process.exitCode = 1;
+if (!/OK \(14 tests\)/.test(output)) process.exitCode = 1;

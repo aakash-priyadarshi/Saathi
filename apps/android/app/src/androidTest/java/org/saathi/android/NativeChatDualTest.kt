@@ -28,6 +28,7 @@ class NativeChatDualTest {
         assumeTrue(BuildConfig.CHAT_ENABLED && BuildConfig.ENVIRONMENT=="development" && args.getString("dualFixture")=="true")
         val role=args.getString("role")!!; val author=role=="author"
         val milestoneOnly=args.getString("milestoneOnly")=="true"
+        val radioOnly=args.getString("radioOnly")=="true"
         val mode=args.getString("transport")!!
         val context=InstrumentationRegistry.getInstrumentation().targetContext
         val storageScope="test-chat-${UUID.randomUUID()}"; val repository=Repository(context,storageScope)
@@ -45,6 +46,7 @@ class NativeChatDualTest {
         fun internet()=context.getSystemService(ConnectivityManager::class.java).let{it.getNetworkCapabilities(it.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)==true}
         var round=0;var connecting=false;var code="";var invitation=""
         val errors=java.util.concurrent.CopyOnWriteArrayList<String>();session.onError={errors.add(it)}
+        nearby.onError={errors.add(it)}
         suspend fun waitFor(condition:()->Boolean)=withContext(Dispatchers.Main){try{withTimeout(90000){while(!condition())delay(100)}}catch(e:TimeoutCancellationException){error("Physical condition timed out; protocol errors: ${errors.distinct().take(8)}")}}
         fun hook(){
             community=CommunityRepository(context,repository,chat,session)
@@ -73,15 +75,22 @@ class NativeChatDualTest {
         val input=File(context.cacheDir,"chat-test-${UUID.randomUUID()}.txt")
         val photo=File(context.cacheDir,"chat-photo-${UUID.randomUUID()}.png")
         val voice=File(context.cacheDir,"chat-voice-${UUID.randomUUID()}.m4a")
+        val video=File(context.cacheDir,"chat-video-${UUID.randomUUID()}.mp4")
         val fileIds=mutableSetOf<String>()
         try{
-            repository.refreshConfiguration();chat.rename(if(author)"Test Arjun" else "Test Priya");meet("prepared",obj("internetValidated" to internet()));pair()
+            if(radioOnly){
+                assertFalse("No validated internet for the no-hotspot proof",internet())
+                assertTrue(context.getSystemService(android.net.wifi.WifiManager::class.java).isWifiEnabled)
+                assertFalse("Disconnect infrastructure Wi-Fi before direct Nearby pairing",LocalNetworkAdvice.hasWifiAddress())
+                Repository::class.java.getDeclaredField("configuration").apply{isAccessible=true}.set(repository,obj("body" to obj("features" to obj("largeFiles" to true,"localCalls" to true))))
+            }else repository.refreshConfiguration()
+            chat.rename(if(author)"Test Arjun" else "Test Priya");meet("prepared",obj("internetValidated" to internet()));pair()
             val dm=chat.direct(chat.peer!!);val other=meet("logical-dm",obj("id" to dm));assertEquals(dm,other.getString("id"))
             val sent=chat.send(dm,obj("text" to "Fictional private $role message"))
             waitFor{chat.messages().any{!it.optBoolean("owned")} && repository.store.get("chat-messages",sent)?.has("deliveredAt")==true}
             assertFalse(repository.store.get("chat-messages",sent)!!.getJSONObject("envelope").getJSONObject("body").getString("content").contains("Fictional"))
             chat.read(dm,chat.messages().filter{!it.optBoolean("owned")&&it.getJSONObject("envelope").getJSONObject("body").getString("conversationId")==dm}.map{it.getString("id")});waitFor{repository.store.get("chat-messages",sent)?.has("readAt")==true};meet("private-dm-delivered-read")
-            chat.sync();meet("dm-server-saved");chat.sync();assertEquals(2,chat.messages().size);meet("online-radio-deduplicated")
+            if(!radioOnly){chat.sync();meet("dm-server-saved");chat.sync();assertEquals(2,chat.messages().size);meet("online-radio-deduplicated")}
             val identity=Protocol.hash(chat.profile());chat=ChatRepository(context,repository,session);hook();assertEquals(identity,Protocol.hash(chat.profile()));assertEquals(dm,chat.direct(chat.peer?:chat.contacts().first{it.getString("id")!=ChatProtocol.participant(chat.profile())}.getJSONObject("profile")));assertEquals(2,chat.messages().size);meet("repository-reopened-identity-and-history")
             // Re-announce the reopened repository before joining channels.
             chat.announce();waitFor{chat.peer!=null}
@@ -99,12 +108,17 @@ class NativeChatDualTest {
             if(author){
                 val bitmap=android.graphics.Bitmap.createBitmap(32,32,android.graphics.Bitmap.Config.ARGB_8888);bitmap.eraseColor(android.graphics.Color.rgb(35,87,67));photo.outputStream().use{bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};bitmap.recycle()
                 InstrumentationRegistry.getInstrumentation().context.assets.open("voice-qa.m4a").use{source->voice.outputStream().use{source.copyTo(it)}}
-                chat.attach(dm,Uri.fromFile(photo),"image/png","Fictional photo.png");chat.attach(dm,Uri.fromFile(voice),"audio/mp4","Synthetic voice-note tone.m4a")
+                if(radioOnly)InstrumentationRegistry.getInstrumentation().context.assets.open("public-report-qa.mp4").use{source->video.outputStream().use{source.copyTo(it)}}
+                for(destination in if(radioOnly)listOf(dm,privateId)else listOf(dm)){
+                    chat.attach(destination,Uri.fromFile(photo),"image/png","Fictional photo.png");chat.attach(destination,Uri.fromFile(voice),"audio/mp4","Synthetic voice-note tone.m4a")
+                    if(radioOnly)chat.attach(destination,Uri.fromFile(video),"video/mp4","Synthetic video.mp4")
+                }
             }
-            waitFor{chat.messages().count{it.getJSONObject("envelope").getJSONObject("body").getString("format") in listOf("PHOTO","VOICE")}==2}
-            if(!author)waitFor{chat.messages().filter{it.getJSONObject("envelope").getJSONObject("body").getString("format") in listOf("PHOTO","VOICE")}.all{repository.store.get("attachments",it.getJSONObject("payload").getJSONObject("attachment").getString("id"))?.optBoolean("complete")==true}}
-            for(record in chat.messages().filter{it.getJSONObject("envelope").getJSONObject("body").getString("format") in listOf("PHOTO","VOICE")})assertEquals(record.getJSONObject("payload").getJSONObject("attachment").getString("hash"),Protocol.digest(chat.attachmentBytes(record.getString("id"))))
-            meet("photo-and-aac-voice-note-verified")
+            val mediaFormats=if(radioOnly)listOf("PHOTO","VOICE","VIDEO")else listOf("PHOTO","VOICE")
+            waitFor{chat.messages().count{it.getJSONObject("envelope").getJSONObject("body").getString("format") in mediaFormats}==if(radioOnly)6 else 2}
+            if(!author)waitFor{chat.messages().filter{it.getJSONObject("envelope").getJSONObject("body").getString("format") in mediaFormats}.all{repository.store.get("attachments",it.getJSONObject("payload").getJSONObject("attachment").getString("id"))?.optBoolean("complete")==true}}
+            for(record in chat.messages().filter{it.getJSONObject("envelope").getJSONObject("body").getString("format") in mediaFormats})assertEquals(record.getJSONObject("payload").getJSONObject("attachment").getString("hash"),Protocol.digest(chat.attachmentBytes(record.getString("id"))))
+            meet(if(radioOnly)"dm-and-private-group-photo-audio-video-verified"else "photo-and-aac-voice-note-verified")
             if(!milestoneOnly){
             if(author){input.writeBytes(ByteArray(4*1048576){(it%251).toByte()});chat.attach(dm,Uri.fromFile(input),"text/plain","Fictional encrypted resume.txt")}
             waitFor{chat.messages().any{it.getJSONObject("envelope").getJSONObject("body").getString("format")=="FILE"}}
@@ -166,7 +180,7 @@ class NativeChatDualTest {
             repository.store.put("preferences","local",obj("relay" to "OFF","mediaRelay" to false,"dailyLimitMiB" to 50,"batteryMinimum" to 20));if(!author){runCatching{community.sync()};assertFalse(repository.store.get("community",report)!!.optBoolean("serverSaved"))};meet("physical-carrier-relay-off-enforced")
             if(!author){repository.store.put("preferences","local",obj("relay" to "ANY","mediaRelay" to true,"dailyLimitMiB" to 50,"batteryMinimum" to 20));community.sync();val saved=repository.store.get("community",report)!!;val detail="Public gateway: saved=${saved.optBoolean("serverSaved")}, media=${saved.optBoolean("mediaOnline")}, rejection=${saved.optString("rejectedReason")}, waiting=${saved.optString("waitingReason")}, internet=${internet()}";assertTrue(detail,saved.optBoolean("serverSaved"));assertTrue(detail,saved.optBoolean("mediaOnline"));assertEquals(originalAuthor,ChatProtocol.participant(saved.getJSONObject("envelope").getJSONObject("body").getJSONObject("author")))};meet("physical-consenting-carrier-original-author-upload")
             if(author)community.withdraw(report);if(!author)waitFor{community.reports().none{it.getString("id")==report}};meet("physical-report-withdrawal-relayed")
-            };publicMilestone()
+            };if(!radioOnly)publicMilestone()
             if(author)chat.membership(privateId,ChatProtocol.participant(chat.peer!!))
             if(!author)waitFor{chat.conversations().first{it.getString("id")==privateId}.optBoolean("joined")==false}
             meet("private-member-removal-applied")
@@ -176,10 +190,11 @@ class NativeChatDualTest {
             if(author)chat.send(dm,obj("text" to "Must not appear on blocked recipient"))
             delay(1500);if(!author)assertEquals(before,chat.messages().size);meet("block-prevents-new-delivery")
             assertTrue(errors.joinToString("; "),errors.filterNot{it.contains("paused",true)||it.contains("Connection changed",true)}.isEmpty())
-            meet("complete",obj("baselineMessages" to if(milestoneOnly)8 else 9,"milestoneMessages" to (if(author)12 else 11)-(if(milestoneOnly)1 else 0),"resumedBytes" to if(milestoneOnly)0 else 4*1048576))
+            if(radioOnly)assertFalse("Direct Nearby must remain offline",internet())
+            meet("complete",obj("baselineMessages" to if(milestoneOnly)8 else 9,"milestoneMessages" to (if(author)12 else 11)-(if(milestoneOnly)1 else 0),"resumedBytes" to if(milestoneOnly)0 else 4*1048576,"internetValidated" to internet()))
         }finally{
             chat.messages().forEach{it.getJSONObject("payload").optJSONObject("attachment")?.let{a->fileIds.add(a.getString("id"))}}
-            withContext(Dispatchers.Main){transport.disconnect();session.reset();fileIds.forEach{session.removeFile(it)};wifi?.release()};scope.cancel();input.delete();photo.delete();voice.delete();repository.store.clearPrivate();repository.store.close();context.deleteDatabase("saathi-$storageScope.db");runCatching{activity.close()}
+            withContext(Dispatchers.Main){transport.disconnect();session.reset();fileIds.forEach{session.removeFile(it)};wifi?.release()};scope.cancel();input.delete();photo.delete();voice.delete();video.delete();repository.store.clearPrivate();repository.store.close();context.deleteDatabase("saathi-$storageScope.db");runCatching{activity.close()}
         }
     }
 }

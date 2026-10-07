@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException } from '@nes
 import { Prisma } from '@saathi/database';
 import {
   bytes,
+  MAX_CHAT_SYNC_BYTES,
   chatSyncSchema,
   hash,
   verify,
@@ -376,7 +377,10 @@ export class ChatService {
       body = request.body,
       now = Date.now(),
       id = body.profile.body.id;
-    if (bytes(request).length > 90000 || Math.abs(Date.parse(body.issuedAt) - now) > 300000)
+    if (
+      bytes(request).length > MAX_CHAT_SYNC_BYTES ||
+      Math.abs(Date.parse(body.issuedAt) - now) > 300000
+    )
       throw new BadRequestException('Chat request is too large or its clock is out of date.');
     try {
       await validChatProfile(body.profile, now);
@@ -875,7 +879,9 @@ export class ChatService {
             continue;
           const size =
             bytes(candidate.envelope).length +
-            (p && !included.has(p.id) ? bytes(p.policy).length : 0);
+            (p && !included.has(p.id) && !body.knownPolicyHashes?.includes(p.id)
+              ? bytes(p.policy).length
+              : 0);
           if (budget + size > 512000) break;
           budget += size;
           messages.push(candidate);
@@ -919,6 +925,7 @@ export class ChatService {
         }
         const joins = await tx.chatJoinRequest.findMany({
           where: {
+            id: { notIn: body.knownJoinIds ?? [] },
             fulfilled: false,
             conversationId: {
               in: memberships
@@ -947,6 +954,7 @@ export class ChatService {
         });
         const response = {
           v: 1,
+          capabilities: { policyPaging: true, channelMembers: 200 },
           accepted,
           rejected,
           acceptedPolicies,
@@ -989,8 +997,10 @@ export class ChatService {
           )
             .reverse()
             .map((a) => a.envelope),
-          policies: memberships.map((m) => m.conversation.policy).filter(Boolean),
-          historyPolicies: policies.filter((p) => included.has(p.id)).map((p) => p.policy),
+          policies: [] as unknown[],
+          historyPolicies: policies
+            .filter((p) => included.has(p.id) && !body.knownPolicyHashes?.includes(p.id))
+            .map((p) => p.policy),
           messages: messages.map((m) => m.envelope),
           receipts: confirmations.map((r) => r.receipt),
           joins: joins.map((j) => j.profile),
@@ -1004,6 +1014,23 @@ export class ChatService {
             .filter((m) => m.removedAt || m.conversation.deleted)
             .map((m) => m.conversationId),
         };
+        // Page changed rosters first. Clients acknowledge their hashes on the next sync;
+        // unchanged 200-person rosters are never copied through every poll.
+        const currentPolicies = memberships.map((m) => m.conversation.policy).filter(Boolean);
+        let rosterBudget = 0;
+        for (const policy of currentPolicies) {
+          const digest = await hash(policy);
+          if (body.knownPolicyHashes?.includes(digest)) continue;
+          const size = bytes(policy).length;
+          if (rosterBudget + size > 512000) continue;
+          rosterBudget += size;
+          response.policies.push(policy);
+        }
+        // Admission invitations can also carry a roster. Keep the whole reply bounded,
+        // and leave omitted joins pending for the next acknowledged page.
+        while (bytes(response).length > 1500000 && response.joins.length) response.joins.pop();
+        if (bytes(response).length > 1500000)
+          throw new BadRequestException('Chat response exceeds its synchronization budget.');
         await tx.chatSyncNonce.upsert({
           where: { id: body.id },
           create: {

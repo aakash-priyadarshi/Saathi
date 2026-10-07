@@ -24,3 +24,5 @@ local.properties
 *.private.json
 *.pending
 apps/android/.kotlin/
+apps/ios/.build/
+apps/ios/.swiftpm/

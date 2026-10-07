@@ -43,6 +43,37 @@ afterAll(async () => {
   await app?.close();
 });
 describe('Real PostgreSQL operational chat boundary', () => {
+  it('synchronizes a 200-person private roster and pages unchanged policies by signed hash', async () => {
+    const people = await Promise.all(
+      Array.from({ length: 200 }, (_, i) => chatPerson(`Large member ${i}`)),
+    );
+    const owner = people[0]!,
+      recipient = people[199]!;
+    const channel = await chatPolicy(owner, people, 'INVITE');
+    const digest = await hash(channel.policy);
+    expect((await sync(owner, { policies: [channel.policy] })).acceptedPolicies).toContain(digest);
+    const message = await chatMessage(owner, channel, 'A message for the whole offline group');
+    await sync(owner, { messages: [message] });
+    const first = await sync(recipient);
+    expect(first.capabilities).toEqual({ policyPaging: true, channelMembers: 200 });
+    expect(
+      first.policies.some((p: { body: { id: string } }) => p.body.id === channel.policy.body.id),
+    ).toBe(true);
+    expect(
+      first.messages.some((m: { body: { id: string } }) => m.body.id === message.body.id),
+    ).toBe(true);
+    const second = await sync(recipient, {
+      knownPolicyHashes: [digest],
+      knownMessages: [message.body.id],
+    });
+    expect(second.policies).toEqual([]);
+    expect(second.historyPolicies).toEqual([]);
+    expect(Buffer.byteLength(JSON.stringify(first))).toBeLessThan(1500000);
+    const outsider = await chatPerson('Large outsider');
+    const denied = await sync(outsider, { channelIds: [channel.policy.body.id] });
+    expect(denied.messages).toEqual([]);
+    expect(denied.policies).toEqual([]);
+  }, 30000);
   it('keeps person reports generic, acknowledges queued reports, and delegates private report review without plaintext', async () => {
     const owner = await chatPerson('Report owner'),
       mod = await chatPerson('Report moderator'),

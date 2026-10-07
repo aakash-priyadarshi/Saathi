@@ -2,6 +2,10 @@ import { z } from 'zod';
 import { bytes, hash, publicKeySchema, verify } from './crypto';
 import { validChatJweHeader } from './chat-encryption';
 
+export const MAX_CHANNEL_MEMBERS = 200;
+export const MAX_CHANNEL_POLICY_BYTES = 384 * 1024;
+export const MAX_CHAT_SYNC_BYTES = 900000;
+
 export const participantIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const signature = z.string().regex(/^[A-Za-z0-9_-]{86}$/);
 const instant = z.string().datetime();
@@ -111,14 +115,14 @@ export const channelPolicySchema = z
               .strict(),
           )
           .min(1)
-          .max(16),
+          .max(MAX_CHANNEL_MEMBERS),
         keys: z
           .array(
             z
               .object({ participantId: participantIdSchema, jwe: z.string().min(100).max(2048) })
               .strict(),
           )
-          .max(16),
+          .max(MAX_CHANNEL_MEMBERS),
       })
       .strict(),
     signature,
@@ -418,6 +422,8 @@ export const chatSyncSchema = z
         profile: chatProfileSchema,
         issuedAt: instant,
         channelIds: z.array(z.string().uuid()).max(16),
+        knownPolicyHashes: z.array(participantIdSchema).max(128).optional(),
+        knownJoinIds: z.array(z.string().uuid()).max(100).optional(),
         knownMessages: z.array(z.string().uuid()).max(500),
         receiptMessageIds: z.array(z.string().uuid()).max(50),
         peers: z.array(chatProfileSchema).max(16),
@@ -495,7 +501,8 @@ function boundedTime(created: string, expires: string, max: number, now: number)
 export async function validChannelPolicy(input: unknown, now = Date.now()): Promise<ChannelPolicy> {
   const policy = channelPolicySchema.parse(input),
     body = policy.body;
-  if (bytes(policy).length > 22000) throw new Error('Channel policy is too large.');
+  if (bytes(policy).length > MAX_CHANNEL_POLICY_BYTES)
+    throw new Error('Channel policy is too large.');
   boundedTime(body.issuedAt, body.expiresAt, 6 * 3600000, now);
   await validChatProfile(body.owner, now);
   if (!(await verify(body, policy.signature, body.owner.body.publicKey)))

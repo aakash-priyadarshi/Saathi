@@ -5,6 +5,14 @@ import org.junit.Test
 import java.util.UUID
 
 class BleFrameCodecTest {
+    @Test fun iosFixtureIsExactlyAnAndroidEncodedPacket() {
+        val fixture = org.json.JSONObject(java.io.File("../../ios/Tests/SwarmCoreTests/Fixtures/ble-packet.json").readText())
+        val payload = java.util.Base64.getDecoder().decode(fixture.getString("payload"))
+        val expected = java.util.Base64.getDecoder().decode(fixture.getString("packet"))
+        val encoded = BleFrameCodec.fragment(payload, fixture.getString("objectID"), 512, UUID.fromString(fixture.getString("frameID"))).single()
+        assertArrayEquals(expected, encoded)
+        assertArrayEquals(payload, BleFrameCodec.decode(expected, 512).payload)
+    }
     private fun packets(bytes: ByteArray, mtu: Int = 185, frameId: UUID = UUID.randomUUID()): List<BlePacket> =
         BleFrameCodec.fragment(bytes, "stable-object-42", mtu, frameId)
             .map { BleFrameCodec.decode(it, mtu) }

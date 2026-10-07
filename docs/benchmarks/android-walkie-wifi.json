@@ -1,0 +1,71 @@
+{
+  "testedAt": "2026-10-07T02:32:22.168Z",
+  "passed": true,
+  "models": ["SM-S921B", "SM-X510"],
+  "scope": "Local Wi-Fi RTP and actual hold/release UI; USB carries pairing/barriers only; not a full internet-outage or battery test",
+  "steps": [
+    {
+      "step": "prepared",
+      "complete": true
+    },
+    {
+      "step": "offer",
+      "complete": true
+    },
+    {
+      "step": "reply",
+      "complete": true
+    },
+    {
+      "step": "code",
+      "complete": true
+    },
+    {
+      "step": "ready",
+      "complete": true
+    },
+    {
+      "step": "author-audio",
+      "complete": true,
+      "authorAudioBytes": 6817,
+      "carrierAudioBytes": 4104
+    },
+    {
+      "step": "author-released",
+      "complete": true
+    },
+    {
+      "step": "carrier-audio",
+      "complete": true,
+      "authorAudioBytes": 4799,
+      "carrierAudioBytes": 0
+    },
+    {
+      "step": "carrier-released",
+      "complete": true
+    },
+    {
+      "step": "switch-talking",
+      "complete": true
+    },
+    {
+      "step": "recipient-switch-stopped",
+      "complete": true
+    },
+    {
+      "step": "ready-again",
+      "complete": true
+    },
+    {
+      "step": "background-talking",
+      "complete": true
+    },
+    {
+      "step": "complete",
+      "complete": true
+    }
+  ],
+  "androidVersions": ["16", "16"],
+  "appSha256": "aa1300ed5310557f200a874f86af724aa6d181f12fbd74a8b3e2529e37a16479",
+  "keepAwakeRestored": true
+}

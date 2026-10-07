@@ -20,6 +20,9 @@ class PeerSession(private val context: Context, private val repository: Reposito
     var transport: PeerTransport? = null
     var confirmed = false
     var remoteMedia = false; private set
+    var remoteWalkieTalkie = false; private set
+    @Volatile private var remoteChatChunks = false
+    private val chatAssembler = ChatFrameAssembler()
     @Volatile private var remoteLarge = false
     val maximumFileBytes get() = if (remoteLarge && repository.featureFlags?.optBoolean("largeFiles") == true) 16 * 1024 * 1024 else 1048576
     private data class Received(val generation: Long, val frame: JSONObject)
@@ -48,6 +51,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
     var onCall: (Boolean) -> Unit = {}
     var onAccepted: () -> Unit = {}
     var onEnded: () -> Unit = {}
+    var onWalkieFrame: (String, JSONObject) -> Unit = { _, _ -> }
     var onChatFrame: suspend (JSONObject, Long) -> Unit = { _, _ -> }
     var onChatConnected: suspend () -> Unit = {}
     var onChatReset: () -> Unit = {}
@@ -81,6 +85,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
     }
     fun reset() {
         onChatReset()
+        chatAssembler.clear(); remoteChatChunks = false; remoteWalkieTalkie = false
         generation++; callInProgress = false; confirmed = false; remoteMedia = false; remoteLarge = false; remoteMaximumFrameBytes = 24000; shared.clear(); transmitted.clear(); requested.clear(); offered.clear(); accepted.clear(); fragments.clear()
         sendingFiles.values.forEach { it.cancel() }; sendingFiles.clear()
         synchronized(queue) { while (queue.isNotEmpty()) queue.poll()?.result?.completeExceptionally(IllegalStateException("Connection changed. Saved work is safe.")) }
@@ -96,6 +101,16 @@ class PeerSession(private val context: Context, private val repository: Reposito
             "Verifying the nearby participant. Messages stay on this phone until identity is confirmed."
         }
         val encodedSize = frame.toString().toByteArray().size
+        val budget = minOf(24000, currentTransport.maximumFrameBytes, remoteMaximumFrameBytes)
+        if (kind.startsWith("CHAT_") && kind != "CHAT_CHUNK" && encodedSize > budget) {
+            require(remoteChatChunks) { "Update the other device to share this larger channel. Your work is saved." }
+            val sentGeneration = generation
+            for (part in ChatFrameAssembler.parts(frame, budget)) {
+                check(generation == sentGeneration)
+                send("CHAT_CHUNK", part, priority = priority)
+            }
+            return id
+        }
         require(currentTransport.maximumFrameBytes > 0 && encodedSize <= minOf(24000, currentTransport.maximumFrameBytes, remoteMaximumFrameBytes)) {
             "This update is too large for the current nearby connection. It remains saved on this phone."
         }
@@ -106,7 +121,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
         val current = transport
         send("HELLO", obj("protocol" to 1, "maxFrame" to (current?.maximumFrameBytes ?: 0), "media" to (current?.mediaAvailable == true && repository.featureFlags?.optBoolean("localCalls") == true), "files" to (current?.supportsFiles == true)))
         // Protocol extension is ignored by version-1 browsers; their 1 MiB limit remains unchanged.
-        send("NATIVE_CAPS", obj("largeFiles" to (current?.supportsFiles == true && repository.featureFlags?.optBoolean("largeFiles") == true)))
+        send("NATIVE_CAPS", obj("largeFiles" to (current?.supportsFiles == true && repository.featureFlags?.optBoolean("largeFiles") == true), "chatChunks" to true, "walkieTalkie" to (current?.mediaAvailable == true)))
         onChatConnected()
     }
     suspend fun confirm() { require(transport?.connected == true); confirmed = true; announce(); onChange() }
@@ -153,10 +168,22 @@ class PeerSession(private val context: Context, private val repository: Reposito
             remoteLarge = value.getBoolean("files") && repository.featureFlags?.optBoolean("largeFiles") == true
             onChange(); return
         }
-        if (kind == "NATIVE_CAPS") { remoteLarge = frame.getJSONObject("value").optBoolean("largeFiles"); return }
+        if (kind == "NATIVE_CAPS") {
+            val caps = frame.getJSONObject("value")
+            remoteLarge = caps.optBoolean("largeFiles"); remoteChatChunks = caps.optBoolean("chatChunks")
+            remoteWalkieTalkie = caps.optBoolean("walkieTalkie") && transport?.mediaAvailable == true
+            onChange(); return
+        }
         if (!peerIdentityVerified && kind != "CHAT_PROFILE") return
         if (!confirmed || transport?.connected != true) return
-        if (kind.startsWith("CHAT_")) { onChatFrame(frame, receivedGeneration); return }
+        if (kind.startsWith("PTT_")) {
+            require(remoteWalkieTalkie && remoteMedia && transport?.mediaAvailable == true && repository.featureFlags?.optBoolean("localCalls") == true)
+            onWalkieFrame(kind, frame.getJSONObject("value")); return
+        }
+        if (kind.startsWith("CHAT_")) {
+            val assembled = if (kind == "CHAT_CHUNK") { require(remoteChatChunks); chatAssembler.accept(frame.getJSONObject("value")) ?: return } else frame
+            onChatFrame(assembled, receivedGeneration); return
+        }
         if (kind.startsWith("COMMUNITY_")) { onCommunityFrame(frame, receivedGeneration); return }
         when (kind) {
             "MESSAGE" -> {

@@ -1,0 +1,16 @@
+name: Swarm iOS foundation
+on:
+  push:
+    paths: ['apps/ios/**', '.github/workflows/ios-foundation.yml']
+  pull_request:
+    paths: ['apps/ios/**', '.github/workflows/ios-foundation.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  swift:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test --package-path apps/ios

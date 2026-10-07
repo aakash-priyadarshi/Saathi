@@ -12,6 +12,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -20,6 +23,7 @@ import org.webrtc.SurfaceViewRenderer
 @Composable fun NearbyScreen(vm: SaathiViewModel, state: AppState, discover: (Boolean) -> Unit, discoverBle: (Boolean) -> Unit, call: (Boolean, Boolean) -> Unit, modifier: Modifier) {
     var pairing by rememberSaveable { mutableStateOf("") }; var message by rememberSaveable { mutableStateOf("") }
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) vm.offerFile(uri) }
     LazyColumn(modifier, contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         item { Heading("Here, even without internet", "Connect with another person using Swarm nearby. Your saved work stays on this phone.") }
@@ -28,7 +32,7 @@ import org.webrtc.SurfaceViewRenderer
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Find another Android", style = MaterialTheme.typography.titleMedium)
-                    Text("Turn on Wi-Fi and Bluetooth. Nearby devices see your chosen display name during this one-minute search.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Turn on Wi-Fi and Bluetooth. Android Nearby connects directly for messages and saved media; you do not need internet, a router or a manual hotspot. Nearby devices see your chosen display name during this one-minute search.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = { discover(false) }, enabled = vm.nearby.available && !state.busy) { Text("Find Swarm") }; OutlinedButton(onClick = { discover(true) }, enabled = vm.nearby.available && !state.busy) { Text("Make visible") } }
                     Text("Bluetooth-only fallback works with Wi-Fi off. One person finds while the other makes their phone visible.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = { discoverBle(false) }, enabled = vm.ble.available && !state.busy) { Text("Find by Bluetooth") }; OutlinedButton(onClick = { discoverBle(true) }, enabled = vm.ble.available && !state.busy) { Text("Make Bluetooth visible") } }
@@ -39,7 +43,13 @@ import org.webrtc.SurfaceViewRenderer
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     HorizontalDivider(); Text("Pair on local Wi-Fi", style = MaterialTheme.typography.titleMedium)
-                    Text("Works with another Android or the Swarm browser app. Join the same Wi-Fi network or one person’s hotspot. Internet is not required. Copy the invitation and reply between devices.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Use this connection for live calls, walkie-talkie or the Swarm browser app. Join the same Wi-Fi network or one person’s hotspot. Internet is not required. Copy the invitation and reply between devices.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (state.localWifiAddress) "This phone has a local Wi-Fi address. Check that the other device is on the same network; some networks block devices from talking to each other."
+                        else "No local Wi-Fi address yet. For live audio, ask one person to enable a hotspot and have the others join it. Direct Android Nearby messaging can still work without that hotspot.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS)) }) { Text("Open Wi-Fi settings") }
+                        TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) }) { Text("Hotspot & network settings") }
+                    }
                     OutlinedButton(onClick = { vm.offer() }, enabled = !state.busy) { Text("Make an invitation") }
                     if (state.invitation.isNotEmpty()) { Notice("Invitation ready", "Share it with the person beside you. It expires after two minutes.", Icons.Outlined.QrCode2); OutlinedButton(onClick = { clipboard.setText(AnnotatedString(state.invitation)); vm.notice("Pairing invitation copied. It contains temporary local connection information.") }) { Icon(Icons.Outlined.ContentCopy, null); Spacer(Modifier.width(8.dp)); Text("Copy invitation or reply") } }
                     OutlinedTextField(pairing, { pairing = it.take(20000) }, label = { Text("Paste invitation or reply") }, modifier = Modifier.fillMaxWidth(), maxLines = 4)
@@ -52,7 +62,7 @@ import org.webrtc.SurfaceViewRenderer
                     Text("What works right now", style = MaterialTheme.typography.titleMedium)
                     Capability("Messages", true); Capability("Share signed requests and updates", true); Capability("Files", vm.session.transport?.supportsFiles == true)
                     Capability("Voice and video calls", state.media)
-                    if (!state.media) Text("Calls need a local Wi-Fi connection that supports media. Reconnect using local pairing to try calling.", style = MaterialTheme.typography.bodySmall)
+                    if (!state.media) Text("Live calls and walkie-talkie need local Wi-Fi pairing on a shared network or hotspot. Nearby messaging can continue on this connection.", style = MaterialTheme.typography.bodySmall)
                     if (vm.session.transport?.supportsFiles != true) Text("Photos, files, and calls stay saved or waiting until you reconnect using local Wi-Fi. This Bluetooth link carries messages and small updates.", style = MaterialTheme.typography.bodySmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedButton(onClick = { vm.share() }, enabled = !state.busy) { Text("Share saved updates") }; OutlinedButton(onClick = { picker.launch(arrayOf("image/jpeg", "image/png", "image/webp", "text/plain", "audio/*", "video/mp4", "video/webm")) }, enabled = !state.busy) { Text(if (vm.session.transport?.supportsFiles == true) "Share a file" else "Save file for Wi-Fi") } }
                     if (state.media && !state.calling) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = { call(false, false) }) { Icon(Icons.Outlined.Call, null); Spacer(Modifier.width(6.dp)); Text("Voice call") }; OutlinedButton(onClick = { call(true, false) }) { Icon(Icons.Outlined.Videocam, null); Spacer(Modifier.width(6.dp)); Text("Video call") } }

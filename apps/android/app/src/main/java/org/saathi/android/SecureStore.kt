@@ -43,13 +43,14 @@ class SecureStore(context: Context, private val storageScope: String = BuildConf
         require(bytes.size >= 28); init(Cipher.DECRYPT_MODE, encryptionKey(), GCMParameterSpec(128, bytes.copyOfRange(0, 12))); updateAAD(aad.toByteArray()); doFinal(bytes.copyOfRange(12, bytes.size))
     }
     @Synchronized fun put(bucket: String, id: String, value: JSONObject, private: Boolean = true) {
-        val raw = value.toString().toByteArray(); require(raw.size <= 150000)
+        val raw = value.toString().toByteArray(); require(raw.size <= if (bucket in setOf("chat-policies", "chat-policy-history", "chat-joins", "chat-join-inbox")) 524288 else 150000)
         val data = if (private) encrypt(raw, "$bucket/$id") else raw
         writableDatabase.insertWithOnConflict("records", null, ContentValues().apply { put("bucket", bucket); put("id", id); put("data", data); put("private", if (private) 1 else 0) }, SQLiteDatabase.CONFLICT_REPLACE).also { check(it != -1L) }
     }
     @Synchronized fun get(bucket: String, id: String): JSONObject? = readableDatabase.query("records", arrayOf("data", "private"), "bucket=? AND id=?", arrayOf(bucket, id), null, null, null).use {
         if (!it.moveToFirst()) null else JSONObject(String(if (it.getInt(1) == 1) decrypt(it.getBlob(0), "$bucket/$id") else it.getBlob(0)))
     }
+    @Synchronized fun count(bucket: String): Long = android.database.DatabaseUtils.longForQuery(readableDatabase, "SELECT COUNT(*) FROM records WHERE bucket=?", arrayOf(bucket))
     @Synchronized fun all(bucket: String): List<JSONObject> = readableDatabase.query("records", arrayOf("id", "data", "private"), "bucket=?", arrayOf(bucket), null, null, "rowid DESC", "500").use {
         buildList { while (it.moveToNext()) add(JSONObject(String(if (it.getInt(2) == 1) decrypt(it.getBlob(1), "$bucket/${it.getString(0)}") else it.getBlob(1)))) }
     }

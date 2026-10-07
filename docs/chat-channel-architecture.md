@@ -4,6 +4,14 @@ This milestone extends the existing native product and transports. The app/store
 
 ## Decisions and implementation contract
 
+The current QA implementation admits up to **200 members per channel**, while
+retaining 16 joined channels per identity and one active native peer link. See
+[ADR 0011](adr/0011-two-hundred-members-and-walkie-talkie.md) for roster budgets,
+fragmentation, sparse encounter forwarding and the separate direct-chat
+walkie-talkie control. It is not a 200-device simultaneous mesh or live call.
+See [field connectivity](field-connectivity.md) for direct Android pairing,
+hotspot guidance, Bluetooth fallback and the battery strategy.
+
 Chats are identified by participants or a channel ID, never a radio session. A direct conversation hashes the two stable participant key fingerprints in sorted order. Channels have explicit random IDs and an owner; no automatic partition-specific General rooms are created. Updates and official relief events remain separate from private conversation. Chat ownership gives no volunteer/coordinator authority.
 
 Chat identities use a separate non-exportable signing key and a display name chosen locally. Profiles sign their public encryption key; names alone do not prove a person's identity or humanitarian role. Contact fingerprints are established through the existing matched-code pairing. Discovery is opt-in, bounded and advertises only a chosen name or temporary label. Only the confirmed current path counts as live reachability; stored contacts and relayed history do not inflate it. The current adapters retain one live peer session at a time.

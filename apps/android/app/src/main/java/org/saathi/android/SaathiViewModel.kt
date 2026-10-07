@@ -33,7 +33,9 @@ data class AppState(
     val localHelp:List<JSONObject> = emptyList(),val participantReports:List<JSONObject> = emptyList(),
     val chatPolicies:List<JSONObject> = emptyList(),val chatBlocks:Set<String> = emptySet(),
     val chatJoinInbox:List<JSONObject> = emptyList(),val chatReportInbox:List<JSONObject> = emptyList(),
-    val relayReservedBytes:Long = 0
+    val relayReservedBytes:Long = 0,
+    val walkieConversation: String? = null, val walkieStatus: String = "OFF", val walkieAvailable: Boolean = false,
+    val localWifiAddress: Boolean = false
 )
 
 class SaathiViewModel @JvmOverloads constructor(application: Application, storageScope:String=BuildConfig.ENVIRONMENT, startServices:Boolean=true) : AndroidViewModel(application) {
@@ -65,6 +67,50 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     private var backgroundRefresh: Job? = null
     private var lastChatAnnounceAt = 0L
     private var ringTimeout: Job? = null
+    private var visibleConversation: String? = null
+    private var appInForeground = false
+    private var walkieDeadline: Job? = null
+    private data class WalkieSignal(val kind: String, val packet: JSONObject, val generation: Long, val connection: String?)
+    private val walkieSignals = Channel<WalkieSignal>(32)
+    private val walkie = WalkieTalkie(send = { kind, packet ->
+        if (!walkieSignals.trySend(WalkieSignal(kind, packet, session.connectionGeneration, session.transport?.session)).isSuccess) walkieFailure()
+    }, changed = { snapshot -> applyWalkieSnapshot(snapshot) })
+    private fun walkieFailure() { stopWalkie(false); notice("Walkie-talkie connection lost. Reconnect to this person; saved messages remain available.") }
+    private fun applyWalkieSnapshot(snapshot: WalkieTalkie.Snapshot) {
+        if ((snapshot.conversationId != null || state.value.walkieConversation != null) && wifiDelegate.isInitialized() && wifi.connected) {
+            runCatching { wifi.pushToTalk(snapshot.transmitting, snapshot.receiving) }.onFailure {
+                wifi.stopMedia(); viewModelScope.launch { walkieFailure() }
+            }
+        }
+        session.callInProgress = snapshot.conversationId != null || state.value.calling
+        mutable.update { it.copy(walkieConversation = snapshot.conversationId, walkieStatus = snapshot.status) }
+        walkieDeadline?.cancel()
+        snapshot.deadline?.let { deadline ->
+            walkieDeadline = viewModelScope.launch { delay((deadline - System.nanoTime() / 1_000_000).coerceAtLeast(1)); walkie.expire() }
+        }
+    }
+    fun enterConversation(id: String) { if (visibleConversation != id) stopWalkie(); visibleConversation = id }
+    fun leaveConversation(id: String) { if (visibleConversation == id) { visibleConversation = null; stopWalkie() } }
+    fun enableWalkie(id: String) = viewModelScope.launch {
+        val generation = session.connectionGeneration
+        runCatching {
+            require(appInForeground && BuildConfig.CHAT_ENABLED && visibleConversation == id && session.transport === wifi && session.confirmed && session.remoteMedia && session.remoteWalkieTalkie)
+            require(!state.value.calling && state.value.incomingCall == null && !state.value.recording)
+            val conversation = state.value.conversations.first { it.getString("id") == id }
+            val peer = chat.peer ?: error("Connect to this person first.")
+            val person = ChatProtocol.participant(peer)
+            require(conversation.getString("type") == "DIRECT" && conversation.optBoolean("joined") && conversation.getString("peerId") == person && !chat.blocked(person))
+            session.pauseTransfersForCall()
+            require(appInForeground && visibleConversation == id && session.connectionGeneration == generation && session.confirmed)
+            walkie.enable(ChatProtocol.participant(chat.profile()), person, id)
+        }.onFailure { stopWalkie(false); notice(it.message ?: "Connect to this person with local Wi-Fi before enabling walkie-talkie.") }
+    }
+    fun pressWalkie(id: String) {
+        if (visibleConversation != id || state.value.walkieConversation != id) return
+        runCatching { walkie.press() }.onFailure { notice(it.message ?: "The other person is not ready to listen.") }
+    }
+    fun releaseWalkie() = walkie.release()
+    fun stopWalkie(signal: Boolean = true) = walkie.stop(signal)
     private val incomingChats=mutableSetOf<String>()
     private var chatNotice:Job?=null
     private fun chatAction(block:suspend()->Unit)=action {require(BuildConfig.CHAT_ENABLED){"Chat is available in development and QA builds while security review is pending."};block()}
@@ -77,6 +123,18 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         }}
     }
     init {
+        // Signing and signaling share one ordered reader. A quick release must follow
+        // its request even if a Keystore operation completes slowly.
+        viewModelScope.launch {
+            for (signal in walkieSignals) {
+                if (signal.generation != session.connectionGeneration || !session.confirmed || signal.connection == null) continue
+                runCatching {
+                    val signed = withContext(Dispatchers.IO) { chat.signLiveControl(signal.kind, signal.connection, signal.packet) }
+                    check(signal.generation == session.connectionGeneration && session.confirmed)
+                    session.send(signal.kind, signed, priority = 0)
+                }.onFailure { if (signal.generation == session.connectionGeneration) walkieFailure() }
+            }
+        }
         // One reader snapshots encrypted storage off the UI thread. A burst of frame callbacks
         // must not start competing readers or repeat Keystore work inside StateFlow CAS retries.
         viewModelScope.launch(Dispatchers.IO) { for (ignored in localRefreshes) loadLocalSnapshot() }
@@ -90,14 +148,23 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
             if (BuildConfig.CHAT_ENABLED) chat.receive(frame,generation)
             else if (frame.optString("kind") == "CHAT_PROFILE") chat.verifyTransportPeer(frame.getJSONObject("value")).also { session.onPeerIdentityVerified(it) }
         }
-        session.onChatReset = { deliveryRetry?.cancel(); chat.reset() }; chat.onChange = { refreshLocal(); scheduleNearbyDeliveryRetries() }; chat.onInvite = { receiveInvite(it) }
+        session.onChatReset = { deliveryRetry?.cancel(); stopWalkie(false); chat.reset() }; chat.onChange = { refreshLocal(); scheduleNearbyDeliveryRetries() }; chat.onInvite = { receiveInvite(it) }
         session.onCommunityFrame={frame,generation->if(BuildConfig.CHAT_ENABLED)community.frame(frame,generation)};community.onChange={refreshLocal()};session.publicFileAllowed={id,hash->community.fileAllowed(id,hash)};session.onPublicFileComplete={community.completeFile(it)}
         session.chatFileAllowed = { id,hash -> chat.fileAllowed(id,hash) }; session.onChatFileComplete = { chat.completeFile(it) }
         chat.onIncoming={batchChatNotice(it)}
         File(application.cacheDir,"voice").apply { mkdirs();listFiles()?.forEach { it.delete() } }
         session.onChange = { refreshLocal() }; session.onError = { notice(it) }
         session.onFile = { offer -> mutable.update { it.copy(fileOffer = offer) } }
-        session.onCall = { video -> if (!state.value.calling && state.value.incomingCall == null) { mutable.update { it.copy(incomingCall = video) }; startRingTimeout() } }
+        session.onCall = { video -> if (!state.value.calling && state.value.incomingCall == null) { stopWalkie(); mutable.update { it.copy(incomingCall = video) }; startRingTimeout() } }
+        session.onWalkieFrame = { kind, packet ->
+            val profile = chat.peer
+            val person = profile?.let { ChatProtocol.participant(it) }
+            if (person != null && !chat.blocked(person) && !state.value.calling && visibleConversation == state.value.walkieConversation) {
+                packet.exact("body", "signature"); val body = packet.getJSONObject("body"); body.exact("kind", "connection", "control")
+                require(body.getString("kind") == kind && body.getString("connection") == session.transport?.session && Protocol.verify(body, packet.getString("signature"), profile.getJSONObject("body").getJSONObject("publicKey"))) { "Walkie-talkie identity could not be verified." }
+                walkie.receive(kind, body.getJSONObject("control"), person)
+            }
+        }
         session.onAccepted = { if (state.value.calling) { ringTimeout?.cancel(); mutable.update { it.copy(callActive = true) } } }
         session.onEnded = { endMedia() }
         nearby.onState = { status ->
@@ -177,10 +244,11 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
                 val events=repository.events();val messages=store.all("messages");val files=store.all("attachments");val drafts=store.all("drafts")
                 val donations=store.all("donations");val operations=store.all("operations");val preparation=repository.preparation;val account=store.get("account","user")
                 val confirmed=session.confirmed;val media=confirmed&&session.remoteMedia&&session.transport?.mediaAvailable==true&&repository.featureFlags?.optBoolean("localCalls")==true
+                val localWifiAddress=LocalNetworkAdvice.hasWifiAddress()
                 mutable.update { it.copy(requests=requests,completed=completed,posts=posts,savedAt=savedAt,authenticated=authenticated,
                     chatProfile=profile,chatContacts=contacts,conversations=conversations,chatMessages=chatMessages,chatPeer=peer,nearbyChannels=channels,
                     chatActions=actions,localHelp=help,participantReports=reports,chatPolicies=policies,chatBlocks=blocks,chatJoinInbox=joins,chatReportInbox=reportInbox,relayReservedBytes=reserved,
-                    events=events,messages=messages,files=files,drafts=drafts,donations=donations,operations=operations,preparation=preparation,account=account,confirmed=confirmed,media=media,needsEnabled=repository.needsEnabled) }
+                    events=events,messages=messages,files=files,drafts=drafts,donations=donations,operations=operations,preparation=preparation,account=account,confirmed=confirmed,media=media,walkieAvailable=media&&session.remoteWalkieTalkie,needsEnabled=repository.needsEnabled,localWifiAddress=localWifiAddress) }
             } catch (_: Exception) { notice("Saved information could not be unlocked. Do not clear app storage if you need to recover work.") }
     }
     private suspend fun refreshRemote() {
@@ -243,7 +311,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         try {chat.read(id,visibleIds)} catch(error:Exception){if(error is CancellationException)throw error;notice("Read confirmation could not be saved. Reopen this conversation to retry.")}
     }
     fun muteChat(id:String)=chatAction { chat.mute(id) }
-    fun blockChat(id:String)=chatAction { chat.block(id);runCatching {chat.sync()} }
+    fun blockChat(id:String)=chatAction { stopWalkie(); chat.block(id);runCatching {chat.sync()} }
     fun leaveChat(id:String)=chatAction { chat.membership(id,null);runCatching {chat.sync()} }
     fun removeChatMember(id:String,person:String)=chatAction { chat.membership(id,person);runCatching {chat.sync()} }
     fun deleteChannel(id:String)=chatAction { chat.membership(id,null,true);runCatching {chat.sync()} }
@@ -261,6 +329,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     }
     fun exportChatAttachment(id:String,uri:Uri)=chatAction {chat.exportAttachment(id,uri)}
     fun startVoice()=chatAction {
+        require(state.value.walkieConversation == null && !state.value.calling) { "Turn off walkie-talkie before recording a voice note." }
         cancelVoice();val file=File(getApplication<Application>().cacheDir,"voice/note.m4a");voiceFile=file
         val recorder=if(Build.VERSION.SDK_INT>=31)MediaRecorder(getApplication()) else MediaRecorder()
         this.recorder=recorder
@@ -309,6 +378,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     fun acceptFile() = action { state.value.fileOffer?.let { session.acceptFile(it) }; mutable.update { it.copy(fileOffer = null) } }
     fun declineFile() = action { state.value.fileOffer?.let { session.send("FILE_CANCEL", obj("id" to it.getString("id"))) }; mutable.update { it.copy(fileOffer = null) } }
     fun call(video: Boolean, incoming: Boolean) = action {
+        stopWalkie()
         require(state.value.media && (!state.value.calling || incoming))
         session.pauseTransfersForCall(); ringTimeout?.cancel()
         wifi.capture(video); mutable.update { it.copy(calling = true, callActive = incoming, video = video, incomingCall = null, quality = "") }
@@ -318,6 +388,8 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     private fun startRingTimeout() { ringTimeout?.cancel(); ringTimeout = viewModelScope.launch { delay(60000); runCatching { session.send("CALL_END", obj()) }; endMedia(); notice("Call was not answered. Nearby messages still work.") } }
     private fun endMedia() { ringTimeout?.cancel(); session.callInProgress = false; if (wifiDelegate.isInitialized()) wifi.stopMedia(); mutable.update { it.copy(calling = false, callActive = false, incomingCall = null, video = false, quality = "") } }
     fun foregroundActive() {
+        appInForeground = true
+        refreshLocal()
         scheduleNearbyDeliveryRetries()
         if (networkCallback == null && Build.VERSION.SDK_INT >= 24) {
             val manager = getApplication<Application>().getSystemService(ConnectivityManager::class.java)
@@ -349,10 +421,11 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         mutable.update { it.copy(reachable = repository.reachable, needsEnabled = repository.needsEnabled) }
     }
     fun foregroundLost() {
+        appInForeground = false
         attachmentSync?.cancel();healthCheck?.cancel();reconnectCheck?.cancel();deliveryRetry?.cancel()
         networkCallback?.let { callback -> runCatching { getApplication<Application>().getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(callback) } }
         networkCallback = null
-        nearby.stopScan();ble.stopScan();cancelVoice(); if (state.value.calling) hangup()
+        nearby.stopScan();ble.stopScan();cancelVoice();stopWalkie(); if (state.value.calling) hangup()
     }
     override fun onCleared() { disconnect(); if (wifiDelegate.isInitialized()) wifi.release(); repository.store.close() }
 }

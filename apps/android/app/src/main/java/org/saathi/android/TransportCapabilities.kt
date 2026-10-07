@@ -36,6 +36,7 @@ internal object TransportCapabilities {
         kind == "MESSAGE" || kind == "CHAT_MESSAGE" || kind == "CHAT_REPLY" -> TransportCapability.TEXT
         kind == "EVENT" || kind == "RECEIPT" || kind == "INVENTORY" || kind == "NEED" || kind.startsWith("COMMUNITY_") -> TransportCapability.SMALL_STRUCTURED_EVENT
         kind == "CALL" -> if ((value as? JSONObject)?.optBoolean("video") == true) TransportCapability.VIDEO else TransportCapability.VOICE
+        kind.startsWith("PTT_") -> TransportCapability.VOICE
         kind.startsWith("FILE_") -> TransportCapability.LARGE_ATTACHMENT
         else -> TransportCapability.SMALL_CONTROL
     }

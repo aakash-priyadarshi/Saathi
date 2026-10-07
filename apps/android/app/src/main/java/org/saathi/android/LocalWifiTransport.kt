@@ -179,6 +179,22 @@ class LocalWifiTransport(private val context: Context, private val scope: Corout
         } }
     }
     fun resumeVideo() { weakReadings = 0; videoTrack?.setEnabled(true); onQuality("Video resumed") }
+    fun pushToTalk(transmitting: Boolean, receiving: Boolean) {
+        require(connected)
+        pc?.transceivers?.forEach { transceiver ->
+            transceiver.receiver.track()?.setEnabled(receiving && transceiver.mediaType == MediaStreamTrack.MediaType.MEDIA_TYPE_AUDIO)
+        }
+        if (transmitting && audioTrack == null) {
+            audioSource = factory.createAudioSource(MediaConstraints())
+            audioTrack = factory.createAudioTrack("swarm-walkie", audioSource).apply { setEnabled(false) }
+            pc?.transceivers?.firstOrNull { it.mediaType == MediaStreamTrack.MediaType.MEDIA_TYPE_AUDIO }?.sender?.setTrack(audioTrack, false)
+        }
+        audioTrack?.setEnabled(transmitting)
+        if (!transmitting) {
+            pc?.transceivers?.firstOrNull { it.mediaType == MediaStreamTrack.MediaType.MEDIA_TYPE_AUDIO }?.sender?.setTrack(null, false)
+            audioTrack?.dispose(); audioTrack = null; audioSource?.dispose(); audioSource = null
+        }
+    }
     fun stopMedia() {
         quality?.cancel(); runCatching { capturer?.stopCapture() }; capturer?.dispose(); capturer = null
         pc?.transceivers?.forEach { it.sender.setTrack(null, false); it.receiver.track()?.setEnabled(false) }
