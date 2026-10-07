@@ -88,6 +88,16 @@ test('offline cold opening preserves public information and drafts without cachi
   await expect(page.getByRole('button', { name: /Reserve/ })).toBeVisible();
   await context.setOffline(true);
   await expect(page.getByRole('button', { name: /Reserve/ })).toHaveCount(0);
+  // A successful request started before the outage must not reopen online actions.
+  await page.evaluate(async () => {
+    window.dispatchEvent(
+      new CustomEvent('saathi-api-result', { detail: { ok: true, elapsed: 50 } }),
+    );
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+  });
+  await expect(page.getByRole('button', { name: /Reserve/ })).toHaveCount(0);
   await expect(page.getByText('Last known request information', { exact: true })).toBeVisible();
   await page.goto('/offline');
   await expect(page.getByRole('heading', { name: 'Saved work', exact: true })).toBeVisible();

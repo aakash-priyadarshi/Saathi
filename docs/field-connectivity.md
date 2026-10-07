@@ -65,9 +65,15 @@ message relay or group-audio fanout.
   A→B→C requires B to subsequently connect to C in the current one-peer client.
   Membership size does not imply immediate delivery to all 200 people.
 
-Next qualification: two Android devices disconnected from all Wi-Fi networks
-with Wi-Fi/Bluetooth on for direct Nearby media; Wi-Fi-off BLE text; outage and
-radio-restoration retries in DMs and channels; hotspot host/client roles; client
+On 7 October 2026, SM-S921B and SM-X510 passed direct Nearby DM/channel text and
+saved photo/synthetic AAC/video transfers with no infrastructure Wi-Fi address
+and no validated internet. Wi-Fi remained enabled; no manual hotspot or API was
+used. Payload hashes, DM delivered/read receipts and membership/blocking checks
+passed. See `benchmarks/android-chat-radio-nearby.json`. This does not establish
+radio-interference resilience, sustained throughput or battery drain.
+
+Next qualification: Wi-Fi-off BLE text; outage and radio-restoration retries in
+DMs and channels; hotspot host/client roles; client
 isolation; three actual relay devices; and measured latency, drain and thermal
 behavior. No jammer experiment is required or claimed. Record transport,
 internet validation, payload hashes and signed receipts for each result.

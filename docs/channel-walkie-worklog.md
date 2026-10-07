@@ -45,12 +45,22 @@ fresh component reviewer returned `ship` for six real walkie state captures
 and four isolated network-hint captures. The review did not qualify full shell,
 light/large text or executed keyboard/TalkBack behavior in this round.
 
-The `chat-radio` dual fixture independently checks no infrastructure Wi-Fi or
-validated internet, private DM/channel text and photo/AAC/video ciphertext
-transfer, hashes, recipient receipts, member removal and blocking. It uses no
-local API or USB reverse to port 4000. An actual result must be recorded before
-claiming that new fixture passed. Three-device relay, 200 physical participants,
-live group PTT, sustained battery/range and iPhone transport tests remain open.
+The `chat-radio` dual fixture passed on the same two physical Samsung devices
+with Wi-Fi enabled, no infrastructure Wi-Fi address and no validated internet.
+It verified private DM delivered/read receipts, open/private channel messages,
+and six saved photo/synthetic AAC/video transfers across a DM and private group
+with content hashes checked. Signed admission, thread locking, ban/unban,
+member removal and blocking also passed. It used no API or USB reverse to port
+4000; USB port 4010 carried test barriers and metadata only. See
+`benchmarks/android-chat-radio-nearby.json`. Three-device relay, 200 physical
+participants, live group PTT, sustained battery/range and iPhone transport tests
+remain open.
+
+Hosted Android build/lint/JVM/instrumentation passed after correcting the
+guidance test to scroll uncomposed lazy-list content. Browser outage testing
+also exposed a delayed-success race: API results now respect the browser's
+offline state. Desktop/mobile cold-offline tests explicitly inject a late
+successful response and verify online reservation controls remain hidden.
 
 ## Deployment
 

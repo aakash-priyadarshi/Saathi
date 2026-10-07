@@ -55,11 +55,13 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         );
     const result = (event: Event) => {
       const { ok, elapsed } = (event as CustomEvent<{ ok: boolean; elapsed: number }>).detail;
-      const lastConnected = ok ? new Date().toISOString() : undefined;
+      // A response begun before network loss can finish after the offline event.
+      const connected = ok && navigator.onLine;
+      const lastConnected = connected ? new Date().toISOString() : undefined;
       update({
-        internet: ok,
+        internet: connected,
         checked: true,
-        weak: ok && elapsed > 2000,
+        weak: connected && elapsed > 2000,
         ...(lastConnected ? { lastConnected } : {}),
       });
       if (lastConnected)

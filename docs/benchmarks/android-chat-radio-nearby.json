@@ -1,0 +1,129 @@
+{
+  "testedAt": "2026-10-07T03:07:10.74Z",
+  "models": ["SM-S921B", "SM-X510"],
+  "transport": "nearby",
+  "thirdPeer": null,
+  "completed": true,
+  "scope": "No API or infrastructure Wi-Fi; direct Nearby private DM/channel text, photo, AAC and video, recipient receipts, membership removal and block",
+  "appSha256": "53ee9cc88d3bf682357457d2ffd3f62fcb65f87c069662575d46e0b41f972a41",
+  "steps": [
+    {
+      "step": "prepared",
+      "milliseconds": 322,
+      "authorInternetValidated": false,
+      "carrierInternetValidated": false
+    },
+    {
+      "step": "pair-ready-1",
+      "milliseconds": 6
+    },
+    {
+      "step": "code-1",
+      "milliseconds": 63
+    },
+    {
+      "step": "connected-1",
+      "milliseconds": 17,
+      "authorInternetValidated": false,
+      "carrierInternetValidated": false
+    },
+    {
+      "step": "logical-dm",
+      "milliseconds": 135
+    },
+    {
+      "step": "private-dm-delivered-read",
+      "milliseconds": 12
+    },
+    {
+      "step": "repository-reopened-identity-and-history",
+      "milliseconds": 35
+    },
+    {
+      "step": "open-created",
+      "milliseconds": 874
+    },
+    {
+      "step": "open-owner-signed-join",
+      "milliseconds": 435
+    },
+    {
+      "step": "open-channel-messages",
+      "milliseconds": 32
+    },
+    {
+      "step": "recipient-invite-replay-idempotent",
+      "milliseconds": 1363
+    },
+    {
+      "step": "private-channel-decrypted",
+      "milliseconds": 291
+    },
+    {
+      "step": "dm-and-private-group-photo-audio-video-verified",
+      "milliseconds": 6013
+    },
+    {
+      "step": "approval-request-without-key",
+      "milliseconds": 227
+    },
+    {
+      "step": "physical-approval-fresh-key-delivered",
+      "milliseconds": 376
+    },
+    {
+      "step": "announcement-root",
+      "milliseconds": 239
+    },
+    {
+      "step": "physical-authorized-thread-reply",
+      "milliseconds": 1008
+    },
+    {
+      "step": "physical-thread-lock-enforced",
+      "milliseconds": 466
+    },
+    {
+      "step": "physical-ban-excludes-fresh-key-after-rename",
+      "milliseconds": 1269
+    },
+    {
+      "step": "post-after-ban-created",
+      "milliseconds": 348
+    },
+    {
+      "step": "physical-banned-recipient-excluded-from-future-post",
+      "milliseconds": 412
+    },
+    {
+      "step": "physical-authorized-unban",
+      "milliseconds": 710
+    },
+    {
+      "step": "private-member-removal-applied",
+      "milliseconds": 526
+    },
+    {
+      "step": "blocked-recipient",
+      "milliseconds": 65
+    },
+    {
+      "step": "block-prevents-new-delivery",
+      "milliseconds": 104
+    },
+    {
+      "step": "complete",
+      "milliseconds": 1,
+      "authorInternetValidated": false,
+      "authorBaselineMessages": 8,
+      "authorMilestoneMessages": 11,
+      "authorResumedBytes": 0,
+      "carrierInternetValidated": false,
+      "carrierBaselineMessages": 8,
+      "carrierMilestoneMessages": 10,
+      "carrierResumedBytes": 0
+    }
+  ],
+  "androidVersions": ["16", "16"],
+  "usbCoordination": "Test barriers and metadata on port 4010 only; no API reverse to port 4000 or chat/file payloads"
+}
