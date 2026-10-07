@@ -66,6 +66,8 @@ sudo docker compose ps api web
 curl -fsS https://swarm.cockroachjantaparty.org/api/v1/public/config
 ```
 
-Dynamic signed API configuration and the existing separate web/API origins
-remain unchanged. The deployment command still needs execution/verification
-on Lightsail; this worklog does not claim a live server update from a Git push.
+On 7 October 2026, the published image was applied through the existing
+Lightsail browser SSH session. Both API and web containers reported healthy,
+and the image revision matched `80aa554c30b6daaa76aa38d727b0c9b3416c0565`.
+The public configuration route returned HTTP 200 through both the web origin
+and the separate API origin. Dynamic signed API configuration remains unchanged.

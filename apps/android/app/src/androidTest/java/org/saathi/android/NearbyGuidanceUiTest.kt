@@ -27,7 +27,7 @@ class NearbyGuidanceUiTest {
         val screen = mutableStateOf(AppState())
         try {
             ui.setContent { SaathiTheme { androidx.compose.material3.Surface(Modifier.fillMaxSize()) { NearbyScreen(vm, screen.value, {}, {}, { _, _ -> }, Modifier.fillMaxSize()) } } }
-            ui.onNodeWithText("Pair on local Wi-Fi").performScrollTo()
+            ui.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Pair on local Wi-Fi"))
             ui.onNodeWithText("No local Wi-Fi address yet.", substring = true).assertExists()
             ui.onNodeWithText("Hotspot & network settings").performScrollTo().assertIsDisplayed()
             fun capture(name: String) = ui.onRoot().captureToImage().asAndroidBitmap().let { bitmap -> File(context.cacheDir, "swarm-network-$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) } }
