@@ -1,6 +1,5 @@
 import SwiftUI
 import SwarmCore
-import WiFiAware
 
 /// Android More, item by item and in the same order: Nearby profile, Appearance, Privacy & Nearby,
 /// Storage & data and About. (Connection options is hidden for the Oct 2026 build, as on Android.)
@@ -89,14 +88,13 @@ struct MoreView: View {
 
                     Divider().overlay(Palette.outline)
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("SWARM").font(Type.headline).foregroundStyle(Palette.ink)
-                        Text("by CJP").font(Type.bodyMedium).foregroundStyle(Palette.ink)
-                        Text("Connect nearby. Coordinate together.").font(Type.bodyMedium).foregroundStyle(Palette.ink)
+                        // About, the same on Android: the lockup, what Swarm is, version, and an honest note on review.
+                        Image("SwarmLockup").resizable().scaledToFit().frame(height: 56).accessibilityLabel("SWARM by CJP")
+                        Text("Connect nearby. Coordinate together.").font(Type.bodyMedium).foregroundStyle(Palette.ink).padding(.top, 2)
                         Text("Developed by Cockroach Janta Party").font(Type.bodySmall).foregroundStyle(Palette.muted).padding(.top, 12)
-                        Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") · iPhone preview · staging")
+                        Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") · iPhone · staging")
                             .font(Type.bodySmall).foregroundStyle(Palette.muted)
-                        Text(wifiAwareStatus).font(Type.bodySmall).foregroundStyle(Palette.muted)
-                        Text("Chat is an experimental addition. It has not received an independent cryptographic review. On iPhone, channels are joined from their Android owners; photos travel over Bluetooth and videos need a later release.")
+                        Text("Messages are end-to-end encrypted and travel from phone to phone nearby, or online when there's internet. Swarm's encryption has not yet had an independent security review.")
                             .font(Type.bodySmall).foregroundStyle(Palette.muted)
                         HStack(spacing: 16) {
                             Button("Lora licence") { license = text("lora-license") }
@@ -113,13 +111,6 @@ struct MoreView: View {
                 }
             }
         }
-    }
-    /// Wi-Fi Aware (iOS 26) gives two-way discovery with Android phones that support it; it needs the paid Apple team.
-    var wifiAwareStatus: String {
-        if #available(iOS 26.0, *), WACapabilities.supportedFeatures.contains(.wifiAware) {
-            return "Wi-Fi Aware · supported on this iPhone (two-way discovery with Android arrives with the paid Apple team)"
-        }
-        return "Wi-Fi Aware · not supported on this iPhone: it finds Android phones one way, or both ways on a shared hotspot"
     }
     func text(_ name: String) -> String {
         Bundle.main.url(forResource: name, withExtension: "txt").flatMap { try? String(contentsOf: $0) } ?? "Licence text is unavailable."

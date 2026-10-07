@@ -629,3 +629,13 @@ extension ChatEngine {
     /// Invite-only (encrypted) groups show a lock instead of #.
     func isPrivate(_ id: String) -> Bool { current(id).map(body)?["visibility"] as? String == "INVITE" }
 }
+
+/// Hiding the system bar (the chat's own bar replaces it, like WhatsApp) also disables iOS's edge swipe back; keep the
+/// swipe whenever there is a screen to go back to.
+extension UINavigationController: @retroactive UIGestureRecognizerDelegate {
+    override open func viewDidLoad() {
+        super.viewDidLoad()
+        interactivePopGestureRecognizer?.delegate = self
+    }
+    public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool { viewControllers.count > 1 }
+}

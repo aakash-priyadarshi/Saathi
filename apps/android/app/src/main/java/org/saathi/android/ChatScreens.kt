@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -653,7 +654,8 @@ private fun roleLabel(role:String)=when(role){"OWNER"->"Group creator";"ADMIN"->
         // item {HorizontalDivider();TextButton(onClick=team){Icon(Icons.Outlined.VerifiedUser,null);Spacer(Modifier.width(8.dp));Text(if(state.preparation==null)"Team sign in" else "My relief team")};TextButton(onClick=saved){Icon(Icons.Outlined.Inventory2,null);Spacer(Modifier.width(8.dp));Text("Saved relief work and earlier messages")};TextButton(onClick=connection){Icon(Icons.Outlined.Link,null);Spacer(Modifier.width(8.dp));Text("Connection options")}}
         // Hidden for the Oct 2026 build: Connection options (kept in code; calls and local Wi-Fi pairing stay reachable from chats).
         // item {HorizontalDivider();TextButton(onClick=connection){Icon(Icons.Outlined.Link,null);Spacer(Modifier.width(8.dp));Text("Connection options")}}
-        item {HorizontalDivider();Text(BuildConfig.BRAND_DISPLAY,style=MaterialTheme.typography.headlineMedium);Text(BuildConfig.BRAND_BYLINE);Text("Connect nearby. Coordinate together.");Text("Developed by Cockroach Janta Party",Modifier.padding(top=12.dp),style=MaterialTheme.typography.bodySmall);Text("Version ${BuildConfig.VERSION_NAME} · ${BuildConfig.ENVIRONMENT}",style=MaterialTheme.typography.bodySmall);val aware=LocalContext.current.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_WIFI_AWARE);Text(if(aware)"Wi-Fi Aware · supported: iPhones can find this phone directly once the iPhone app gains Wi-Fi Aware" else "Wi-Fi Aware · not supported: iPhones find this phone one way, or both ways on a shared hotspot",style=MaterialTheme.typography.bodySmall);Text("Chat is an experimental addition. It has not received an independent cryptographic review. Native 1:1 local Wi-Fi calls passed the earlier two-device checks; huddles remain disabled.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+        // About, the same on iPhone: the lockup, what Swarm is, version, and an honest note on review.
+        item {HorizontalDivider();Spacer(Modifier.height(8.dp));Image(painterResource(if(MaterialTheme.colorScheme.background.luminance()<.5f)R.drawable.swarm_header_dark else R.drawable.swarm_header),"${BuildConfig.BRAND_DISPLAY} ${BuildConfig.BRAND_BYLINE}",Modifier.height(56.dp));Text("Connect nearby. Coordinate together.",Modifier.padding(top=8.dp));Text("Developed by Cockroach Janta Party",Modifier.padding(top=12.dp),style=MaterialTheme.typography.bodySmall);Text("Version ${BuildConfig.VERSION_NAME} · Android · ${BuildConfig.ENVIRONMENT}",style=MaterialTheme.typography.bodySmall);Text("Messages are end-to-end encrypted and travel from phone to phone nearby, or online when there's internet. Swarm's encryption has not yet had an independent security review.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
     }
 }
 

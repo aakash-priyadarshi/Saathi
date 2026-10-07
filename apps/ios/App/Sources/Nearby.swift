@@ -2,6 +2,7 @@ import CoreBluetooth
 import Foundation
 import Network
 import NearbyConnections
+import os
 import SwarmCore
 
 /// Google Nearby Connections, configured exactly like Android `NearbyTransport`: service
@@ -9,6 +10,8 @@ import SwarmCore
 @MainActor final class Nearby: ObservableObject {
     static let service = "org.saathi.nearby.v1.staging"
     static let maximumFrameBytes = 24000
+    /// Readable in the device log (Console / idevicesyslog), unlike NSLog, which iOS redacts.
+    static let log = Logger(subsystem: "org.cjp.swarm", category: "nearby")
 
     @Published private(set) var peers: [EndpointID: String] = [:]
     @Published private(set) var status = "Ready to connect nearby"
@@ -85,6 +88,7 @@ import SwarmCore
     /// one-minute limit: the iPhone only searches while Swarm is open). Stale searches restart every two minutes.
     func start() {
         guard connected == nil else { return }
+        Self.log.notice("search started")
         stopRadios(); peers = [:]; generation += 1
         let token = generation, name = displayName(), info = Data(String(name.prefix(32)).utf8)
         searching = true; lastFound = Date(); searchStarted = Date()
@@ -92,6 +96,13 @@ import SwarmCore
             Task { @MainActor in
                 guard let self, self.generation == token, let error else { return }
                 self.stopRadios(); self.status = "Nearby could not start: \(error.localizedDescription)"
+                Self.log.notice("start failed: \(error.localizedDescription, privacy: .public); retrying in 5 s")
+                // A restart right after a link ends can fail while the radio settles; try again rather than stop searching.
+                Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: 5_000_000_000)
+                    guard let self, self.connected == nil, self.pending == nil, !self.searching else { return }
+                    self.start()
+                }
             }
         }
         discoverer.startDiscovery(completionHandler: started)
@@ -108,6 +119,7 @@ import SwarmCore
         }
     }
     func connect(_ id: EndpointID) {
+        Self.log.notice("connect \(self.peers[id] ?? "?", privacy: .public)")
         guard connected == nil, pending == nil else { return }
         pending = id
         status = "Connecting to \(peers[id] ?? "phone")…"
@@ -130,6 +142,7 @@ import SwarmCore
         advertiser.stopAdvertising(); discoverer.stopDiscovery(); searching = false
     }
     private func finish(reconnect: Bool = true) {
+        Self.log.notice("link ended (was connected: \(self.connected != nil, privacy: .public)); search again: \(reconnect, privacy: .public)")
         let was = connected != nil
         if was { lastMet[connectedName] = Date() }
         rotation?.cancel(); rotation = nil
@@ -158,6 +171,7 @@ import SwarmCore
 
     // MARK: events from NearbyBridge
     func found(_ id: EndpointID, _ info: Data) {
+        Self.log.notice("found \(String(decoding: info.prefix(40), as: UTF8.self), privacy: .public)")
         guard connected == nil, peers.count < 20 else { return }
         let raw = String(decoding: info.prefix(40), as: UTF8.self), name = raw.isEmpty ? "Swarm phone" : raw
         peers[id] = name; names[id] = name; lastFound = Date()
@@ -188,7 +202,7 @@ import SwarmCore
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
                 guard let self, !Task.isCancelled, self.connected == id else { return }
                 if self.busy() || Date().timeIntervalSince(self.lastActivity) < 25 { continue }
-                self.manager.disconnect(from: id); self.finish(); return
+                Self.log.notice("quiet link, moving on"); self.manager.disconnect(from: id); self.finish(); return
             }
         }
     }
