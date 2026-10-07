@@ -67,8 +67,9 @@ class ChatReadUiTest {
             ui.waitUntil(15000){vm.state.value.chatMessages.any{it.getJSONObject("envelope").getJSONObject("body").getString("conversationId")==channel&&it.getJSONObject("payload").has("attachment")}}
             val attachmentMessageId=vm.state.value.chatMessages.first{it.getJSONObject("payload").has("attachment")}.getString("id")
             ui.setContent { if(shown.value){val state by vm.state.collectAsState();SaathiTheme{ThemedChatSurface{ConversationScreen(vm,state,channel,{_,_->},{},{},{},androidx.compose.ui.Modifier.fillMaxSize())}}} }
+            ui.onNodeWithTag("chat-transcript").performScrollToIndex(1)
             ui.onNodeWithText("Fictional coordination: meet at the public entrance.").assertIsDisplayed()
-            ui.waitUntil(15000){ui.onAllNodesWithTag("chat-photo-$attachmentMessageId").fetchSemanticsNodes().isNotEmpty()}
+            ui.onNodeWithTag("chat-transcript").performScrollToIndex(0)
             ui.onNodeWithTag("chat-photo-$attachmentMessageId").assertIsDisplayed()
             ui.onNodeWithText("Fictional field photo.png").assertDoesNotExist()
             listOf("0 replies","Thanks","Lock thread","Hide","Report","Export verified attachment","Sync encrypted attachment","Create Help Request").forEach{ui.onNodeWithText(it).assertDoesNotExist()}
@@ -77,6 +78,7 @@ class ChatReadUiTest {
             ui.onNodeWithContentDescription("Close photo preview").assertIsDisplayed()
             ui.onNodeWithContentDescription("Close photo preview").performClick()
             val textMessageId=vm.state.value.chatMessages.first{it.getJSONObject("payload").optString("text").contains("Fictional coordination")}.getString("id")
+            ui.onNodeWithTag("chat-transcript").performScrollToIndex(1)
             ui.onNodeWithTag("message-actions-$textMessageId").performClick()
             listOf("Copy message","Reply in thread","Thank sender","Lock replies","Hide message").forEach{ui.onNodeWithText(it).assertIsDisplayed()}
             ui.onRoot().captureToImage().asAndroidBitmap().let{saveReviewCapture(context,"chat-simple-actions.png",it)}
