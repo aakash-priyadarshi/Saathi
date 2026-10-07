@@ -182,7 +182,8 @@ export const chatAdmissionSchema = z
         name: displayName(48),
         owner: chatProfileSchema,
         issuer: chatProfileSchema.optional(),
-        recipientId: participantIdSchema,
+        /** A participant, or '*' for a join link: anyone may ask, and a channel manager must approve. */
+        recipientId: participantIdSchema.or(z.literal('*')),
         policyHash: participantIdSchema,
         admission: z.enum(['INVITE_PLUS_APPROVAL', 'APPROVAL_ONLY']),
         issuedAt: instant,
@@ -200,7 +201,7 @@ export async function validChatAdmission(input: unknown, recipient: string, now 
   await validChatProfile(b.owner, now);
   if (b.issuer) await validChatProfile(b.issuer, now);
   if (
-    b.recipientId !== recipient ||
+    (b.recipientId !== recipient && b.recipientId !== '*') ||
     !(await verify(b, invite.signature, (b.issuer ?? b.owner).body.publicKey))
   )
     throw new Error('Invitation is not authorized for this participant.');
@@ -370,7 +371,9 @@ export const chatPayloadSchema = z
       .optional(),
   })
   .strict()
-  .refine((p) => (p.deletes ? Object.keys(p).length === 1 : !!(p.text || p.reference || p.attachment)));
+  .refine((p) =>
+    p.deletes ? Object.keys(p).length === 1 : !!(p.text || p.reference || p.attachment),
+  );
 export function validChatPayload(value: unknown, format: ChatMessage['body']['format']) {
   const payload = chatPayloadSchema.parse(value);
   if (payload.deletes) {

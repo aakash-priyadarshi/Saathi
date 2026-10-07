@@ -197,7 +197,9 @@ describe('Swarm chat identities, policies and established encryption', () => {
 describe('Swarm chat reply, forward and delete-for-everyone payloads', () => {
   it('accepts replyTo/forwarded on content and a lone deletes marker only as SYSTEM', () => {
     const id = randomUUID();
-    expect(validChatPayload({ text: 'Yes', replyTo: id, forwarded: true }, 'TEXT').replyTo).toBe(id);
+    expect(validChatPayload({ text: 'Yes', replyTo: id, forwarded: true }, 'TEXT').replyTo).toBe(
+      id,
+    );
     expect(validChatPayload({ deletes: id }, 'SYSTEM').deletes).toBe(id);
     expect(() => validChatPayload({ deletes: id }, 'TEXT')).toThrow();
     expect(() => validChatPayload({ deletes: id, text: 'x' }, 'SYSTEM')).toThrow();

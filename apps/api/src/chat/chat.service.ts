@@ -575,7 +575,8 @@ export class ChatService {
                 invite.policyHash !== (await hash(policy)) ||
                 invite.owner.body.id !== c.ownerId ||
                 !channelCapabilities(policy, (invite.issuer ?? invite.owner).body.id).canInvite ||
-                invite.admission !== policy.body.settings?.admission
+                // A join link always waits for a manager's approval, whatever the channel's invitation mode.
+                (invite.recipientId !== '*' && invite.admission !== policy.body.settings?.admission)
               )
                 throw new ForbiddenException(
                   'This channel requires a current authenticated invitation.',
