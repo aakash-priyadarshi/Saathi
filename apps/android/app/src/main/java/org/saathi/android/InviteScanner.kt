@@ -88,7 +88,7 @@ private class InviteCamera(context:Context,private val scanned:(String)->Unit,pr
                         for(y in 0 until frame.height)for(x in 0 until frame.width)luminance[y*frame.width+x]=buffer.get(y*plane.rowStride+x*plane.pixelStride)
                         val bitmap=BinaryBitmap(HybridBinarizer(PlanarYUVLuminanceSource(luminance,frame.width,frame.height,0,0,frame.width,frame.height,false)))
                         val result=MultiFormatReader().decode(bitmap,mapOf(DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),DecodeHintType.TRY_HARDER to true)).text
-                        if(result.length in 1..44000 && result.startsWith("cjpswarm://invite/")){recognized=true;view.post{scanned(result)}}
+                        if(result.length in 1..44000 && InviteLink.token(result)!=null){recognized=true;view.post{scanned(result)}}
                     }
                 }
             },handler)}

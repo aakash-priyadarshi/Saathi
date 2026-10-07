@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import SwarmCore
 
 /// Encrypted attachments through the Swarm server (Android `synchronizeAttachment` / `autoMedia`): this phone uploads
@@ -9,6 +10,8 @@ extension ChatEngine {
 
     /// Moves one attachment forward per call (called after each online sync), so text work is never held up for long.
     func serverMedia() async {
+        // The More tab's daily data limit and battery floor apply to automatic media; a tap on an attachment still fetches it.
+        guard DataLimits.mediaAllowed else { return }
         let next = messages().first { m in
             guard let a = attachment(of: m), let id = a["id"] as? String, m["serverSaved"] as? Bool == true, m["attention"] as? Bool != true else { return false }
             let file = store.get("attachments", id)
@@ -45,6 +48,7 @@ extension ChatEngine {
             let body: JSON = ["v": 1, "kind": "CHAT_ATTACHMENT_REQUEST", "profile": profile, "issuedAt": Instant.string(now()), "messageId": messageID,
                               "manifest": upload ? (manifest ?? NSNull()) : NSNull(), "parts": upload ? [Int]() : missing, "chunks": chunks]
             let r = try await postSigned("/chat/attachment", body, limit: 3 * 1024 * 1024)
+            DataLimits.count([body, r].reduce(0) { $0 + ((try? JSONSerialization.data(withJSONObject: $1).count) ?? 0) })
             let verified = try ChatRules.attachmentManifest(try J.obj(r, "manifest"), envelope: envelope, attachment: a, messageID: messageID, now: now())
             try save("chat-manifests", messageID, ["id": messageID, "manifest": verified])
             let cipherSize = try J.int(try J.obj(verified, "body"), "size"), parts = (cipherSize + Self.chunk - 1) / Self.chunk
@@ -71,5 +75,22 @@ extension ChatEngine {
                 if got.isEmpty { return } // the sender has not uploaded these parts yet
             } else if received.count == parts { return }
         }
+    }
+}
+
+/// Daily data limit and battery floor for automatic online media (Android `CommunityRelayPolicy.mediaAllowed`):
+/// defaults 2 GB a day and no battery pause. Usage is counted per UTC day on this phone.
+enum DataLimits {
+    static let limitKey = "dailyLimitMB", batteryKey = "batteryMinimum"
+    static let presets = Array(stride(from: 500, through: 5000, by: 500))
+    static func label(_ mb: Int) -> String { mb < 1000 ? "\(mb) MB" : mb % 1000 == 0 ? "\(mb / 1000) GB" : "\(mb / 1000).\(mb % 1000 / 100) GB" }
+    private static var dayKey: String { "dataUsed-" + String(Instant.string(Date()).prefix(10)) }
+    static var usedToday: Int { UserDefaults.standard.integer(forKey: dayKey) }
+    static func count(_ bytes: Int) { UserDefaults.standard.set(usedToday + bytes, forKey: dayKey) }
+    @MainActor static var mediaAllowed: Bool {
+        let defaults = UserDefaults.standard, limit = defaults.object(forKey: limitKey) as? Int ?? 2000, minimum = defaults.integer(forKey: batteryKey)
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        let level = UIDevice.current.batteryLevel, charging = [.charging, .full].contains(UIDevice.current.batteryState)
+        return (charging || level < 0 || Int(level * 100) >= minimum) && usedToday < min(max(limit, 500), 5000) * 1_000_000
     }
 }

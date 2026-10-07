@@ -1,0 +1,41 @@
+language: 'en-US'
+tone_instructions: >-
+  Keep findings concise and actionable. Focus on correctness, security, privacy,
+  moderation gates, and regressions. Preserve Swarm's protest-site offline-first
+  purpose; do not assume internet access or simultaneous mesh delivery.
+reviews:
+  profile: 'chill'
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+    base_branches:
+      - '^main$'
+      - '^dev$'
+  path_instructions:
+    - path: 'apps/api/**'
+      instructions: |
+        Check authentication and authorization, state transitions, moderation and
+        publication visibility, signed payload validation, privacy, idempotency,
+        transaction boundaries, replay handling, and resource bounds.
+    - path: 'packages/protocol/**'
+      instructions: |
+        Preserve Android, iOS, and TypeScript wire compatibility. Check canonical
+        signatures, payload limits, expiry, and malformed-input handling.
+    - path: 'apps/android/**'
+      instructions: |
+        Preserve offline-first transport and explicit user consent. Do not imply
+        one peer session is a simultaneous mesh. Check lifecycle, battery, and
+        media privacy behavior.
+    - path: 'apps/ios/**'
+      instructions: |
+        Preserve Android-compatible wire formats and offline-first behavior.
+        Treat physical-device and platform test evidence as scoped to what was
+        actually exercised.
+    - path: '.github/workflows/**'
+      instructions: |
+        Use least privilege, avoid secrets in logs, and keep CI builds bounded
+        and reproducible.

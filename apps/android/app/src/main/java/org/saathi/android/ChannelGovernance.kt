@@ -36,9 +36,11 @@ object ChannelGovernance {
             s.optJSONObject("capabilities")?.let {c->require(c.keys().asSequence().all {it in roles.drop(1)});c.keys().asSequence().forEach {r->val caps=c.getJSONObject(r);caps.exact(*capabilityNames.toTypedArray());require(capabilityNames.all {caps.get(it) is Boolean})}}
         }
     }
-    private fun bounded(body:JSONObject,now:Instant) {
+    /** A reusable join link ("*" admission) may last 7 days; every other invitation or action at most six hours. */
+    const val JOIN_LINK_SECONDS=7*86400L
+    private fun bounded(body:JSONObject,now:Instant,max:Long=21600) {
         val issued=Instant.parse(body.getString("issuedAt"));val expires=Instant.parse(body.getString("expiresAt"))
-        require(issued<=now.plusSeconds(300) && expires>now && expires>issued && expires<=issued.plusSeconds(21600)) {"This invitation or action has expired. Ask for a new one."}
+        require(issued<=now.plusSeconds(300) && expires>now && expires>issued && expires<=issued.plusSeconds(max)) {"This invitation or action has expired. Ask for a new one."}
         require(UUID.fromString(body.getString("id")).toString()==body.getString("id"))
     }
     fun admission(value:JSONObject,recipient:String,now:Instant):JSONObject {
@@ -46,7 +48,7 @@ object ChannelGovernance {
         b.exactOptional(listOf("v","kind","id","channelId","name","owner","recipientId","policyHash","admission","issuedAt","expiresAt"),listOf("issuer"))
         val name=b.getString("name");require(name==name.trim() && name.length in 1..48 && !Regex("[\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]").containsMatchIn(name))
         require(b.get("v")==1 && b.getString("kind")=="CHAT_ADMISSION" && b.getString("channelId").matches(uuid) && b.getString("policyHash").matches(identity))
-        require(b.getString("admission") in listOf("INVITE_PLUS_APPROVAL","APPROVAL_ONLY"));bounded(b,now)
+        require(b.getString("admission") in listOf("INVITE_PLUS_APPROVAL","APPROVAL_ONLY"));bounded(b,now,if(b.getString("recipientId")=="*")JOIN_LINK_SECONDS else 21600)
         ChatProtocol.profile(b.getJSONObject("owner"),now);val issuer=ChatProtocol.profile(b.optJSONObject("issuer")?:b.getJSONObject("owner"),now)
         require(b.getString("recipientId")==recipient || b.getString("recipientId")=="*") {"This invitation is for a different participant."}
         require(Protocol.verify(b,value.getString("signature"),issuer.getJSONObject("body").getJSONObject("publicKey"))) {"This invitation could not be authenticated."}

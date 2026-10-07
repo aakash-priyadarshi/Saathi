@@ -55,7 +55,7 @@ struct NearbyView: View {
                 }
             }
             Text(nearby.status).font(Type.bodySmall).foregroundStyle(Palette.onPrimaryContainer)
-            Text("Your name is visible to nearby Swarm phones while you search. Compare the code before connecting. Without a shared Wi-Fi network, the Android phone must be searching too.")
+            Text("Your name is visible to nearby Swarm phones while you search. Swarm phones connect automatically. Without a shared Wi-Fi network, the Android phone must be searching too.")
                 .font(Type.bodySmall).foregroundStyle(Palette.onPrimaryContainer.opacity(0.8))
         }
         .padding(20).frame(maxWidth: .infinity, alignment: .leading).background(Palette.primaryContainer, in: RoundedRectangle(cornerRadius: 12))
@@ -100,7 +100,7 @@ struct NearbyView: View {
                     Image(systemName: "person").foregroundStyle(Palette.primary).frame(width: 44, height: 44).background(Palette.primaryContainer, in: Circle())
                     VStack(alignment: .leading, spacing: 4) {
                         Text(name).font(Type.titleMedium).foregroundStyle(Palette.ink)
-                        Text("Compare a code to meet this person").font(Type.bodySmall).foregroundStyle(Palette.muted)
+                        Text("Connects automatically").font(Type.bodySmall).foregroundStyle(Palette.muted)
                     }
                     Spacer()
                     Button("Connect") { nearby.connect(id) }.buttonStyle(OutlineButtonStyle())

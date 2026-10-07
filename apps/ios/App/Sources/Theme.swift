@@ -17,8 +17,11 @@ enum Palette {
     static let ink = dynamic(0x243d35, 0xe6eee6)
     static let surface = dynamic(0xfffefa, 0x1d2e27)
     static let surfaceVariant = dynamic(0xeaf0e7, 0x273b31)
-    static let muted = dynamic(0x626e64, 0xb3bfb5)
+    static let muted = dynamic(0x58645a, 0xbfcac1)
     static let outline = dynamic(0xdedfd5, 0x3b4d41)
+    /// Chat bubbles, same as Android: green for sent, a neutral outlined card for received.
+    static let sent = dynamic(0xd9eadf, 0x2b5544)
+    static let received = dynamic(0xfffefa, 0x26322d)
     static let error = dynamic(0x923d31, 0xffc0ad)
     static let errorContainer = dynamic(0xfae9e4, 0x482c27)
     /// Startup-only values from the supplied identity board.
@@ -42,14 +45,13 @@ enum Type {
     static let labelSmall = manrope(11, "Medium", relativeTo: .caption2)
 }
 
-/// SWARM with "by CJP" (full) or SWARM alone (compact conversation bar).
+/// The SWARM by CJP lockup on a transparent background (cream in dark mode, ink in light mode; as on Android), sized to
+/// the old two-line text so the bar keeps its height.
 struct Masthead: View {
     var compact = false
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("SWARM").font(compact ? Type.titleMedium : Type.titleLarge).foregroundStyle(Palette.ink)
-            if !compact { Text("by CJP").font(Type.bodySmall).foregroundStyle(Palette.muted) }
-        }.accessibilityElement(children: .combine).accessibilityLabel("SWARM by CJP")
+        Image("SwarmLockup").resizable().scaledToFit().frame(height: compact ? 28 : 40)
+            .accessibilityLabel("SWARM by CJP")
     }
 }
 
@@ -64,15 +66,16 @@ struct Heading: View {
     }
 }
 
-/// 44 pt tonal avatar: first letter for people, # for channels.
+/// 44 pt tonal avatar: first letter for people; a lock for private (invite-only) groups and # for open ones (as on Android).
 struct Avatar: View {
     let name: String
     var channel = false
+    var locked = false
     var size: CGFloat = 44
     var body: some View {
         ZStack {
             Circle().fill(Palette.primaryContainer)
-            if channel { Image(systemName: "number").font(.system(size: size * 0.42, weight: .semibold)).foregroundStyle(Palette.onPrimaryContainer) }
+            if channel { Image(systemName: locked ? "lock.fill" : "number").font(.system(size: size * 0.42, weight: .semibold)).foregroundStyle(Palette.onPrimaryContainer) }
             else { Text(name.prefix(1).uppercased()).font(Type.titleMedium).foregroundStyle(Palette.onPrimaryContainer) }
         }.frame(width: size, height: size).accessibilityHidden(true)
     }

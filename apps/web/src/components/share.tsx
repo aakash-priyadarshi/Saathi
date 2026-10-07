@@ -1,14 +1,14 @@
 'use client';
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { ErrorNotice } from '@saathi/ui';
 import { api, guestToken, uploadMedia, MAX_MEDIA_BYTES } from '../lib/api';
-/** Anyone can share photos and videos; posts are labelled unverified and publish immediately. */
+/** Guest posts are labelled unverified and remain private until administrator approval. */
 export function SharePage() {
-  const router = useRouter();
   const [files, setFiles] = useState<File[]>([]),
     [busy, setBusy] = useState(false),
     [progress, setProgress] = useState(0),
+    [submitted, setSubmitted] = useState(false),
     [error, setError] = useState('');
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -36,18 +36,36 @@ export function SharePage() {
           mediaIds,
         }),
       });
-      router.push('/live');
+      setSubmitted(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sharing failed. Try again.');
     } finally {
       setBusy(false);
     }
   }
+  if (submitted)
+    return (
+      <div className="page-wrap narrow">
+        <div className="page-heading">
+          <h1>Sent for review.</h1>
+          <p>
+            Your unverified post is saved. An administrator must approve it before it appears on the
+            public feed.
+          </p>
+          <Link className="button secondary" href="/live">
+            Browse published updates
+          </Link>
+        </div>
+      </div>
+    );
   return (
     <div className="page-wrap narrow">
       <div className="page-heading">
         <h1>Share a photo or video</h1>
-        <p>No account needed. Your post appears on the live feed as an unverified report.</p>
+        <p>
+          No account needed. Your unverified post appears publicly after an administrator approves
+          it.
+        </p>
       </div>
       <form className="stack-form editor-form" onSubmit={submit}>
         <label>
@@ -89,7 +107,7 @@ export function SharePage() {
         </label>
         {error && <ErrorNotice message={error} />}
         <button className="button" disabled={busy}>
-          {busy ? `Uploading… ${Math.round(progress * 100)}%` : 'Share now'}
+          {busy ? `Uploading… ${Math.round(progress * 100)}%` : 'Send for review'}
         </button>
       </form>
     </div>

@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "org.saathi.android.qa",
+      "sha256_cert_fingerprints": [
+        "BF:CC:F6:4B:13:23:64:9F:43:C8:DC:2D:B8:FF:05:AE:E9:C7:18:56:EF:1F:0A:60:22:17:68:71:8A:99:23:10"
+      ]
+    }
+  }
+]

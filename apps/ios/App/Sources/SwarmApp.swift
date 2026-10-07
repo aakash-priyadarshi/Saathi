@@ -21,9 +21,10 @@ struct SwarmApp: App {
             .preferredColorScheme(appearance == "LIGHT" ? .light : appearance == "DARK" ? .dark : nil)
             .tint(Palette.primary)
             .onOpenURL { url in model.openInvite(url.absoluteString) }
+            .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in if let url = activity.webpageURL { model.openInvite(url.absoluteString) } }
             // Search automatically whenever Swarm is on screen; iOS suspends radios in the background anyway.
             .onChange(of: phase) { value in
-                if value == .active { model.nearby.resume(); UNUserNotificationCenter.current().removeAllDeliveredNotifications() }
+                if value == .active { model.nearby.resumeIfVisible(); UNUserNotificationCenter.current().removeAllDeliveredNotifications() }
                 else if value == .background { model.nearby.pause() }
             }
         }
@@ -37,8 +38,6 @@ struct SwarmApp: App {
     let session: Session
     @Published private(set) var chat: ChatEngine?
     @Published private(set) var failure: String?
-    /// Names that failed the known-person check: they compare a code until Swarm restarts.
-    private var needsCode = Set<String>()
 
     init() {
         session = Session(nearby: nearby)
@@ -53,15 +52,7 @@ struct SwarmApp: App {
             nearby.onDisconnected = { [session] in session.reset() }
             nearby.onError = { [weak chat] in chat?.notice = $0 }
             nearby.displayName = { [weak chat] in chat?.name ?? "" }
-            nearby.knownNames = { [weak chat] in Set((chat?.contacts() ?? []).compactMap { (($0["profile"] as? JSON)?["body"] as? JSON)?["name"] as? String }) }
-            // Only the first pairing compares a code: people already met (and fellow group members) reconnect directly.
-            nearby.trusted = { [weak self, nearby] name in !(self?.needsCode.contains(name) ?? true) && nearby.knownNames().contains(name) }
-            chat.codeSkipped = { [nearby] in nearby.codeSkipped }
-            chat.onUnknownPeer = { [weak self, weak chat, nearby] name in
-                self?.needsCode.insert(name); nearby.disconnect()
-                chat?.notice = "\(name) is new to this phone. Compare the code to pair."
-                Task { try? await Task.sleep(nanoseconds: 2_000_000_000); nearby.resume() }
-            }
+            nearby.busy = { [weak chat] in chat?.transfers.awaiting.values.contains { Date().timeIntervalSince($0) < 60 } ?? false }
             session.onConfirmed = { [weak chat] in await chat?.announce() }
             // A phone notification for each new message that arrives while Swarm is not on screen.
             if !UserDefaults.standard.bool(forKey: "SwarmNoAlerts") { // debug runs skip the prompt (simulator sync tests)
@@ -98,9 +89,12 @@ struct SwarmApp: App {
             failure = (error as? LocalizedError)?.errorDescription ?? "Swarm could not open this phone's identity."
         }
     }
+    private var opening: String?
+    /// A universal link can arrive through both `onOpenURL` and `onContinueUserActivity`; the same link opens once.
     func openInvite(_ link: String) {
-        guard let chat else { return }
-        Task { do { try await chat.acceptInvite(link) } catch { chat.notice = (error as? LocalizedError)?.errorDescription ?? "Invitation could not be used." } }
+        guard let chat, opening != link else { return }
+        opening = link
+        Task { do { try await chat.acceptInvite(link) } catch { chat.notice = (error as? LocalizedError)?.errorDescription ?? "Invitation could not be used." }; opening = nil }
     }
 }
 
@@ -156,10 +150,10 @@ struct RootView: View {
                 .tabItem { Label("Chats", systemImage: "bubble.left.and.bubble.right") }.tag(Tab.chats)
             NearbyView(chat: chat, nearby: nearby)
                 .tabItem { Label("Nearby", systemImage: "dot.radiowaves.left.and.right") }.tag(Tab.nearby)
-            MoreView(chat: chat)
+            MoreView(chat: chat, nearby: nearby)
                 .tabItem { Label("More", systemImage: "ellipsis.circle") }.tag(Tab.more)
         }
-        .onAppear { nearby.resume() } // first launch and right after choosing a name
+        .onAppear { nearby.resumeIfVisible() } // first launch and right after choosing a name
         .alert("Notice", isPresented: Binding(get: { chat.notice != nil }, set: { if !$0 { chat.notice = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(chat.notice ?? "") }
@@ -167,10 +161,6 @@ struct RootView: View {
             Button("Join") { if let link = chat.receivedInvite { Task { do { try await chat.acceptInvite(link) } catch { chat.notice = error.localizedDescription } } } }
             Button("Not now", role: .cancel) {}
         } message: { Text("The nearby person invited you to a channel.") }
-        .alert("Compare the code", isPresented: Binding(get: { nearby.pairCode != nil }, set: { _ in })) {
-            Button("Codes match") { nearby.confirm(true) }
-            Button("Reject", role: .cancel) { nearby.confirm(false) }
-        } message: { Text("This iPhone shows \(nearby.pairCode ?? ""). Accept only if the other phone shows the same code.") }
     }
 }
 
@@ -191,7 +181,7 @@ struct TopBar<Trailing: View>: View {
 }
 extension TopBar where Trailing == EmptyView { init() { self.init { EmptyView() } } }
 
-/// Paste a `cjpswarm://invite/…` link from a channel admin.
+/// Paste a `https://swarm.cockroachjantaparty.org/join#…` (or older `cjpswarm://invite/…`) link from a channel admin.
 struct JoinInviteSheet: View {
     @ObservedObject var chat: ChatEngine
     @Binding var showing: Bool
@@ -200,7 +190,7 @@ struct JoinInviteSheet: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
                 Heading(title: "Join with invite", text: "Paste an invitation or join link from a group admin. Join requests wait for an admin's approval nearby.")
-                TextField("cjpswarm://invite/…", text: $link, axis: .vertical).lineLimit(3...6).font(Type.bodyMedium)
+                TextField("https://swarm.cockroachjantaparty.org/join#…", text: $link, axis: .vertical).lineLimit(3...6).font(Type.bodyMedium)
                     .autocorrectionDisabled().textInputAutocapitalization(.never)
                     .padding(14).background(Palette.surface, in: RoundedRectangle(cornerRadius: 10)).overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.outline))
                 HStack {

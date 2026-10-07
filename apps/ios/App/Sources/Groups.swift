@@ -88,14 +88,17 @@ extension ChatEngine {
         if session.confirmed, let peer = peerID, ChatRules.member(policy, peer) { await sendPolicy(policy) }
         return try ChatDocuments.encodeInvite(try ChatDocuments.invite(me, policy: policy, recipient: recipient, at: now()))
     }
-    /// A single-use, six-hour join link for an invite-only group (Android `createJoinLink`): whoever opens it first
-    /// asks to join, and a group admin approves. It carries no member list or keys.
+    /// The group's reusable join link, for any group (Android `createJoinLink`): many people can use it for up
+    /// to 7 days. The current link is shared again while it has at least a day left. It carries no member list or keys.
     func createJoinLink(_ id: String) throws -> String {
         guard let p = current(id) else { throw ChatRuleError("Group is unavailable.") }
         let b = body(p)
-        try J.req(b["visibility"] as? String == "INVITE" && b["deleted"] as? Bool != true, "Join links are only available for invite-only groups.")
+        try J.req(b["deleted"] as? Bool != true, "This group was deleted.")
         try J.req(ChatRules.capabilities(p, selfID)["canInvite"] == true, "Your role cannot invite people to this group.")
-        return try ChatDocuments.encodeInvite(try ChatDocuments.admission(me, profile: profile, policy: p, recipient: "*", at: now()))
+        if let saved = store.get("chat-join-links", id), time(saved["expiresAt"]) > now().addingTimeInterval(86400), let link = saved["link"] as? String { return link.replacingOccurrences(of: "cjpswarm://invite/", with: ChatDocuments.joinLink, options: .anchored) }
+        let invite = try ChatDocuments.admission(me, profile: profile, policy: p, recipient: "*", at: now()), link = try ChatDocuments.encodeInvite(invite)
+        try save("chat-join-links", id, ["id": id, "link": link, "expiresAt": body(invite)["expiresAt"] ?? ""])
+        return link
     }
     func sendInviteNearby(_ link: String) async throws {
         try J.req(session.confirmed && peer != nil, "Connect to this person nearby first.")
@@ -222,20 +225,25 @@ extension ChatEngine {
         if joining, let i = index, !J.isNull(members[i], "removedAt") { try inbox(); return }
         if joining {
             let admission = ((pb["settings"] as? JSON)?["admission"] as? String) ?? (pb["visibility"] as? String == "OPEN" ? "OPEN" : "INVITE_AUTO")
-            // Approval invitations and join links always wait for a manager, whatever the group's setting.
+            // Approval invitations wait for a manager; join links follow the group's approval setting (below).
             let approvalInvite = pb["visibility"] as? String == "INVITE" && ((b["invitation"] as? JSON).map(body)?["kind"] as? String) == "CHAT_ADMISSION"
             if ["APPROVAL_ONLY", "INVITE_PLUS_APPROVAL"].contains(admission) || approvalInvite {
                 if pb["visibility"] as? String == "INVITE" {
                     guard let invitation = b["invitation"] as? JSON else { return }
                     let ib = body(invitation)
-                    try J.req(ib["policyHash"] as? String == hash(p) && ChatRules.participant(ib["owner"] as? JSON ?? [:]) == ChatRules.participant(pb["owner"] as? JSON ?? [:]) &&
+                    // A join link is reusable across policy versions for 7 days, while its issuer may still invite.
+                    let link = ib["recipientId"] as? String == "*"
+                    try J.req((link || ib["policyHash"] as? String == hash(p)) && ChatRules.participant(ib["owner"] as? JSON ?? [:]) == ChatRules.participant(pb["owner"] as? JSON ?? [:]) &&
                               ChatRules.capabilities(p, ChatRules.participant((ib["issuer"] as? JSON) ?? (ib["owner"] as? JSON) ?? [:]))["canInvite"] == true, "Ask for a current invitation.")
-                    // A join link works once: the first request the group creator's phone sees reserves it.
-                    if ib["recipientId"] as? String == "*", let linkID = ib["id"] as? String {
-                        if let prior = store.get("chat-link-uses", linkID), prior["participantId"] as? String != personID { return }
-                        if store.get("chat-link-uses", linkID) == nil && isOwner(p) {
-                            try save("chat-link-uses", linkID, ["id": linkID, "participantId": personID, "requestId": b["id"] ?? "", "expiresAt": ib["expiresAt"] ?? ""])
+                    // Approval off: the first manager's phone to see a link request admits it, as if they tapped Approve.
+                    if link && admission == "INVITE_AUTO" {
+                        if index != nil { return }
+                        try inbox()
+                        let channelID = try J.str(pb, "id")
+                        if !actions(channelID).contains(where: { let a = body($0["envelope"] as? JSON ?? [:]); return a["action"] as? String == "APPROVE_JOIN" && a["targetId"] as? String == personID }) {
+                            try? await moderate(channelID, action: "APPROVE_JOIN", target: personID)
                         }
+                        return
                     }
                 }
                 try inbox(); return

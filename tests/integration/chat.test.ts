@@ -196,14 +196,14 @@ describe('Real PostgreSQL operational chat boundary', () => {
     const demoted = await channelAction(mod, next.policy, 'UNLOCK_THREAD', root.body.id);
     expect((await sync(mod, { actions: [demoted] })).rejectedActions).toHaveLength(1);
   });
-  it('accepts a join-link request into review without failing the sync or sharing the channel', async () => {
+  it('accepts reusable join-link requests from many people into review without sharing the channel', async () => {
     const owner = await chatPerson('Link owner'),
       visitor = await chatPerson('Link visitor');
     const channel = await chatPolicy(owner, [owner], 'INVITE');
     channel.policy.body.settings = { mode: 'DISCUSSION', admission: 'INVITE_AUTO' };
     channel.policy.signature = await sign(channel.policy.body, owner.signing.privateKey);
     await sync(owner, { policies: [channel.policy] });
-    // Android join links always require approval, even when invitations normally admit at once.
+    // The server only holds link requests; a manager's phone approves them, or admits them at once when approval is off.
     const descriptor = {
       v: 1 as const,
       kind: 'CHAT_ADMISSION' as const,
@@ -216,7 +216,7 @@ describe('Real PostgreSQL operational chat boundary', () => {
       policyHash: await hash(channel.policy),
       admission: 'INVITE_PLUS_APPROVAL' as const,
       issuedAt: new Date().toISOString(),
-      expiresAt: channel.policy.body.expiresAt,
+      expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
     };
     const invitation = {
       body: descriptor,
@@ -239,24 +239,41 @@ describe('Real PostgreSQL operational chat boundary', () => {
     expect(pending.policies).toEqual([]);
     expect(pending.messages).toEqual([]);
     expect((await sync(owner)).joins).toHaveLength(1);
-    // A join link is single use: a second person carrying it is refused, the first may re-send.
+    // The link is reusable: a second person carrying it is accepted too, also after the policy is renewed.
+    const renewed = await chatPolicy(owner, [owner], 'INVITE', channel.policy);
+    renewed.policy.body.settings = channel.policy.body.settings;
+    renewed.policy.signature = await sign(renewed.policy.body, owner.signing.privateKey);
+    await sync(owner, { policies: [renewed.policy] });
     const late = await chatPerson('Late link visitor');
     const lateBody = { ...joinBody, id: randomUUID(), participant: late.profile };
+    late.channels.add(channel.policy.body.id);
+    await sync(late, {
+      joins: [{ body: lateBody, signature: await sign(lateBody, late.signing.privateKey) }],
+    });
+    expect((await sync(owner)).joins).toHaveLength(2);
+    // A personal invitation is still bound to the current policy and admission mode.
+    const stale = await chatPerson('Stale invitee');
+    const personal = {
+      ...descriptor,
+      id: randomUUID(),
+      recipientId: stale.profile.body.id,
+      expiresAt: channel.policy.body.expiresAt,
+    };
+    const staleBody = {
+      ...joinBody,
+      id: randomUUID(),
+      participant: stale.profile,
+      invitation: { body: personal, signature: await sign(personal, owner.signing.privateKey) },
+    };
     const refused = await request(app.getHttpServer())
       .post('/api/v1/chat/sync')
       .set('Origin', origin)
       .send(
-        await chatBatch(late, {
-          joins: [{ body: lateBody, signature: await sign(lateBody, late.signing.privateKey) }],
+        await chatBatch(stale, {
+          joins: [{ body: staleBody, signature: await sign(staleBody, stale.signing.privateKey) }],
         }),
       );
     expect(refused.status).toBe(403);
-    expect(refused.body.message).toBe('This join link has already been used.');
-    const againBody = { ...joinBody, id: randomUUID(), issuedAt: new Date().toISOString() };
-    await sync(visitor, {
-      joins: [{ body: againBody, signature: await sign(againBody, visitor.signing.privateKey) }],
-    });
-    expect((await sync(owner)).joins).toHaveLength(1);
   });
   it('gates private admission, delegated approval and bans, pauses old epochs, and keeps rename-bound bans', async () => {
     const owner = await chatPerson('Private owner'),

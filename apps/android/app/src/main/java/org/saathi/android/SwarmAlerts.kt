@@ -37,7 +37,7 @@ object SwarmAlerts {
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         try {
             NotificationManagerCompat.from(context).notify(conversationId, 2, NotificationCompat.Builder(context, MESSAGES)
-                .setSmallIcon(R.drawable.ic_saathi).setContentTitle(title).setContentText(text)
+                .setSmallIcon(R.drawable.ic_notification).setContentTitle(title).setContentText(text)
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE).setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setAutoCancel(true).setContentIntent(open(context)).build())
         } catch (_: SecurityException) {}
@@ -45,7 +45,7 @@ object SwarmAlerts {
     fun clear(context: Context, conversationId: String) = NotificationManagerCompat.from(context).cancel(conversationId, 2)
 
     fun listening(context: Context) = NotificationCompat.Builder(context, LISTENING)
-        .setSmallIcon(R.drawable.ic_saathi).setContentTitle("Swarm is listening nearby")
+        .setSmallIcon(R.drawable.ic_notification).setContentTitle("Swarm is listening nearby")
         .setContentText("Messages from people nearby keep arriving while Swarm is in the background.")
         .setOngoing(true).setContentIntent(open(context)).build()
 }

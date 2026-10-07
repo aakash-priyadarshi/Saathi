@@ -136,7 +136,7 @@ import java.util.UUID
         item { OutlinedTextField(description, { description = it.take(if (field) 4000 else 2000); saved = false }, label = { Text(if (field) "Field update" else "Description and delivery context") }, modifier = Modifier.fillMaxWidth(), minLines = 4) }
         if (field) item {
             OutlinedButton(onClick = { picker.launch(arrayOf("image/*", "video/*")) }, modifier = Modifier.fillMaxWidth()) { Text(if (media.isBlank()) "Add photos or videos" else "${media.split("\n").size} selected · Change") }
-            Text("Up to 4 files, 250 MB each, any video length. They upload after Swarm accepts the text and publish without approval. Check faces before sharing.", Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Up to 4 files, 250 MB each, any video length. Sanitized files stay private until an administrator approves the update. Check faces before sharing.", Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (!field) {
             item { OutlinedTextField(quantity, { quantity = it.filter(Char::isDigit).take(7); saved = false }, label = { Text("Total quantity needed") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth(), singleLine = true) }

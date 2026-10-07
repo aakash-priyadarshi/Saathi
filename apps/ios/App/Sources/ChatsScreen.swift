@@ -11,9 +11,10 @@ struct ChatsView: View {
     @State private var search = ""
     @State private var joining = false
     @State private var creating = false
+    @State private var deletingChat: Row?
     @State private var path: [String] = Demo.startConversation.map { [$0] } ?? []
 
-    struct Row: Identifiable { let id: String; let title: String; let preview: String; let channel: Bool; let unread: Int; let last: String; let status: String? }
+    struct Row: Identifiable { let id: String; let title: String; let preview: String; let channel: Bool; var locked = false; let unread: Int; let last: String; let status: String?; let pinnedAt: String? }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -32,7 +33,9 @@ struct ChatsView: View {
                     }
                     .padding(12).background(Palette.surface, in: RoundedRectangle(cornerRadius: 10)).overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.outline))
                     let rows = filtered
-                    let direct = rows.filter { !$0.channel }, channels = rows.filter(\.channel)
+                    // Pinned chats stay on top, most recently pinned first.
+                    let pinned = rows.filter { $0.pinnedAt != nil }.sorted { $0.pinnedAt! > $1.pinnedAt! }
+                    let direct = rows.filter { !$0.channel && $0.pinnedAt == nil }, channels = rows.filter { $0.channel && $0.pinnedAt == nil }
                     if rows.isEmpty && search.isEmpty {
                         EmptyState(title: "People first. Conversations that stay.", text: "Meet someone in Nearby to start a direct message, or join a channel with an invite from its admin.", icon: "bubble.left")
                         HStack {
@@ -42,6 +45,7 @@ struct ChatsView: View {
                     } else if rows.isEmpty {
                         Text("No matching saved conversations. Search stays on this phone.").font(Type.bodyMedium).foregroundStyle(Palette.muted)
                     }
+                    if !pinned.isEmpty { section("Pinned", pinned) }
                     if !direct.isEmpty { section("Direct messages", direct) }
                     if !channels.isEmpty { section("Channels", channels) }
                     Text("Direct messages and invite-only channels are encrypted between participants. Open channels are readable by their members. Chatting does not verify a relief volunteer.")
@@ -49,6 +53,10 @@ struct ChatsView: View {
                 }.padding(20)
             }
             .mastheadToolbar()
+            .alert("Delete this chat?", isPresented: Binding(get: { deletingChat != nil }, set: { if !$0 { deletingChat = nil } }), presenting: deletingChat) { row in
+                Button("Delete chat", role: .destructive) { do { try chat.deleteChat(row.id) } catch { chat.notice = error.localizedDescription } }
+                Button("Cancel", role: .cancel) {}
+            } message: { row in Text(deleteChatText(channel: row.channel)) }
             .sheet(isPresented: $joining) { JoinInviteSheet(chat: chat, showing: $joining) }
             .sheet(isPresented: $creating) { NewGroupSheet(chat: chat, showing: $creating) { path.append($0) } }
             .navigationDestination(for: String.self) { id in
@@ -63,13 +71,19 @@ struct ChatsView: View {
         VStack(spacing: 0) {
             ForEach(rows) { row in
                 NavigationLink(value: row.id) { rowView(row) }.buttonStyle(.plain)
+                    .contextMenu {
+                        Button { do { try chat.togglePinChat(row.id) } catch { chat.notice = error.localizedDescription } } label: {
+                            Label(row.pinnedAt == nil ? "Pin chat" : "Unpin chat", systemImage: row.pinnedAt == nil ? "pin" : "pin.slash")
+                        }
+                        Button(role: .destructive) { deletingChat = row } label: { Label("Delete chat", systemImage: "trash") }
+                    }
                 Divider().overlay(Palette.outline)
             }
         }
     }
     func rowView(_ row: Row) -> some View {
         HStack(spacing: 12) {
-            Avatar(name: row.title, channel: row.channel)
+            Avatar(name: row.title, channel: row.channel, locked: row.locked)
             VStack(alignment: .leading, spacing: 5) {
                 Text((row.channel ? "# " : "") + row.title).font(Type.titleMedium).foregroundStyle(Palette.ink).lineLimit(1)
                 Text(row.preview).font(Type.bodySmall).foregroundStyle(Palette.muted).lineLimit(2)
@@ -77,6 +91,7 @@ struct ChatsView: View {
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 6) {
+                if row.pinnedAt != nil { Image(systemName: "pin.fill").font(.caption).foregroundStyle(Palette.muted).accessibilityLabel("Pinned") }
                 if row.unread > 0 {
                     Text("\(min(row.unread, 99))").font(Type.labelSmall).foregroundStyle(Palette.onPrimary)
                         .padding(.horizontal, 7).padding(.vertical, 3).background(Palette.primary, in: Capsule())
@@ -88,7 +103,7 @@ struct ChatsView: View {
 
     var filtered: [Row] {
         _ = chat.revision
-        let rows = chat.conversations().compactMap { c -> Row? in
+        let rows = chat.conversations().filter(chat.listed).compactMap { c -> Row? in
             guard let id = c["id"] as? String else { return nil }
             let last = chat.shown(in: id).last
             let lastBody = (last?["envelope"] as? JSON).flatMap { $0["body"] as? JSON }
@@ -96,12 +111,12 @@ struct ChatsView: View {
                 c["joinStatus"] as? String == "REJECTED" ? "Join request declined" :
                 c["joined"] as? Bool == false ? "Left or removed · Saved history" : nil
             return Row(id: id, title: c["title"] as? String ?? "Conversation", preview: state ?? last.map { chat.deletedForEveryone(in: id).contains($0["id"] as? String ?? "") ? "This message was deleted" : preview($0) } ?? "No messages yet",
-                       channel: c["type"] as? String == "CHANNEL", unread: chat.unread(id), last: lastBody?["createdAt"] as? String ?? "",
-                       status: last?["owned"] as? Bool == true ? deliveryState(last!) : nil)
+                       channel: c["type"] as? String == "CHANNEL", locked: chat.isPrivate(id), unread: chat.unread(id), last: lastBody?["createdAt"] as? String ?? "",
+                       status: last?["owned"] as? Bool == true ? deliveryState(last!) : nil, pinnedAt: chat.store.get("chat-pinned", id)?["at"] as? String)
         }.sorted { $0.last > $1.last }
         let q = search.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return rows }
-        return rows.filter { row in row.title.localizedCaseInsensitiveContains(q) || chat.messages(in: row.id).contains { preview($0).localizedCaseInsensitiveContains(q) } }
+        return rows.filter { row in row.title.localizedCaseInsensitiveContains(q) || chat.shown(in: row.id).contains { preview($0).localizedCaseInsensitiveContains(q) } }
     }
     func preview(_ r: JSON) -> String {
         if let text = (r["payload"] as? JSON)?["text"] as? String { return text }
@@ -109,6 +124,10 @@ struct ChatsView: View {
     }
 }
 
+/// Delete chat leaves a group joined; the same words as Android.
+func deleteChatText(channel: Bool) -> String {
+    "Deletes this chat's messages and downloaded files from this phone." + (channel ? " You stay in the group." : "") + " New messages will bring it back."
+}
 /// Android chatStatus: delivery is separate from saving.
 func deliveryState(_ r: JSON) -> String {
     r["readAt"] != nil ? "Read" : r["deliveredAt"] != nil ? "Delivered" : r["sentNearby"] != nil ? "Sent nearby" : "Saved on this phone"
@@ -130,11 +149,12 @@ struct InfoView: View {
 }
 
 /// One conversation: header with avatar and connection meaning, latest messages above the composer.
-/// Long-press a message for Reply, Copy, Forward, Save, Report and Delete (the same list as Android).
+/// Long-press a message for Reply, Copy, Forward, Save, Pin, Report and Delete (the same list as Android).
 struct ConversationView: View {
     @ObservedObject var chat: ChatEngine
     @ObservedObject var nearby: Nearby
     let id: String
+    @Environment(\.dismiss) private var dismiss
     @State private var draft = ""
     @State private var photoItem: PhotosPickerItem?
     @State private var viewing: UIImage?
@@ -159,6 +179,7 @@ struct ConversationView: View {
         let conversation = chat.conversation(id)
         let all = chat.shown(in: id)
         let gone = chat.deletedForEveryone(in: id)
+        let pins = chat.pins(id), pinned = Set(pins.compactMap { $0["id"] as? String })
         let channel = conversation?["type"] as? String == "CHANNEL"
         let title = conversation?["title"] as? String ?? "Chat"
         let info = threads(all, channel: channel, conversation: conversation)
@@ -167,15 +188,27 @@ struct ConversationView: View {
             : all.filter { ($0["id"] as? String) == thread || info.roots[$0["id"] as? String ?? ""] == thread }
         let canPost = thread != nil ? info.canReplyThreads : conversation?["joined"] as? Bool == true && (!channel || chat.capabilities(id)?["canPostTopLevel"] == true)
         VStack(spacing: 0) {
-            NavigationLink { InfoView(chat: chat, nearby: nearby, id: id) } label: { header(title: title, channel: channel, conversation: conversation) }
-                .buttonStyle(.plain).accessibilityHint(channel ? "Opens group members and settings" : "Opens this person's options")
+            // Like WhatsApp: the chat's own bar replaces the app header, with back beside the picture; tap the name for info.
+            HStack(spacing: 0) {
+                Button { dismiss() } label: { Image(systemName: "chevron.left").font(.title3.weight(.semibold)).foregroundStyle(Palette.primary).frame(width: 40, height: 44) }
+                    .accessibilityLabel("Back")
+                NavigationLink { InfoView(chat: chat, nearby: nearby, id: id) } label: { header(title: title, channel: channel, conversation: conversation) }
+                    .buttonStyle(.plain).accessibilityHint(channel ? "Opens group members and settings" : "Opens this person's options")
+            }.padding(.leading, 4).background(Palette.background)
+            Divider().overlay(Palette.outline)
             if let thread {
-                HStack(spacing: 8) {
-                    Button { self.thread = nil; replyTo = nil } label: { Image(systemName: "chevron.left").font(.headline) }.accessibilityLabel("Back to chat")
-                    let n = info.counts[thread] ?? 0
-                    Text("Thread · \(n) \(n == 1 ? "reply" : "replies")").font(Type.titleMedium).foregroundStyle(Palette.ink)
-                    Spacer()
-                }.padding(.horizontal, 16).padding(.vertical, 10).background(Palette.primaryContainer.opacity(0.5))
+                threadHeader(replyCount: info.counts[thread] ?? 0)
+            }
+            // Pinned messages: tap one to scroll to it and flash it, like a quote.
+            if !pins.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(pins.indices, id: \.self) { i in
+                        Button { jumpTo = pins[i]["id"] as? String } label: {
+                            Label((pins[i]["payload"] as? JSON)?["text"] as? String ?? (chat.attachment(of: pins[i]) != nil ? "Photo" : "Message"), systemImage: "pin.fill")
+                                .font(Type.bodySmall).foregroundStyle(Palette.ink).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
+                        }.buttonStyle(.plain).accessibilityHint("Shows the pinned message")
+                    }
+                }.padding(.horizontal, 16).padding(.vertical, 4).background(Palette.primaryContainer.opacity(0.3))
             }
             Divider().overlay(Palette.outline)
             ScrollViewReader { proxy in
@@ -184,7 +217,9 @@ struct ConversationView: View {
                         if messages.isEmpty {
                             EmptyState(title: channel ? "No posts yet" : "Say hello", text: "Messages are signed on this phone and delivered when you meet the other person or a member nearby.", icon: "text.bubble")
                         }
-                        ForEach(messages.indices, id: \.self) { i in bubble(messages[i], channel: channel, gone: gone, canPost: canPost, info: info).id(messages[i]["id"] as? String ?? "\(i)") }
+                        ForEach(messages.indices, id: \.self) { index in
+                            messageRow(messages[index], index: index, channel: channel, gone: gone, canPost: canPost, info: info, pinned: pinned)
+                        }
                     }.padding(16)
                 }
                 .onAppear { proxy.scrollTo(messages.last?["id"] as? String ?? "", anchor: .bottom) }
@@ -192,21 +227,13 @@ struct ConversationView: View {
                 // Tapping a quote scrolls to the quoted message (opening its thread when it lives in one) and flashes it.
                 .onChange(of: jumpTo) { target in
                     guard let target else { return }
-                    if !messages.contains(where: { $0["id"] as? String == target }) {
-                        if all.contains(where: { $0["id"] as? String == target }) { thread = info.roots[target]; Task { try? await Task.sleep(nanoseconds: 300_000_000); jumpTo = nil; jumpTo = target } }
-                        else { chat.notice = "The quoted message is not on this phone."; jumpTo = nil }
-                        return
-                    }
-                    withAnimation { proxy.scrollTo(target, anchor: .center) }
-                    highlight = target; jumpTo = nil
-                    Task { try? await Task.sleep(nanoseconds: 1_500_000_000); withAnimation { highlight = nil } }
+                    jumpToMessage(target, proxy: proxy, visibleMessages: messages, allMessages: all, roots: info.roots)
                 }
             }
             composer(conversation, canPost: canPost, channel: channel, threadRoot: info.announce ? thread : nil, info: info)
         }
         .background(Palette.background.ignoresSafeArea())
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .principal) { Masthead(compact: true) } }
+        .toolbar(.hidden, for: .navigationBar) // the chat's own bar (above) replaces it
         .toolbar(.hidden, for: .tabBar) // Android hides the bottom destinations inside a conversation
         .task(id: messages.count) { await chat.read(id) }
         // Hold-to-talk: a clip that arrives while this chat is open plays by itself, like a walkie-talkie.
@@ -250,6 +277,56 @@ struct ConversationView: View {
         } message: { _ in Text("A report requests review; it does not remove copies from other phones.") }
     }
 
+    private func threadHeader(replyCount: Int) -> some View {
+        let replyLabel = replyCount == 1 ? "reply" : "replies"
+        return HStack(spacing: 8) {
+            Button { thread = nil; replyTo = nil } label: { Image(systemName: "chevron.left").font(.headline) }
+                .accessibilityLabel("Back to chat")
+            Text("Thread · \(replyCount) \(replyLabel)")
+                .font(Type.titleMedium)
+                .foregroundStyle(Palette.ink)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Palette.primaryContainer.opacity(0.5))
+    }
+
+    private func messageRow(_ message: JSON, index: Int, channel: Bool, gone: Set<String>, canPost: Bool, info: Threads, pinned: Set<String>) -> some View {
+        let messageID = message["id"] as? String ?? String(index)
+        return bubble(message, channel: channel, gone: gone, canPost: canPost, info: info, pinned: pinned)
+            .id(messageID)
+    }
+
+    private func jumpToMessage(_ target: String, proxy: ScrollViewProxy, visibleMessages: [JSON], allMessages: [JSON], roots: [String: String]) {
+        let isVisible = visibleMessages.contains { ($0["id"] as? String) == target }
+        guard isVisible else {
+            let isAvailable = allMessages.contains { ($0["id"] as? String) == target }
+            guard isAvailable else {
+                chat.notice = "The quoted message is not on this phone."
+                jumpTo = nil
+                return
+            }
+            thread = roots[target]
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                jumpTo = nil
+                jumpTo = target
+            }
+            return
+        }
+
+        withAnimation(.easeInOut(duration: 0.2)) {
+            proxy.scrollTo(target, anchor: .center)
+        }
+        highlight = target
+        jumpTo = nil
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            if highlight == target { highlight = nil }
+        }
+    }
+
     /// The newest incoming voice message whose audio is on this phone.
     func latestVoice(_ messages: [JSON]) -> String? {
         messages.last { $0["owned"] as? Bool != true && (chat.attachment(of: $0)?["mime"] as? String ?? "").hasPrefix("audio/") && chat.voice(chat.attachment(of: $0)?["id"] as? String ?? "") != nil }
@@ -264,18 +341,17 @@ struct ConversationView: View {
             : conversation?["joined"] as? Bool == false ? "Left or removed · Saved history"
             : here ? (channel ? "Connected to a member nearby · posts deliver now" : "Connected nearby · messages deliver now")
             : (channel ? "\(members) member\(members == 1 ? "" : "s") · posts travel when you meet a member" : "Saved on this phone · delivers when you meet")
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                Avatar(name: title, channel: channel)
-                Text(title).font(Type.titleLarge).foregroundStyle(Palette.ink).lineLimit(2)
-                Spacer(minLength: 0)
-                Image(systemName: "info.circle").foregroundStyle(Palette.primary)
+        return HStack(spacing: 10) {
+            Avatar(name: title, channel: channel, locked: chat.isPrivate(conversation?["id"] as? String ?? ""), size: 38)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(Type.titleMedium).foregroundStyle(Palette.ink).lineLimit(1)
+                HStack(spacing: 5) {
+                    Circle().fill(here ? Palette.primary : Palette.muted.opacity(0.5)).frame(width: 7, height: 7)
+                    Text(status).font(Type.labelSmall).foregroundStyle(Palette.muted).lineLimit(1)
+                }
             }
-            HStack(spacing: 6) {
-                Circle().fill(here ? Palette.primary : Palette.muted.opacity(0.5)).frame(width: 8, height: 8)
-                Text(status).font(Type.bodySmall).foregroundStyle(Palette.muted)
-            }
-        }.padding(.horizontal, 16).padding(.vertical, 12).frame(maxWidth: .infinity, alignment: .leading).background(Palette.background).contentShape(Rectangle())
+            Spacer(minLength: 0)
+        }.padding(.trailing, 16).padding(.vertical, 6).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
     }
 
     struct Threads { let roots: [String: String]; let counts: [String: Int]; let announce: Bool; let canReplyThreads: Bool }
@@ -385,7 +461,7 @@ struct ConversationView: View {
         }
     }
 
-    @ViewBuilder func bubble(_ r: JSON, channel: Bool, gone: Set<String>, canPost: Bool, info: Threads) -> some View {
+    @ViewBuilder func bubble(_ r: JSON, channel: Bool, gone: Set<String>, canPost: Bool, info: Threads, pinned: Set<String>) -> some View {
         let b = ((r["envelope"] as? JSON)?["body"] as? JSON) ?? [:]
         let messageID = r["id"] as? String ?? ""
         let mine = r["owned"] as? Bool == true
@@ -464,7 +540,7 @@ struct ConversationView: View {
             }
             .padding(12)
             // Received posts are paper cards with a rule, so they read apart from your own tinted bubbles.
-            .background(highlight == messageID ? Palette.primary.opacity(0.25) : mine ? Palette.primaryContainer : Palette.surface, in: RoundedRectangle(cornerRadius: 14))
+            .background(highlight == messageID ? Palette.primary.opacity(0.25) : mine ? Palette.sent : Palette.received, in: RoundedRectangle(cornerRadius: 14))
             .overlay { if !mine { RoundedRectangle(cornerRadius: 14).stroke(Palette.outline) } }
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14))
             .contextMenu {
@@ -475,6 +551,9 @@ struct ConversationView: View {
                     if let text { Button { UIPasteboard.general.string = text } label: { Label("Copy", systemImage: "doc.on.doc") } }
                     if text != nil || image != nil { Button { forwarding = messageID } label: { Label("Forward", systemImage: "arrowshape.turn.up.right") } }
                     if let image { Button { UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil); chat.notice = "Saved to Photos." } label: { Label("Save", systemImage: "square.and.arrow.down") } }
+                    Button { do { try chat.togglePin(messageID, in: id) } catch { chat.notice = error.localizedDescription } } label: {
+                        Label(pinned.contains(messageID) ? "Unpin" : "Pin", systemImage: pinned.contains(messageID) ? "pin.slash" : "pin")
+                    }
                     if !mine { Button { reporting = messageID } label: { Label("Report", systemImage: "flag") } }
                 }
                 Button(role: .destructive) { deleting = r } label: { Label("Delete", systemImage: "trash") }
@@ -521,7 +600,7 @@ struct ForwardSheet: View {
                         if let at = chosen.firstIndex(of: cid) { chosen.remove(at: at) } else if chosen.count < 5 { chosen.append(cid) }
                     } label: {
                         HStack(spacing: 12) {
-                            Avatar(name: title, channel: c["type"] as? String == "CHANNEL")
+                            Avatar(name: title, channel: c["type"] as? String == "CHANNEL", locked: chat.isPrivate(cid))
                             Text(title).font(Type.titleMedium).foregroundStyle(Palette.ink)
                             Spacer()
                             Image(systemName: chosen.contains(cid) ? "checkmark.circle.fill" : "circle").foregroundStyle(Palette.primary)
@@ -576,7 +655,7 @@ struct ContactInfoView: View {
             Button("Cancel", role: .cancel) {}
         }
         .alert("Clear this chat?", isPresented: $clearing) {
-            Button("Clear", role: .destructive) { chat.clear(id) }
+            Button("Clear", role: .destructive) { do { try chat.clear(id) } catch { chat.notice = error.localizedDescription } }
             Button("Cancel", role: .cancel) {}
         } message: { Text("Messages are removed from this phone only.") }
     }
@@ -585,3 +664,18 @@ struct ContactInfoView: View {
 struct IdentifiedString: Identifiable { let id: String }
 
 struct IdentifiedImage: Identifiable { let image: UIImage; var id: ObjectIdentifier { ObjectIdentifier(image) } }
+
+extension ChatEngine {
+    /// Invite-only (encrypted) groups show a lock instead of #.
+    func isPrivate(_ id: String) -> Bool { current(id).map(body)?["visibility"] as? String == "INVITE" }
+}
+
+/// Hiding the system bar (the chat's own bar replaces it, like WhatsApp) also disables iOS's edge swipe back; keep the
+/// swipe whenever there is a screen to go back to.
+extension UINavigationController: @retroactive UIGestureRecognizerDelegate {
+    override open func viewDidLoad() {
+        super.viewDidLoad()
+        interactivePopGestureRecognizer?.delegate = self
+    }
+    public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool { viewControllers.count > 1 }
+}

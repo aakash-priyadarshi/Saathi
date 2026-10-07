@@ -77,11 +77,11 @@ class ChatReadUiTest {
             ui.onNodeWithTag("chat-photo-$attachmentMessageId").performClick()
             ui.onNodeWithContentDescription("Close photo preview").assertIsDisplayed()
             ui.onNodeWithContentDescription("Close photo preview").performClick()
-            // Message actions open on long press (Reply, Copy, Forward, Save, Report, Delete), the same list as iPhone.
+            // Message actions open on long press (Reply, Copy, Forward, Save, Pin, Report, Delete), the same list as iPhone.
             val textMessageId=vm.state.value.chatMessages.first{it.getJSONObject("payload").optString("text").contains("Fictional coordination")}.getString("id")
             ui.onNodeWithTag("chat-transcript").performScrollToNode(hasTestTag("message-$textMessageId"))
             ui.onNodeWithTag("message-$textMessageId").performTouchInput{longClick()}
-            listOf("Reply","Copy","Forward","Delete").forEach{ui.onNode(hasText(it) and hasAnyAncestor(isPopup())).assertIsDisplayed()}
+            listOf("Reply","Copy","Forward","Pin","Delete").forEach{ui.onNode(hasText(it) and hasAnyAncestor(isPopup())).assertIsDisplayed()}
             ui.onRoot().captureToImage().asAndroidBitmap().let{saveReviewCapture(context,"chat-simple-actions.png",it)}
             ui.onNode(hasText("Copy") and hasAnyAncestor(isPopup())).performClick()
             ui.onNodeWithTag("chat-transcript").performScrollToNode(hasTestTag("message-$attachmentMessageId"))
@@ -109,7 +109,8 @@ class ChatReadUiTest {
             ui.onNodeWithContentDescription("Group info").performClick()
             ui.onNodeWithText("Group info").assertIsDisplayed()
             ui.onNodeWithText("Add people").performClick()
-            ui.onNodeWithText("Create join link").assertIsDisplayed()
+            ui.onNodeWithText("Group join link").assertIsDisplayed()
+            ui.waitUntil(15000){ui.onAllNodesWithContentDescription("Invitation QR code").fetchSemanticsNodes().isNotEmpty()}
             ui.onNodeWithText("Done").performClick()
             ui.onNodeWithContentDescription("Back").performClick()
             ui.onNodeWithText("Group info").assertDoesNotExist()
@@ -145,15 +146,15 @@ class ChatReadUiTest {
             ui.onNodeWithText("Fictional: I’m at the public gate.").assertIsDisplayed()
             val sent=ui.onNodeWithTag("chat-bubble-sent-$sentId").assertIsDisplayed().captureToImage().asAndroidBitmap()
             val received=ui.onNodeWithTag("chat-bubble-received-$incomingId").assertIsDisplayed().captureToImage().asAndroidBitmap()
-            assertNotEquals("Sent and received bubbles should use different Material tones",sent.getPixel(sent.width/2,2),received.getPixel(received.width/2,2))
+            assertNotEquals("Sent and received bubbles should use different Material tones",sent.getPixel(10,sent.height/2),received.getPixel(10,received.height/2))
             ui.onRoot().captureToImage().asAndroidBitmap().let{image->saveReviewCapture(context,"chat-bubble-directions.png",image)}
             appearance.value="DARK"
             ui.waitForIdle()
             val darkSent=ui.onNodeWithTag("chat-bubble-sent-$sentId").assertIsDisplayed().captureToImage().asAndroidBitmap()
             val darkReceived=ui.onNodeWithTag("chat-bubble-received-$incomingId").assertIsDisplayed().captureToImage().asAndroidBitmap()
             assertEquals("Dark chat should use the dark app surface",android.graphics.Color.rgb(21,34,30),ui.onRoot().captureToImage().asAndroidBitmap().getPixel(1,1))
-            assertEquals("Outgoing dark bubble should use the brighter forest tone",android.graphics.Color.rgb(62,118,93),darkSent.getPixel(darkSent.width/2,2))
-            assertEquals("Incoming dark bubble should use the warm contrasting tone",android.graphics.Color.rgb(128,103,64),darkReceived.getPixel(darkReceived.width/2,2))
+            assertEquals("Outgoing dark bubble should use the shared green",android.graphics.Color.rgb(0x2b,0x55,0x44),darkSent.getPixel(10,darkSent.height/2))
+            assertEquals("Incoming dark bubble should use the shared neutral card",android.graphics.Color.rgb(0x26,0x32,0x2d),darkReceived.getPixel(10,darkReceived.height/2))
             ui.onRoot().captureToImage().asAndroidBitmap().let{image->saveReviewCapture(context,"chat-bubble-directions-dark.png",image)}
         }finally{
             ui.runOnIdle{shown.value=false;viewModels.clear()};scope.cancel();other.store.close()
@@ -184,7 +185,9 @@ class ChatReadUiTest {
             assertEquals("CHAT_ADMISSION",request.getJSONObject("invitation").getJSONObject("body").getString("kind"))
             assertFalse(visitor.chat.conversations().first{it.getString("id")==channel}.optBoolean("joined"))
             assertNull(visitor.chat.current(channel))
-            assertThrows(IllegalArgumentException::class.java){runBlocking{visitor.chat.acceptInvite(link)}}
+            // The group's link is reusable: the owner shares the same one again, and opening it again re-sends the request.
+            assertEquals(link,runBlocking{owner.chat.createJoinLink(channel)})
+            assertEquals(channel,runBlocking{visitor.chat.acceptInvite(link)})
         } finally {
             InstrumentationRegistry.getInstrumentation().runOnMainSync{ownerStore.clear();visitorStore.clear()}
             listOf(ownerScope,visitorScope).forEach{scope->SecureStore(context,scope).use{it.clearPrivate()};context.deleteDatabase("saathi-$scope.db")}

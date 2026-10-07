@@ -32,9 +32,17 @@ class CommunityRelayPolicyTest {
         assertEquals("1.5 GB",CommunityRelayPolicy.dailyLimitLabel(1500))
         assertEquals("5 GB",CommunityRelayPolicy.dailyLimitLabel(5000))
     }
+    @Test fun automaticMediaFollowsDataAndBatteryLimits(){
+        assertTrue(CommunityRelayPolicy.mediaAllowed(false,0,0,0,2000))
+        assertFalse(CommunityRelayPolicy.mediaAllowed(false,19,20,0,2000))
+        assertTrue(CommunityRelayPolicy.mediaAllowed(true,5,20,0,2000))
+        assertFalse(CommunityRelayPolicy.mediaAllowed(true,100,0,2_000_000_000,2000))
+        assertTrue(CommunityRelayPolicy.mediaAllowed(true,100,0,1_999_999_999,2000))
+    }
     @Test fun invalidSettingsFailClosed(){
         assertFalse(CommunityRelayPolicy.mayForward("UNKNOWN",true,false,true,true))
-        assertFalse(CommunityRelayPolicy.resourcesReady(true,100,0,false,Long.MAX_VALUE))
+        assertTrue(CommunityRelayPolicy.resourcesReady(false,0,0,false,Long.MAX_VALUE))
+        assertFalse(CommunityRelayPolicy.resourcesReady(true,100,-1,false,Long.MAX_VALUE))
         assertTrue(runCatching{CommunityRelayPolicy.nextReservation(0,5001,1)}.isFailure)
         assertTrue(runCatching{CommunityRelayPolicy.nextReservation(-1,500,1)}.isFailure)
     }

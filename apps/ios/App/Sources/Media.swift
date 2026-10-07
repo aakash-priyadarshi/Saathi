@@ -15,6 +15,11 @@ import UniformTypeIdentifiers
     }
     private func check(_ id: String) throws { try J.req(UUID(uuidString: id)?.uuidString.lowercased() == id) }
     private func url(_ name: String) -> URL { root.appendingPathComponent(name) }
+    /// Bytes of attachments saved on this phone (More › Storage & data).
+    var savedBytes: Int {
+        ((try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.fileSizeKey])) ?? [])
+            .reduce(0) { $0 + ((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
+    }
     private func write(_ data: Data, _ name: String) throws { try data.write(to: url(name), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]) }
 
     func saveCipher(_ id: String, _ data: Data) throws { try check(id); try write(data, "\(id).enc") }
@@ -63,7 +68,8 @@ extension ChatEngine {
     func fileAllowed(_ id: String, cipherHash: String) -> Bool {
         guard let person = peerID, session.confirmed, !blocked(person) else { return false }
         return messages().contains { record in
-            guard let a = attachment(of: record), a["id"] as? String == id, a["cipherHash"] as? String == cipherHash else { return false }
+            guard let a = attachment(of: record), a["id"] as? String == id, a["cipherHash"] as? String == cipherHash,
+                  store.get("chat-deleted", record["id"] as? String ?? "") == nil else { return false }
             let b = envelopeBody(record)
             if !J.isNull(b, "recipientId") {
                 let other = record["owned"] as? Bool == true ? b["recipientId"] as? String : ChatRules.participant(b["author"] as? JSON ?? [:])

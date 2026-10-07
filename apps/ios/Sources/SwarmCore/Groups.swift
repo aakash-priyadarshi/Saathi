@@ -53,18 +53,20 @@ extension ChatDocuments {
                      "issuedAt": Instant.string(now), "expiresAt": try J.str(try J.obj(policy, "body"), "expiresAt")])
     }
     /// Approval invitation (INVITE_PLUS_APPROVAL / APPROVAL_ONLY): the recipient's join waits for a manager.
-    /// `recipient` "*" makes a join link (Android `createJoinLink`), which always needs approval.
+    /// `recipient` "*" makes the group's reusable 7-day join link (Android `createJoinLink`). It always asks for approval;
+    /// the managers' phones apply the group's current setting when a request arrives (approval off admits at once).
     public static func admission(_ me: ChatIdentity, profile: JSON, policy: JSON, recipient: String, at now: Date = Date()) throws -> JSON {
         let pb = try J.obj(policy, "body")
         let setting = ((pb["settings"] as? JSON)?["admission"] as? String) ?? "INVITE_AUTO"
-        let admission = recipient == "*" && setting == "INVITE_AUTO" ? "INVITE_PLUS_APPROVAL" : setting
+        let admission = recipient == "*" ? (["INVITE_AUTO": "INVITE_PLUS_APPROVAL", "OPEN": "APPROVAL_ONLY"][setting] ?? setting) : setting
+        let expires = recipient == "*" ? Instant.string(now.addingTimeInterval(ChatRules.joinLinkSeconds)) : try J.str(pb, "expiresAt")
         return try me.sign(["v": 1, "kind": "CHAT_ADMISSION", "id": UUID().uuidString.lowercased(), "channelId": try J.str(pb, "id"),
                             "name": try J.str(pb, "name"), "owner": try J.obj(pb, "owner"), "issuer": profile, "recipientId": recipient,
-                            "policyHash": try hash(policy), "admission": admission, "issuedAt": Instant.string(now), "expiresAt": try J.str(pb, "expiresAt")])
+                            "policyHash": try hash(policy), "admission": admission, "issuedAt": Instant.string(now), "expiresAt": expires])
     }
-    /// `cjpswarm://invite/<base64url(gzip(json))>`, as Android `encodeInvite` writes it.
+    /// `https://swarm.cockroachjantaparty.org/join#<base64url(gzip(json))>`, as Android `encodeInvite` writes it.
     public static func encodeInvite(_ invite: JSON) throws -> String {
-        "cjpswarm://invite/" + ChatCrypto.base64url(try Gzip.deflate(try JSONSerialization.data(withJSONObject: invite)))
+        joinLink + ChatCrypto.base64url(try Gzip.deflate(try JSONSerialization.data(withJSONObject: invite)))
     }
 }
 

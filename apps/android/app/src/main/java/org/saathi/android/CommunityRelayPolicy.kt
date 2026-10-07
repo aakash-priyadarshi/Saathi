@@ -14,7 +14,11 @@ internal object CommunityRelayPolicy {
         validated && (mode=="ANY" || mode=="WIFI" && wifi) && (!media || mediaEnabled)
 
     fun resourcesReady(charging:Boolean,battery:Int,minimum:Int,media:Boolean,freeBytes:Long):Boolean =
-        minimum in 10..80 && (charging || battery in minimum..100) && (!media || freeBytes>64L*1048576)
+        minimum in 0..80 && (charging || battery in minimum..100) && (!media || freeBytes>64L*1048576)
+
+    /** Automatic online media runs while charging or above the battery floor, and under the day's data limit. */
+    fun mediaAllowed(charging:Boolean,battery:Int,minimum:Int,usedBytes:Long,limitMB:Int):Boolean =
+        (charging || battery>=minimum) && usedBytes<limitMB.coerceIn(500,5000)*1_000_000L
 
     fun nextReservation(used:Long,limitMB:Int,wireBudget:Int):Long {
         require(used>=0 && limitMB in 500..5000 && wireBudget in 1..1048576){"Public relay data settings are invalid."}

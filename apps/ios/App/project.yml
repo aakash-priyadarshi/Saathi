@@ -50,6 +50,9 @@ targets:
         UIAppFonts: [lora.ttf, manrope.ttf]
         # Keep the nearby Bluetooth link (and search) alive while Swarm is in the background, so messages still arrive.
         UIBackgroundModes: [bluetooth-central, bluetooth-peripheral]
+        # Export compliance (decided by CJP, Oct 2026): standard encryption that qualifies for the exemption, so App Store
+        # Connect does not ask on every build.
+        ITSAppUsesNonExemptEncryption: false
         CFBundleURLTypes:
           - CFBundleURLSchemes: [cjpswarm]
         # "_" + first 12 hex chars of SHA-256(service ID), uppercase: development, staging, production.

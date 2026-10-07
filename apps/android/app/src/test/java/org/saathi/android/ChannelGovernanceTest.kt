@@ -52,5 +52,12 @@ class ChannelGovernanceTest {
         assertTrue("Join links contain no membership policy or channel key",link.getJSONObject("body").keys().asSequence().none{it in listOf("policy","keys")})
         assertSame(link,ChatProtocol.invite(link,ChatProtocol.participant(recipient),now))
         assertThrows(Exception::class.java){ChatProtocol.invite(link,ChatProtocol.participant(recipient),now.plusSeconds(7200))}
+        // A reusable group link may last 7 days, and is still checked against its signature and expiry; personal invitations stay at six hours.
+        val week=signed(JSONObject(body.toString()).put("expiresAt",now.plusSeconds(7*86400).toString()),key)
+        assertSame(week,ChatProtocol.invite(week,ChatProtocol.participant(recipient),now.plusSeconds(6*86400)))
+        assertSame(week,ChatProtocol.invite(week,ChatProtocol.participant(owner),now))
+        assertThrows(Exception::class.java){ChatProtocol.invite(week,ChatProtocol.participant(recipient),now.plusSeconds(7*86400+1))}
+        assertThrows(Exception::class.java){ChatProtocol.invite(signed(JSONObject(body.toString()).put("expiresAt",now.plusSeconds(8*86400).toString()),key),ChatProtocol.participant(recipient),now)}
+        assertThrows(Exception::class.java){ChatProtocol.invite(signed(JSONObject(week.getJSONObject("body").toString()).put("recipientId",ChatProtocol.participant(recipient)),key),ChatProtocol.participant(recipient),now)}
     }
 }
