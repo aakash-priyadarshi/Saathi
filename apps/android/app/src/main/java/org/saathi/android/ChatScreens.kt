@@ -84,20 +84,24 @@ fun chatStatus(message:JSONObject)=when {
 }
 @Composable fun ChatsScreen(vm:SaathiViewModel,state:AppState,open:(String)->Unit,nearby:()->Unit,create:()->Unit,modifier:Modifier) {
     if(!BuildConfig.CHAT_ENABLED){Column(modifier.padding(20.dp)){EmptyState("Chat is being tested","Private chats are available in development and QA builds while security review is pending.",Icons.Outlined.ChatBubbleOutline)};return}
-    var search by rememberSaveable {mutableStateOf("")}
-    val ordered=state.conversations.sortedByDescending { c->state.chatMessages.filter {it.getJSONObject("envelope").getJSONObject("body").getString("conversationId")==c.getString("id")}.maxOfOrNull {it.getJSONObject("envelope").getJSONObject("body").getString("createdAt")}?: "" }
+    var search by rememberSaveable {mutableStateOf("")};var chatMenu by remember{mutableStateOf<String?>(null)};var deletingChat by remember{mutableStateOf<JSONObject?>(null)}
+    val ordered=state.conversations.filter{state.listed(it)}.sortedByDescending { c->state.shownMessages(c.getString("id")).lastOrNull()?.body()?.getString("createdAt")?: "" }
+    val matches={c:JSONObject->c.getString("title").contains(search,true) || state.shownMessages(c.getString("id")).any {chatPreview(it).contains(search,true)}}
+    val pinned=state.pinnedChats
     LazyColumn(modifier,contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
         item {Row(verticalAlignment=Alignment.CenterVertically){Text("Chats",Modifier.weight(1f),style=MaterialTheme.typography.headlineMedium);IconButton(onClick=create){Icon(Icons.Outlined.Add,"New group")};IconButton(onClick={vm.syncChats()},enabled=!state.busy){Icon(Icons.Outlined.Sync,"Check chat delivery")}}}
         item {OutlinedTextField(search,{search=it.take(100)},Modifier.fillMaxWidth(),label={Text("Search saved chats")},leadingIcon={Icon(Icons.Outlined.Search,null)},singleLine=true)}
-        for(type in listOf("DIRECT","CHANNEL")){
-            val conversations=ordered.filter {c->c.getString("type")==type && (c.getString("title").contains(search,true) || state.chatMessages.any {m->m.getJSONObject("envelope").getJSONObject("body").getString("conversationId")==c.getString("id")&&chatPreview(m).contains(search,true)})}
-            if(conversations.isNotEmpty())item {Text(if(type=="DIRECT")"Direct messages" else "Channels",Modifier.padding(top=16.dp),style=MaterialTheme.typography.titleMedium)}
+        // Pinned chats stay on top, most recently pinned first.
+        for((label,conversations) in listOf("Pinned" to ordered.filter{it.getString("id") in pinned}.sortedByDescending{pinned[it.getString("id")]},
+            "Direct messages" to ordered.filter{it.getString("type")=="DIRECT"&&it.getString("id") !in pinned},"Channels" to ordered.filter{it.getString("type")=="CHANNEL"&&it.getString("id") !in pinned}).map{(l,list)->l to list.filter(matches)}){
+            if(conversations.isNotEmpty())item {Text(label,Modifier.padding(top=16.dp),style=MaterialTheme.typography.titleMedium)}
             items(conversations,key={it.getString("id")}){c->
-                val messages=state.shownMessages(c.getString("id"))
+                val type=c.getString("type");val cid=c.getString("id")
+                val messages=state.shownMessages(cid)
                 val last=messages.lastOrNull()
                 val unread=messages.count {!it.optBoolean("owned")&&!it.optBoolean("readLocally")}
                 Column {
-                    Row(Modifier.fillMaxWidth().clickable {open(c.getString("id"))}.padding(vertical=12.dp),horizontalArrangement=Arrangement.spacedBy(12.dp),verticalAlignment=Alignment.CenterVertically){
+                    Row(Modifier.fillMaxWidth().combinedClickable(onClick={open(cid)},onLongClick={chatMenu=cid},onLongClickLabel="Chat options").padding(vertical=12.dp),horizontalArrangement=Arrangement.spacedBy(12.dp),verticalAlignment=Alignment.CenterVertically){
                         Avatar(c.getString("title"),type=="CHANNEL")
                         Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(5.dp)){
                             Text((if(type=="CHANNEL")"# " else "")+c.getString("title"),style=MaterialTheme.typography.titleMedium,maxLines=1,overflow=TextOverflow.Ellipsis)
@@ -105,19 +109,27 @@ fun chatStatus(message:JSONObject)=when {
                             if(last?.optBoolean("owned")==true)Text(chatStatus(last),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Column(horizontalAlignment=Alignment.End,verticalArrangement=Arrangement.spacedBy(6.dp)){
+                            if(cid in pinned)Icon(Icons.Outlined.PushPin,"Pinned",Modifier.size(18.dp))
                             if(c.optBoolean("muted"))Icon(Icons.Outlined.NotificationsOff,"Muted",Modifier.size(18.dp))
                             if(unread>0)Badge {Text(unread.coerceAtMost(99).toString())}
                             last?.let {Text(timeLabel(it.getJSONObject("envelope").getJSONObject("body").getString("createdAt")),style=MaterialTheme.typography.labelSmall)}
                         }
                     };HorizontalDivider()
+                    DropdownMenu(chatMenu==cid,{chatMenu=null}){
+                        DropdownMenuItem(text={Text(if(cid in pinned)"Unpin chat" else "Pin chat")},leadingIcon={Icon(Icons.Outlined.PushPin,null)},onClick={chatMenu=null;vm.pinChat(cid)})
+                        DropdownMenuItem(text={Text("Delete chat",color=MaterialTheme.colorScheme.error)},leadingIcon={Icon(Icons.Outlined.Delete,null,tint=MaterialTheme.colorScheme.error)},onClick={chatMenu=null;deletingChat=c})
+                    }
                 }
             }
         }
         if(ordered.isEmpty())item {EmptyState("People first. Conversations that stay.","Meet someone in Nearby to start a direct message, or create a channel for your group.",Icons.Outlined.ChatBubbleOutline);Button(onClick=nearby){Text("Find people nearby")}}
-        if(search.isNotBlank() && ordered.none {c->c.getString("title").contains(search,true) || state.chatMessages.any {m->m.getJSONObject("envelope").getJSONObject("body").getString("conversationId")==c.getString("id")&&chatPreview(m).contains(search,true)}})item {Text("No matching saved conversations. Search stays on this phone.",color=MaterialTheme.colorScheme.onSurfaceVariant)}
+        if(search.isNotBlank() && ordered.none(matches))item {Text("No matching saved conversations. Search stays on this phone.",color=MaterialTheme.colorScheme.onSurfaceVariant)}
         item {Text("Direct messages and invite-only channels are encrypted between participants. Open channels are readable by their members. Chatting does not verify a relief volunteer.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
     }
+    deletingChat?.let{c->AlertDialog(onDismissRequest={deletingChat=null},title={Text("Delete this chat?")},text={Text(deleteChatText(c.getString("type")=="CHANNEL"))},
+        confirmButton={TextButton(onClick={vm.deleteChat(c.getString("id"));deletingChat=null}){Text("Delete chat",color=MaterialTheme.colorScheme.error)}},dismissButton={TextButton(onClick={deletingChat=null}){Text("Cancel")}})}
 }
+fun deleteChatText(channel:Boolean)="Deletes this chat's messages and downloaded files from this phone."+(if(channel)" You stay in the group." else "")+" New messages will bring it back."
 @Composable fun SwarmFormation(connected:Boolean) {
     val context=LocalContext.current
     val reduced=Settings.Global.getFloat(context.contentResolver,Settings.Global.ANIMATOR_DURATION_SCALE,1f)==0f
@@ -188,6 +200,12 @@ fun threadRoot(m:JSONObject,byId:Map<String,JSONObject>):String?{
     }
     return target
 }
+/** Pinned messages still shown, oldest first: deleted or cleared ones drop out. Pins stay on this phone. */
+fun AppState.pins(conversationId:String):List<JSONObject>{val gone=deletedForEveryone();val ids=chatPins[conversationId].orEmpty();return shownMessages(conversationId).filter{it.getString("id") in ids && it.getString("id") !in gone}}
+/** Pin or unpin one message; a chat keeps at most 3 pins. */
+fun togglePin(pinned:List<String>,id:String):List<String>{if(id in pinned)return pinned-id;require(pinned.size<3){"Up to 3 pinned messages. Unpin one first."};return pinned+id}
+/** A deleted chat stays out of Chats until a new message arrives. */
+fun AppState.listed(c:JSONObject)=!c.optBoolean("deletedLocally") || shownMessages(c.getString("id")).isNotEmpty()
 /** What a conversation shows, oldest first: no delete markers, nothing deleted on this phone. */
 fun AppState.shownMessages(conversationId:String)=chatMessages.filter{it.body().getString("conversationId")==conversationId && !it.getJSONObject("payload").has("deletes") && it.getString("id") !in chatDeleted}
     .sortedWith(compareBy<JSONObject>{it.body().getString("createdAt")}.thenBy{it.getString("id")})
@@ -210,7 +228,7 @@ fun AppState.shownMessages(conversationId:String)=chatMessages.filter{it.body().
     var followLatest by remember(id){mutableStateOf(true)}
     val visibleMessages by remember(transcript){derivedStateOf{transcript.layoutInfo.visibleItemsInfo.mapNotNull{it.key as? String}}}
     val exporter=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")){uri->if(uri!=null)vm.exportChatAttachment(exportId,uri)}
-    val all=state.shownMessages(id);val gone=state.deletedForEveryone();val byId=state.chatMessages.associateBy{it.getString("id")}
+    val all=state.shownMessages(id);val gone=state.deletedForEveryone();val pins=state.pins(id);val pinnedIds=pins.map{it.getString("id")}.toSet();val byId=state.chatMessages.associateBy{it.getString("id")}
     val roots=all.associate{it.getString("id") to threadRoot(it,byId)};val replyCounts=roots.values.filterNotNull().groupingBy{it}.eachCount()
     // Admin-post groups keep replies inside each post's thread; free chats and DMs also show replies inline with a quote.
     val announce=channel&&state.channelPolicy(id)?.getJSONObject("body")?.optJSONObject("settings")?.optString("mode")=="ANNOUNCEMENT"
@@ -261,6 +279,12 @@ fun AppState.shownMessages(conversationId:String)=chatMessages.filter{it.body().
         if(thread!=null)Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha=.5f)).padding(horizontal=4.dp),verticalAlignment=Alignment.CenterVertically){
             IconButton(onClick={thread=null}){Icon(Icons.Outlined.ArrowBack,"Back to chat")}
             Text("Thread · ${replyCounts[thread]?:0} ${if(replyCounts[thread]==1)"reply" else "replies"}",style=MaterialTheme.typography.titleMedium)
+        }
+        // Pinned messages: tap one to scroll to it and flash it, like a quote.
+        if(pins.isNotEmpty())Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha=.5f)).padding(horizontal=16.dp,vertical=4.dp)){
+            pins.forEach{m->Row(Modifier.fillMaxWidth().clickable(onClickLabel="Show pinned message"){jump(m.getString("id"))}.padding(vertical=4.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                Icon(Icons.Outlined.PushPin,"Pinned",Modifier.size(16.dp),tint=MaterialTheme.colorScheme.primary);Text(chatPreview(m),style=MaterialTheme.typography.bodySmall,maxLines=1,overflow=TextOverflow.Ellipsis)
+            }}
         }
         HorizontalDivider()
         LazyColumn(Modifier.weight(1f).testTag("chat-transcript"),state=transcript,reverseLayout=true,contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
@@ -319,9 +343,9 @@ fun AppState.shownMessages(conversationId:String)=chatMessages.filter{it.body().
                                 if(thread==null&&!deleted&&(count>0||(announce&&canReplyThreads))){HorizontalDivider(color=bubbleContentColor.copy(alpha=.2f));Text(if(count>0)"$count ${if(count==1)"reply" else "replies"}" else "Reply",Modifier.fillMaxWidth().clickable{thread=messageId;replyTo=null;followLatest=true}.padding(vertical=2.dp),style=MaterialTheme.typography.labelLarge,color=bubbleContentColor,fontWeight=FontWeight.SemiBold)}
                             }
                         }
-                        MessageMenu(menu,{menu=false},deleted=deleted||hidden,text=payload.optString("text").ifEmpty{null},canReply=if(thread==null&&announce)canReplyThreads else canPost,canForward=payload.has("text")||complete,canSave=complete,owned=owned,
+                        MessageMenu(menu,{menu=false},deleted=deleted||hidden,text=payload.optString("text").ifEmpty{null},canReply=if(thread==null&&announce)canReplyThreads else canPost,canForward=payload.has("text")||complete,canSave=complete,owned=owned,pinned=messageId in pinnedIds,
                             relief=payload.has("text")&&!owned,team=state.preparation!=null,
-                            reply={if(thread==null&&announce){thread=roots[messageId]?:messageId};replyTo=message},forward={forwarding=messageId},save={exportId=messageId;exporter.launch(attachment!!.getString("name"))},report={reportId=messageId},delete={deleting=message},
+                            reply={if(thread==null&&announce){thread=roots[messageId]?:messageId};replyTo=message},forward={forwarding=messageId},save={exportId=messageId;exporter.launch(attachment!!.getString("name"))},report={reportId=messageId},delete={deleting=message},pin={vm.pinChatMessage(id,messageId)},
                             help={helpMessage=message},need={createNeed(message)})
                     }
                 }
@@ -382,8 +406,8 @@ private fun bubbleStatus(m:JSONObject)=when{m.optBoolean("attention")->"Needs at
     }
 }
 /** Long-press options, the same list and order as iPhone. */
-@Composable private fun MessageMenu(open:Boolean,close:()->Unit,deleted:Boolean,text:String?,canReply:Boolean,canForward:Boolean,canSave:Boolean,owned:Boolean,relief:Boolean,team:Boolean,
-    reply:()->Unit,forward:()->Unit,save:()->Unit,report:()->Unit,delete:()->Unit,help:()->Unit,need:()->Unit){
+@Composable private fun MessageMenu(open:Boolean,close:()->Unit,deleted:Boolean,text:String?,canReply:Boolean,canForward:Boolean,canSave:Boolean,owned:Boolean,pinned:Boolean,relief:Boolean,team:Boolean,
+    reply:()->Unit,forward:()->Unit,save:()->Unit,report:()->Unit,delete:()->Unit,pin:()->Unit,help:()->Unit,need:()->Unit){
     val clipboard=LocalClipboardManager.current
     DropdownMenu(open,close){
         @Composable fun item(label:String,icon:ImageVector,danger:Boolean=false,run:()->Unit)=DropdownMenuItem(text={Text(label,color=if(danger)MaterialTheme.colorScheme.error else androidx.compose.ui.graphics.Color.Unspecified)},leadingIcon={Icon(icon,null,tint=if(danger)MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)},onClick={close();run()})
@@ -392,6 +416,7 @@ private fun bubbleStatus(m:JSONObject)=when{m.optBoolean("attention")->"Needs at
             if(text!=null)item("Copy",Icons.Outlined.ContentCopy){clipboard.setText(AnnotatedString(text))}
             if(canForward)item("Forward",Icons.Outlined.Shortcut,run=forward)
             if(canSave)item("Save",Icons.Outlined.Download,run=save)
+            item(if(pinned)"Unpin" else "Pin",Icons.Outlined.PushPin,run=pin)
             if(relief)item("Create help request",Icons.Outlined.VolunteerActivism,run=help)
             if(relief&&team)item("Create need",Icons.Outlined.Inventory2,run=need)
             if(!owned)item("Report",Icons.Outlined.Flag,run=report)

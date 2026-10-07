@@ -11,9 +11,10 @@ struct ChatsView: View {
     @State private var search = ""
     @State private var joining = false
     @State private var creating = false
+    @State private var deletingChat: Row?
     @State private var path: [String] = Demo.startConversation.map { [$0] } ?? []
 
-    struct Row: Identifiable { let id: String; let title: String; let preview: String; let channel: Bool; let unread: Int; let last: String; let status: String? }
+    struct Row: Identifiable { let id: String; let title: String; let preview: String; let channel: Bool; let unread: Int; let last: String; let status: String?; let pinnedAt: String? }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -32,7 +33,9 @@ struct ChatsView: View {
                     }
                     .padding(12).background(Palette.surface, in: RoundedRectangle(cornerRadius: 10)).overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.outline))
                     let rows = filtered
-                    let direct = rows.filter { !$0.channel }, channels = rows.filter(\.channel)
+                    // Pinned chats stay on top, most recently pinned first.
+                    let pinned = rows.filter { $0.pinnedAt != nil }.sorted { $0.pinnedAt! > $1.pinnedAt! }
+                    let direct = rows.filter { !$0.channel && $0.pinnedAt == nil }, channels = rows.filter { $0.channel && $0.pinnedAt == nil }
                     if rows.isEmpty && search.isEmpty {
                         EmptyState(title: "People first. Conversations that stay.", text: "Meet someone in Nearby to start a direct message, or join a channel with an invite from its admin.", icon: "bubble.left")
                         HStack {
@@ -42,6 +45,7 @@ struct ChatsView: View {
                     } else if rows.isEmpty {
                         Text("No matching saved conversations. Search stays on this phone.").font(Type.bodyMedium).foregroundStyle(Palette.muted)
                     }
+                    if !pinned.isEmpty { section("Pinned", pinned) }
                     if !direct.isEmpty { section("Direct messages", direct) }
                     if !channels.isEmpty { section("Channels", channels) }
                     Text("Direct messages and invite-only channels are encrypted between participants. Open channels are readable by their members. Chatting does not verify a relief volunteer.")
@@ -49,6 +53,10 @@ struct ChatsView: View {
                 }.padding(20)
             }
             .mastheadToolbar()
+            .alert("Delete this chat?", isPresented: Binding(get: { deletingChat != nil }, set: { if !$0 { deletingChat = nil } }), presenting: deletingChat) { row in
+                Button("Delete chat", role: .destructive) { do { try chat.deleteChat(row.id) } catch { chat.notice = error.localizedDescription } }
+                Button("Cancel", role: .cancel) {}
+            } message: { row in Text(deleteChatText(channel: row.channel)) }
             .sheet(isPresented: $joining) { JoinInviteSheet(chat: chat, showing: $joining) }
             .sheet(isPresented: $creating) { NewGroupSheet(chat: chat, showing: $creating) { path.append($0) } }
             .navigationDestination(for: String.self) { id in
@@ -63,6 +71,12 @@ struct ChatsView: View {
         VStack(spacing: 0) {
             ForEach(rows) { row in
                 NavigationLink(value: row.id) { rowView(row) }.buttonStyle(.plain)
+                    .contextMenu {
+                        Button { do { try chat.togglePinChat(row.id) } catch { chat.notice = error.localizedDescription } } label: {
+                            Label(row.pinnedAt == nil ? "Pin chat" : "Unpin chat", systemImage: row.pinnedAt == nil ? "pin" : "pin.slash")
+                        }
+                        Button(role: .destructive) { deletingChat = row } label: { Label("Delete chat", systemImage: "trash") }
+                    }
                 Divider().overlay(Palette.outline)
             }
         }
@@ -77,6 +91,7 @@ struct ChatsView: View {
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 6) {
+                if row.pinnedAt != nil { Image(systemName: "pin.fill").font(.caption).foregroundStyle(Palette.muted).accessibilityLabel("Pinned") }
                 if row.unread > 0 {
                     Text("\(min(row.unread, 99))").font(Type.labelSmall).foregroundStyle(Palette.onPrimary)
                         .padding(.horizontal, 7).padding(.vertical, 3).background(Palette.primary, in: Capsule())
@@ -88,7 +103,7 @@ struct ChatsView: View {
 
     var filtered: [Row] {
         _ = chat.revision
-        let rows = chat.conversations().compactMap { c -> Row? in
+        let rows = chat.conversations().filter(chat.listed).compactMap { c -> Row? in
             guard let id = c["id"] as? String else { return nil }
             let last = chat.shown(in: id).last
             let lastBody = (last?["envelope"] as? JSON).flatMap { $0["body"] as? JSON }
@@ -97,11 +112,11 @@ struct ChatsView: View {
                 c["joined"] as? Bool == false ? "Left or removed · Saved history" : nil
             return Row(id: id, title: c["title"] as? String ?? "Conversation", preview: state ?? last.map { chat.deletedForEveryone(in: id).contains($0["id"] as? String ?? "") ? "This message was deleted" : preview($0) } ?? "No messages yet",
                        channel: c["type"] as? String == "CHANNEL", unread: chat.unread(id), last: lastBody?["createdAt"] as? String ?? "",
-                       status: last?["owned"] as? Bool == true ? deliveryState(last!) : nil)
+                       status: last?["owned"] as? Bool == true ? deliveryState(last!) : nil, pinnedAt: chat.store.get("chat-pinned", id)?["at"] as? String)
         }.sorted { $0.last > $1.last }
         let q = search.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return rows }
-        return rows.filter { row in row.title.localizedCaseInsensitiveContains(q) || chat.messages(in: row.id).contains { preview($0).localizedCaseInsensitiveContains(q) } }
+        return rows.filter { row in row.title.localizedCaseInsensitiveContains(q) || chat.shown(in: row.id).contains { preview($0).localizedCaseInsensitiveContains(q) } }
     }
     func preview(_ r: JSON) -> String {
         if let text = (r["payload"] as? JSON)?["text"] as? String { return text }
@@ -109,6 +124,10 @@ struct ChatsView: View {
     }
 }
 
+/// Delete chat leaves a group joined; the same words as Android.
+func deleteChatText(channel: Bool) -> String {
+    "Deletes this chat's messages and downloaded files from this phone." + (channel ? " You stay in the group." : "") + " New messages will bring it back."
+}
 /// Android chatStatus: delivery is separate from saving.
 func deliveryState(_ r: JSON) -> String {
     r["readAt"] != nil ? "Read" : r["deliveredAt"] != nil ? "Delivered" : r["sentNearby"] != nil ? "Sent nearby" : "Saved on this phone"
@@ -130,7 +149,7 @@ struct InfoView: View {
 }
 
 /// One conversation: header with avatar and connection meaning, latest messages above the composer.
-/// Long-press a message for Reply, Copy, Forward, Save, Report and Delete (the same list as Android).
+/// Long-press a message for Reply, Copy, Forward, Save, Pin, Report and Delete (the same list as Android).
 struct ConversationView: View {
     @ObservedObject var chat: ChatEngine
     @ObservedObject var nearby: Nearby
@@ -159,6 +178,7 @@ struct ConversationView: View {
         let conversation = chat.conversation(id)
         let all = chat.shown(in: id)
         let gone = chat.deletedForEveryone(in: id)
+        let pins = chat.pins(id), pinned = Set(pins.compactMap { $0["id"] as? String })
         let channel = conversation?["type"] as? String == "CHANNEL"
         let title = conversation?["title"] as? String ?? "Chat"
         let info = threads(all, channel: channel, conversation: conversation)
@@ -177,6 +197,17 @@ struct ConversationView: View {
                     Spacer()
                 }.padding(.horizontal, 16).padding(.vertical, 10).background(Palette.primaryContainer.opacity(0.5))
             }
+            // Pinned messages: tap one to scroll to it and flash it, like a quote.
+            if !pins.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(pins.indices, id: \.self) { i in
+                        Button { jumpTo = pins[i]["id"] as? String } label: {
+                            Label((pins[i]["payload"] as? JSON)?["text"] as? String ?? (chat.attachment(of: pins[i]) != nil ? "Photo" : "Message"), systemImage: "pin.fill")
+                                .font(Type.bodySmall).foregroundStyle(Palette.ink).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
+                        }.buttonStyle(.plain).accessibilityHint("Shows the pinned message")
+                    }
+                }.padding(.horizontal, 16).padding(.vertical, 4).background(Palette.primaryContainer.opacity(0.3))
+            }
             Divider().overlay(Palette.outline)
             ScrollViewReader { proxy in
                 ScrollView {
@@ -184,7 +215,7 @@ struct ConversationView: View {
                         if messages.isEmpty {
                             EmptyState(title: channel ? "No posts yet" : "Say hello", text: "Messages are signed on this phone and delivered when you meet the other person or a member nearby.", icon: "text.bubble")
                         }
-                        ForEach(messages.indices, id: \.self) { i in bubble(messages[i], channel: channel, gone: gone, canPost: canPost, info: info).id(messages[i]["id"] as? String ?? "\(i)") }
+                        ForEach(messages.indices, id: \.self) { i in bubble(messages[i], channel: channel, gone: gone, canPost: canPost, info: info, pinned: pinned).id(messages[i]["id"] as? String ?? "\(i)") }
                     }.padding(16)
                 }
                 .onAppear { proxy.scrollTo(messages.last?["id"] as? String ?? "", anchor: .bottom) }
@@ -385,7 +416,7 @@ struct ConversationView: View {
         }
     }
 
-    @ViewBuilder func bubble(_ r: JSON, channel: Bool, gone: Set<String>, canPost: Bool, info: Threads) -> some View {
+    @ViewBuilder func bubble(_ r: JSON, channel: Bool, gone: Set<String>, canPost: Bool, info: Threads, pinned: Set<String>) -> some View {
         let b = ((r["envelope"] as? JSON)?["body"] as? JSON) ?? [:]
         let messageID = r["id"] as? String ?? ""
         let mine = r["owned"] as? Bool == true
@@ -475,6 +506,9 @@ struct ConversationView: View {
                     if let text { Button { UIPasteboard.general.string = text } label: { Label("Copy", systemImage: "doc.on.doc") } }
                     if text != nil || image != nil { Button { forwarding = messageID } label: { Label("Forward", systemImage: "arrowshape.turn.up.right") } }
                     if let image { Button { UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil); chat.notice = "Saved to Photos." } label: { Label("Save", systemImage: "square.and.arrow.down") } }
+                    Button { do { try chat.togglePin(messageID, in: id) } catch { chat.notice = error.localizedDescription } } label: {
+                        Label(pinned.contains(messageID) ? "Unpin" : "Pin", systemImage: pinned.contains(messageID) ? "pin.slash" : "pin")
+                    }
                     if !mine { Button { reporting = messageID } label: { Label("Report", systemImage: "flag") } }
                 }
                 Button(role: .destructive) { deleting = r } label: { Label("Delete", systemImage: "trash") }
@@ -576,7 +610,7 @@ struct ContactInfoView: View {
             Button("Cancel", role: .cancel) {}
         }
         .alert("Clear this chat?", isPresented: $clearing) {
-            Button("Clear", role: .destructive) { chat.clear(id) }
+            Button("Clear", role: .destructive) { do { try chat.clear(id) } catch { chat.notice = error.localizedDescription } }
             Button("Cancel", role: .cancel) {}
         } message: { Text("Messages are removed from this phone only.") }
     }
