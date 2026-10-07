@@ -271,7 +271,7 @@ export function ConnectivityPage() {
         <div className="connect-actions">
           <button
             className="button secondary"
-            disabled={busy || !c.internet || !('serviceWorker' in navigator)}
+            disabled={busy || !('serviceWorker' in navigator)}
             onClick={() => void run(prepare)}
           >
             Save app for offline opening
