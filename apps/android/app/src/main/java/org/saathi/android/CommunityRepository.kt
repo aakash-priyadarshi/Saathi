@@ -25,7 +25,7 @@ class CommunityRepository(private val context:Context,private val repository:Rep
     private fun now()=repository.clock()
     private fun self()=ChatProtocol.participant(chat.profile())
     private fun signed(body:JSONObject)=obj("body" to body,"signature" to Protocol.sign(body,store.privateKey("swarm-chat")))
-    private fun relayLimitMB()=preferences().optInt("dailyLimitMB",preferences().optInt("dailyLimitMiB",500)).coerceIn(500,5000)
+    private fun relayLimitMB()=preferences().optInt("dailyLimitMB",preferences().optInt("dailyLimitMiB",2000)).coerceIn(500,5000)
     private fun remainingRelayBytes():Long {
         val day=LocalDate.now(ZoneOffset.UTC).toString()
         val used=store.get("relay-usage",day)?.optLong("bytes")?:0
@@ -172,10 +172,10 @@ class CommunityRepository(private val context:Context,private val repository:Rep
         val status=receipt.getJSONObject("body").getString("status")
         record.put("receipt",receipt).put("serverSaved",true);if(status in listOf("INVALIDATED","REJECTED"))record.put("hidden",true);store.put("community",id,record);onChange()
     }
-    private fun preferences()=store.get("preferences","local")?:obj("relay" to "OFF","mediaRelay" to false,"dailyLimitMB" to 500,"batteryMinimum" to 20)
+    private fun preferences()=store.get("preferences","local")?:obj("relay" to "OFF","mediaRelay" to false,"dailyLimitMB" to 2000,"batteryMinimum" to 0)
     private fun gatewayAllowed(media:Boolean=false):Boolean{val p=preferences();val cm=context.getSystemService(ConnectivityManager::class.java);val network=cm.getNetworkCapabilities(cm.activeNetwork)?:return false;return CommunityRelayPolicy.mayForward(p.optString("relay","OFF"),p.optBoolean("mediaRelay"),media,network.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED),network.hasTransport(NetworkCapabilities.TRANSPORT_WIFI))}
     private fun reserve(bytes:Int,media:Boolean=false){val p=preferences();val battery=context.getSystemService(BatteryManager::class.java);require(CommunityRelayPolicy.resourcesReady(battery.isCharging,battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY),p.optInt("batteryMinimum",20),media,if(media)StatFs(context.filesDir.path).availableBytes else 0)){"Public relay paused. Check the phone's battery and free media storage."}
-        synchronized(store){val day=LocalDate.now(ZoneOffset.UTC).toString();val old=store.get("relay-usage",day)?:obj("day" to day,"bytes" to 0);old.put("bytes",CommunityRelayPolicy.nextReservation(old.getLong("bytes"),p.optInt("dailyLimitMB",p.optInt("dailyLimitMiB",500)).coerceIn(500,5000),bytes));store.put("relay-usage",day,old);store.all("relay-usage").filter{it.optString("day")<LocalDate.now(ZoneOffset.UTC).minusDays(7).toString()}.forEach{store.remove("relay-usage",it.getString("day"))}}
+        synchronized(store){val day=LocalDate.now(ZoneOffset.UTC).toString();val old=store.get("relay-usage",day)?:obj("day" to day,"bytes" to 0);old.put("bytes",CommunityRelayPolicy.nextReservation(old.getLong("bytes"),p.optInt("dailyLimitMB",p.optInt("dailyLimitMiB",2000)).coerceIn(500,5000),bytes));store.put("relay-usage",day,old);store.all("relay-usage").filter{it.optString("day")<LocalDate.now(ZoneOffset.UTC).minusDays(7).toString()}.forEach{store.remove("relay-usage",it.getString("day"))}}
     }
     suspend fun sync()=withContext(Dispatchers.IO){syncLock.withLock{
         if(repository.configuration==null)return@withLock

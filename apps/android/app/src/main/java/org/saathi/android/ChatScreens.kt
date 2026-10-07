@@ -298,17 +298,15 @@ fun AppState.shownMessages(conversationId:String)=chatMessages.filter{it.body().
                     Box(Modifier.testTag("message-$messageId")){
                         // Bubbles fit their content, with a tail corner on the sender's side; time and status sit bottom-right.
                         val format=body.getString("format");val shape=RoundedCornerShape(topStart=16.dp,topEnd=16.dp,bottomStart=if(owned)16.dp else 4.dp,bottomEnd=if(owned)4.dp else 16.dp)
-                        // Aakash's dark-mode palette and contrast: green for sent, amber for received, light text in dark mode.
+                        // Same on iPhone (Palette.sent/received): green for sent, a neutral outlined card for received; text 7:1 or better.
                         val darkTheme=MaterialTheme.colorScheme.background.luminance()<.5f
                         val bubbleColor=when{
                             messageId==highlight->MaterialTheme.colorScheme.tertiaryContainer
-                            darkTheme&&owned->Color(0xff3e765d)
-                            darkTheme->Color(0xff806740)
-                            owned->MaterialTheme.colorScheme.primaryContainer
-                            else->MaterialTheme.colorScheme.secondaryContainer
+                            owned->Color(if(darkTheme)0xff2b5544 else 0xffd9eadf)
+                            else->Color(if(darkTheme)0xff26322d else 0xfffffefa)
                         }
-                        val bubbleContentColor=if(darkTheme)Color(0xfff7f4e8) else if(owned)MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
-                        Surface(Modifier.widthIn(min=96.dp,max=300.dp).testTag(if(owned)"chat-bubble-sent-$messageId" else "chat-bubble-received-$messageId").combinedClickable(onClick={if(attachment!=null&&!complete)vm.syncChatAttachment(messageId) else if(attachment!=null&&format!="VOICE"&&format!="PHOTO")viewing=messageId},onLongClick={haptics.performHapticFeedback(HapticFeedbackType.LongPress);menu=true},onLongClickLabel="Message options"),shape=shape,color=bubbleColor,contentColor=bubbleContentColor){
+                        val bubbleContentColor=if(messageId==highlight)MaterialTheme.colorScheme.onTertiaryContainer else if(owned)Color(if(darkTheme)0xfff3f6f1 else 0xff1d3a2f) else Color(if(darkTheme)0xffe6eee6 else 0xff243d35)
+                        Surface(Modifier.widthIn(min=96.dp,max=300.dp).testTag(if(owned)"chat-bubble-sent-$messageId" else "chat-bubble-received-$messageId").combinedClickable(onClick={if(attachment!=null&&!complete)vm.syncChatAttachment(messageId) else if(attachment!=null&&format!="VOICE"&&format!="PHOTO")viewing=messageId},onLongClick={haptics.performHapticFeedback(HapticFeedbackType.LongPress);menu=true},onLongClickLabel="Message options"),shape=shape,color=bubbleColor,contentColor=bubbleContentColor,border=if(owned)null else BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)){
                             Column(Modifier.width(IntrinsicSize.Max).padding(horizontal=12.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){
                                 if(channel&&!owned)Text(body.getJSONObject("author").getJSONObject("body").getString("name"),style=MaterialTheme.typography.labelLarge,color=bubbleContentColor,fontWeight=FontWeight.SemiBold)
                                 if(deleted||hidden)Text(if(deleted)"This message was deleted" else "Removed by a group admin",style=MaterialTheme.typography.bodyMedium,fontStyle=FontStyle.Italic,color=bubbleContentColor.copy(alpha=.78f))
@@ -499,7 +497,7 @@ private fun roleLabel(role:String)=when(role){"OWNER"->"Group creator";"ADMIN"->
             }
             // Admins see the creator's choice; only the creator's phone signs settings.
             if(!owner&&pb!=null&&caps?.optBoolean("canManageMembers")==true)item{ApprovalSwitch(pb.optJSONObject("settings")?.optString("admission")?:"",pb.getString("visibility")=="OPEN",true,null)}
-            // Moderators: reports to review (they arrive when online) and recent changes by admins, with their status.
+            // Moderators: reports to review (they arrive when online).
             if(caps?.optBoolean("canModerate")==true){
                 val reports=state.channelReports(id)
                 item{Text("Reports to review · ${reports.size}",style=MaterialTheme.typography.titleLarge)}
@@ -510,6 +508,7 @@ private fun roleLabel(role:String)=when(role){"OWNER"->"Group creator";"ADMIN"->
                         if(held!=null&&!state.messageHidden(id,r.getString("messageId")))OutlinedButton(onClick={vm.moderateChannel(id,"HIDE_MESSAGE",r.getString("messageId"))},enabled=!state.busy){Text("Remove")}
                         Button(onClick={vm.moderateChannel(id,"REVIEW_REPORT",r.getString("messageId"))},enabled=!state.busy&&held!=null){Text("Reviewed")}
                     }}
+                /* Recent changes log removed at Rohan's request (Oct 2026); kept for restoring.
                 val recent=state.chatActions.filter{it.getJSONObject("envelope").getJSONObject("body").getString("channelId")==id&&it.getJSONObject("envelope").getJSONObject("body").getString("action") !in listOf("REACT","UNREACT")}
                     .sortedByDescending{it.getJSONObject("envelope").getJSONObject("body").getString("issuedAt")}.take(12)
                 if(recent.isNotEmpty()){item{Text("Recent changes",style=MaterialTheme.typography.titleLarge)}
@@ -517,6 +516,7 @@ private fun roleLabel(role:String)=when(role){"OWNER"->"Group creator";"ADMIN"->
                         val actor=a.getJSONObject("actor").getJSONObject("body").getString("name");val target=members.firstOrNull{ChatProtocol.participant(it.getJSONObject("profile"))==a.getString("targetId")}?.getJSONObject("profile")?.getJSONObject("body")?.getString("name")
                         val what=(actionLabels[a.getString("action")]?:a.getString("action").lowercase())+(if(a.getString("action") in ChannelGovernance.membershipActions&&target!=null)" $target" else "")+(if(a.getString("action")=="SET_ROLE")" → "+roleLabel(a.optString("role")) else "")
                         Text("$actor $what · "+timeLabel(a.getString("issuedAt"))+" · "+if(row.optBoolean("rejected"))"Not accepted" else if(row.optBoolean("serverSaved"))"Confirmed" else "Waiting to reach the group creator",style=MaterialTheme.typography.bodySmall)}}
+                */
             }
             item{Text("Removed people can't rejoin on their own; only an admin can add them back. Changes reach other phones as people meet.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
             if(state.conversations.firstOrNull{it.getString("id")==id}?.optBoolean("joined")==true)item{TextButton(onClick={confirm=(if(owner)"DELETE" else "LEAVE") to ""}){Text(if(owner)"Delete group" else "Leave group",color=MaterialTheme.colorScheme.error)}}
@@ -550,30 +550,41 @@ private fun roleLabel(role:String)=when(role){"OWNER"->"Group creator";"ADMIN"->
 }
 /** Choose a known person, then share their personal invitation as QR, link or nearby. */
 @Composable private fun AddPeopleDialog(vm:SaathiViewModel,state:AppState,id:String,close:()->Unit){
-    var link by remember{mutableStateOf<String?>(null)};var invited by remember{mutableStateOf<String?>(null)};var joinLink by remember{mutableStateOf(false)}
-    val clipboard=LocalClipboardManager.current;val context=LocalContext.current
-    val members=state.channelPolicy(id)?.getJSONObject("body")?.getJSONArray("members")?.objects()?.filter{it.isNull("removedAt")}?.map{ChatProtocol.participant(it.getJSONObject("profile"))}.orEmpty().toSet()
+    // The group's reusable join link shows as soon as the dialog opens (iPhone AddPeopleSheet); a person's invitation replaces it.
+    var groupLink by remember{mutableStateOf<String?>(null)};var link by remember{mutableStateOf<String?>(null)};var invited by remember{mutableStateOf<String?>(null)}
+    LaunchedEffect(id){vm.createChannelJoinLink(id){groupLink=it}}
+    val pb=state.channelPolicy(id)?.getJSONObject("body")
+    val members=pb?.getJSONArray("members")?.objects()?.filter{it.isNull("removedAt")}?.map{ChatProtocol.participant(it.getJSONObject("profile"))}.orEmpty().toSet()
     val me=state.chatProfile?.let{ChatProtocol.participant(it)}
-    AlertDialog(onDismissRequest=close,title={Text(if(link==null)"Add people" else "Invitation ready")},text={Column(Modifier.heightIn(max=520.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
+    AlertDialog(onDismissRequest=close,title={Text(if(link==null)"Add people" else "Invitation ready")},text={Column(Modifier.heightIn(max=560.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
         val ready=link
         if(ready==null){
-            if(state.channelPolicy(id)?.getJSONObject("body")?.optString("visibility")=="INVITE")Button(onClick={vm.createChannelJoinLink(id){link=it;invited=null;joinLink=true}},enabled=!state.busy){Icon(Icons.Outlined.Link,null);Spacer(Modifier.width(8.dp));Text("Share join link")}
-            Text("Choose someone you've met nearby. They join with a personal invitation.",style=MaterialTheme.typography.bodyMedium)
+            Text("Group join link",style=MaterialTheme.typography.titleMedium)
+            Text("Share this link or QR code. Many people can use it for up to 7 days. "+(if(pb?.optJSONObject("settings")?.optString("admission") in listOf("INVITE_AUTO","OPEN"))"People join automatically when an admin's phone receives their request." else "An admin approves each person."),style=MaterialTheme.typography.bodyMedium)
+            groupLink?.let{InviteShare(vm,state,it,null)}?:LinearProgressIndicator(Modifier.fillMaxWidth())
+            HorizontalDivider()
+            Text("Or choose someone you've met nearby. They join with a personal invitation.",style=MaterialTheme.typography.bodyMedium)
             val people=state.chatContacts.filter{it.getString("id") !in members&&it.getString("id")!=me}
             if(people.isEmpty())Text("No one to add yet. Meet people in Nearby first; everyone you connect with appears here.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             people.forEach{person->val name=person.getJSONObject("profile").getJSONObject("body").getString("name")
-                Row(Modifier.fillMaxWidth().clickable(enabled=!state.busy){vm.invitePerson(id,person.getJSONObject("profile")){link=it;invited=person.getString("id");joinLink=false}}.padding(vertical=6.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){Avatar(name);Text(name,Modifier.weight(1f),style=MaterialTheme.typography.titleMedium);Icon(Icons.Outlined.AddCircleOutline,null,tint=MaterialTheme.colorScheme.primary)}}
+                Row(Modifier.fillMaxWidth().clickable(enabled=!state.busy){vm.invitePerson(id,person.getJSONObject("profile")){link=it;invited=person.getString("id")}}.padding(vertical=6.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){Avatar(name);Text(name,Modifier.weight(1f),style=MaterialTheme.typography.titleMedium);Icon(Icons.Outlined.AddCircleOutline,null,tint=MaterialTheme.colorScheme.primary)}}
         }else{
-            Text(if(joinLink)"This is the group's join link. Many people can use it until it expires in up to 7 days. "+(if(state.channelPolicy(id)?.getJSONObject("body")?.optJSONObject("settings")?.optString("admission")=="INVITE_AUTO")"People join automatically when an admin's phone receives their request." else "An admin approves each person.") else "Only this person's Swarm identity can use it. It expires within six hours.",style=MaterialTheme.typography.bodyMedium)
-            val qr=remember(ready){runCatching{require(ready.toByteArray().size<=1800);val matrix=MultiFormatWriter().encode(ready,BarcodeFormat.QR_CODE,600,600);Bitmap.createBitmap(600,600,Bitmap.Config.ARGB_8888).apply{for(y in 0 until 600)for(x in 0 until 600)setPixel(x,y,if(matrix[x,y])android.graphics.Color.BLACK else android.graphics.Color.WHITE)}}.getOrNull()}
-            if(qr!=null)Image(qr.asImageBitmap(),"Invitation QR code",Modifier.fillMaxWidth().aspectRatio(1f)) else Text("This invitation is too large for a QR code. Share the link instead.",style=MaterialTheme.typography.bodySmall)
-            FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                OutlinedButton(onClick={context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply{type="text/plain";putExtra(Intent.EXTRA_TEXT,ready)},"Share Swarm invitation"))}){Text("Share link")}
-                TextButton(onClick={clipboard.setText(AnnotatedString(ready));vm.notice("Invitation copied.")}){Text("Copy")}
-                if(state.chatPeer?.let{joinLink||ChatProtocol.participant(it)==invited}==true)Button(onClick={vm.sendNearbyInvite(ready)}){Text("Send nearby")}
-            }
+            Text("Only this person's Swarm identity can use it. It expires within six hours.",style=MaterialTheme.typography.bodyMedium)
+            InviteShare(vm,state,ready,invited)
         }
     }},confirmButton={TextButton(onClick=close){Text("Done")}})
+}
+/** QR code, share, copy and "Send nearby": the group link goes to whichever phone is connected; a personal invitation only to its person. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable private fun InviteShare(vm:SaathiViewModel,state:AppState,text:String,person:String?){
+    val clipboard=LocalClipboardManager.current;val context=LocalContext.current
+    val qr=remember(text){runCatching{require(text.toByteArray().size<=1800);val matrix=MultiFormatWriter().encode(text,BarcodeFormat.QR_CODE,600,600);Bitmap.createBitmap(600,600,Bitmap.Config.ARGB_8888).apply{for(y in 0 until 600)for(x in 0 until 600)setPixel(x,y,if(matrix[x,y])android.graphics.Color.BLACK else android.graphics.Color.WHITE)}}.getOrNull()}
+    if(qr!=null)Image(qr.asImageBitmap(),"Invitation QR code",Modifier.fillMaxWidth().aspectRatio(1f)) else Text("This invitation is too large for a QR code. Share the link instead.",style=MaterialTheme.typography.bodySmall)
+    FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+        OutlinedButton(onClick={context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply{type="text/plain";putExtra(Intent.EXTRA_TEXT,text)},"Share Swarm invitation"))}){Text("Share link")}
+        TextButton(onClick={clipboard.setText(AnnotatedString(text));vm.notice("Invitation copied.")}){Text("Copy")}
+        if(state.chatPeer?.let{person==null||ChatProtocol.participant(it)==person}==true)Button(onClick={vm.sendNearbyInvite(text)}){Text("Send nearby")}
+    }
 }
 /** A direct message's person: the same options on both phones. */
 @Composable fun ContactInfoScreen(vm:SaathiViewModel,state:AppState,c:JSONObject,back:()->Unit,modifier:Modifier){
@@ -604,7 +615,7 @@ private fun roleLabel(role:String)=when(role){"OWNER"->"Group creator";"ADMIN"->
         item {Text("Help Swarm send public updates online",style=MaterialTheme.typography.titleLarge);Text("Your device can carry authenticated reports for others. Choose when it may use your data.",style=MaterialTheme.typography.bodyMedium);listOf("OFF" to "Off","WIFI" to "Wi-Fi only","ANY" to "Wi-Fi + mobile data").forEach{(value,label)->Row(Modifier.fillMaxWidth().clickable{vm.preference("relay",value)},verticalAlignment=Alignment.CenterVertically){RadioButton(state.preferences.optString("relay","OFF")==value,{vm.preference("relay",value)});Text(label)}};Row(verticalAlignment=Alignment.CenterVertically){Text("Relay public media",Modifier.weight(1f));Switch(state.preferences.optBoolean("mediaRelay"),{vm.preference("mediaRelay",it)})}}
         item {
             Text("Storage & data",style=MaterialTheme.typography.titleLarge)
-            var limit by remember(state.preferences.optInt("dailyLimitMB",500)){mutableFloatStateOf(state.preferences.optInt("dailyLimitMB",500).coerceIn(500,5000).toFloat())}
+            var limit by remember(state.preferences.optInt("dailyLimitMB",2000)){mutableFloatStateOf(state.preferences.optInt("dailyLimitMB",2000).coerceIn(500,5000).toFloat())}
             var limitMenu by remember{mutableStateOf(false)}
             Text("Daily relay limit · ${CommunityRelayPolicy.dailyLimitLabel(limit.toInt())}")
             Box {
@@ -614,9 +625,9 @@ private fun roleLabel(role:String)=when(role){"OWNER"->"Group creator";"ADMIN"->
                 }
             }
             Slider(limit,{limit=it},valueRange=500f..5000f,steps=8,onValueChangeFinished={val mb=(limit.toInt()/500*500).coerceIn(500,5000);limit=mb.toFloat();vm.preference("dailyLimitMB",mb)})
-            var battery by remember(state.preferences.optInt("batteryMinimum",20)){mutableFloatStateOf(state.preferences.optInt("batteryMinimum",20).toFloat())}
-            Text("Pause relay below ${battery.toInt()}% battery")
-            Slider(battery,{battery=it},valueRange=10f..80f,onValueChangeFinished={vm.preference("batteryMinimum",battery.toInt())})
+            var battery by remember(state.preferences.optInt("batteryMinimum",0)){mutableFloatStateOf(state.preferences.optInt("batteryMinimum",0).toFloat())}
+            Text(if(battery.toInt()==0)"Relay at any battery level" else "Pause relay below ${battery.toInt()}% battery")
+            Slider(battery,{battery=it},valueRange=0f..80f,onValueChangeFinished={vm.preference("batteryMinimum",battery.toInt())})
             Text("Saved media · "+(state.files.sumOf{it.optLong("size")}/1048576)+" MB",style=MaterialTheme.typography.bodySmall)
             Text("Relay allowance reserved today · "+state.relayReservedBytes/1_000_000+" MB",style=MaterialTheme.typography.bodySmall)
             Text("The allowance includes request overhead; retries count. Bluetooth carries text only. Public media waits for a Wi-Fi-capable route.",style=MaterialTheme.typography.bodySmall)

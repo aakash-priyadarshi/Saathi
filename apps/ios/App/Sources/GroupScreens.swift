@@ -148,7 +148,7 @@ struct GroupInfoView: View {
         } message: { Text(confirmMember?.action == "BAN" ? "They can't rejoin, even with an invitation, until an admin unbans them." : "They stop receiving new posts. Only an admin can add them back.") }
     }
 
-    /// Reports to review (they arrive with online sync) and recent changes by admins, with their status.
+    /// Reports to review (they arrive with online sync).
     @ViewBuilder func moderation(policy: JSON?, members: [JSON]) -> some View {
         let actions = chat.actions(id)
         let reports = chat.store.all("chat-report-inbox").filter { r in
@@ -172,6 +172,7 @@ struct GroupInfoView: View {
                 Button("Reviewed") { act("REVIEW_REPORT", messageID) }.buttonStyle(PrimaryButtonStyle()).disabled(held == nil)
             }
         }
+        /* Recent changes log removed at Rohan's request (Oct 2026); kept for restoring.
         let recent = Array(actions.filter { !["REACT", "UNREACT"].contains(chat.body($0["envelope"] as? JSON ?? [:])["action"] as? String ?? "") }.suffix(12).reversed())
         if !recent.isEmpty {
             Text("Recent changes").font(Type.titleLarge).foregroundStyle(Palette.ink)
@@ -187,6 +188,7 @@ struct GroupInfoView: View {
                     .font(Type.bodySmall).foregroundStyle(Palette.muted)
             }
         }
+        */
     }
     func name(of person: String) -> String {
         ((chat.store.get("chat-contacts", person)?["profile"] as? JSON).flatMap { ($0["body"] as? JSON)?["name"] as? String }) ?? String(person.prefix(12))
@@ -247,40 +249,30 @@ struct AddPeopleSheet: View {
     @ObservedObject var nearby: Nearby
     let id: String
     @Binding var showing: Bool
+    /// The group's reusable join link, shown as soon as the sheet opens (Android `AddPeopleDialog`).
+    @State private var groupLink: String?
     @State private var link: String?
     @State private var invitedID: String?
-    @State private var joinLink = false
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if let link {
-                        Heading(title: "Invitation ready", text: joinLink ? "This is the group's join link. Many people can use it until it expires in up to 7 days. " + (((chat.current(id)?["body"] as? JSON)?["settings"] as? JSON)?["admission"] as? String == "INVITE_AUTO" ? "People join automatically when an admin's phone receives their request." : "An admin approves each person.")
-                                                                           : "Only this person's Swarm identity can use it. It expires within six hours.")
-                        if let qr = QR.image(link) {
-                            Image(uiImage: qr).interpolation(.none).resizable().scaledToFit().frame(maxWidth: 320).frame(maxWidth: .infinity)
-                                .padding(12).background(Color.white, in: RoundedRectangle(cornerRadius: 12)).accessibilityLabel("Invitation QR code")
-                        } else { Text("This invitation is too large for a QR code. Share the link instead.").font(Type.bodySmall).foregroundStyle(Palette.muted) }
-                        HStack {
-                            ShareLink(item: link) { Label("Share link", systemImage: "square.and.arrow.up") }.buttonStyle(OutlineButtonStyle())
-                            if let peer = chat.peerID, joinLink || peer == invitedID {
-                                Button("Send nearby") { Task { do { try await chat.sendInviteNearby(link); chat.notice = "Invitation sent nearby." } catch { chat.notice = error.localizedDescription } } }.buttonStyle(PrimaryButtonStyle())
-                            }
-                        }
+                        Heading(title: "Invitation ready", text: "Only this person's Swarm identity can use it. It expires within six hours.")
+                        share(link, nearbyTo: invitedID)
                     } else {
-                        Heading(title: "Add people", text: "Choose someone you've met nearby. They join with a personal invitation.")
-                        if (chat.current(id)?["body"] as? JSON)?["visibility"] as? String == "INVITE" {
-                            Button { do { link = try chat.createJoinLink(id); invitedID = nil; joinLink = true } catch { chat.notice = error.localizedDescription } } label: {
-                                Label("Share join link", systemImage: "link")
-                            }.buttonStyle(PrimaryButtonStyle())
-                        }
-                        let members = Set(((chat.current(id)?["body"] as? JSON)?["members"] as? [JSON] ?? []).filter { J.isNull($0, "removedAt") }.map { ChatRules.participant($0["profile"] as? JSON ?? [:]) })
+                        let pb = chat.current(id).map(chat.body)
+                        let automatic = ["INVITE_AUTO", "OPEN"].contains((pb?["settings"] as? JSON)?["admission"] as? String ?? "")
+                        Heading(title: "Group join link", text: "Share this link or QR code. Many people can use it for up to 7 days. " + (automatic ? "People join automatically when an admin's phone receives their request." : "An admin approves each person."))
+                        if let groupLink { share(groupLink, nearbyTo: nil) } else { ProgressView().frame(maxWidth: .infinity) }
+                        Heading(title: "Add people", text: "Or choose someone you've met nearby. They join with a personal invitation.")
+                        let members = Set(((pb?["members"] as? [JSON]) ?? []).filter { J.isNull($0, "removedAt") }.map { ChatRules.participant($0["profile"] as? JSON ?? [:]) })
                         let people = chat.contacts().filter { !members.contains($0["id"] as? String ?? "") && $0["id"] as? String != chat.selfID }
                         if people.isEmpty { EmptyState(title: "No one to add yet", text: "Meet people in Nearby first. Everyone you connect with appears here.", icon: "person.2") }
                         ForEach(people.indices, id: \.self) { i in
                             let person = people[i]["profile"] as? JSON ?? [:], name = ((person["body"] as? JSON)?["name"] as? String) ?? "Person"
                             Button {
-                                Task { do { link = try await chat.invite(id, person: person); invitedID = ChatRules.participant(person); joinLink = false } catch { chat.notice = error.localizedDescription } }
+                                Task { do { link = try await chat.invite(id, person: person); invitedID = ChatRules.participant(person) } catch { chat.notice = error.localizedDescription } }
                             } label: {
                                 HStack(spacing: 12) { Avatar(name: name); Text(name).font(Type.titleMedium).foregroundStyle(Palette.ink); Spacer(); Image(systemName: "plus.circle").foregroundStyle(Palette.primary) }
                                     .padding(.vertical, 8).contentShape(Rectangle())
@@ -291,6 +283,21 @@ struct AddPeopleSheet: View {
             }
             .background(Palette.background.ignoresSafeArea())
             .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Done") { showing = false } } }
+            .task { do { groupLink = try chat.createJoinLink(id) } catch { chat.notice = error.localizedDescription } }
+        }
+    }
+    /// QR code, share sheet, and "Send nearby": the group link goes to whichever phone is connected; a personal
+    /// invitation only to its own person.
+    @ViewBuilder func share(_ text: String, nearbyTo person: String?) -> some View {
+        if let qr = QR.image(text) {
+            Image(uiImage: qr).interpolation(.none).resizable().scaledToFit().frame(maxWidth: 320).frame(maxWidth: .infinity)
+                .padding(12).background(Color.white, in: RoundedRectangle(cornerRadius: 12)).accessibilityLabel("Invitation QR code")
+        } else { Text("This invitation is too large for a QR code. Share the link instead.").font(Type.bodySmall).foregroundStyle(Palette.muted) }
+        HStack {
+            ShareLink(item: text) { Label("Share link", systemImage: "square.and.arrow.up") }.buttonStyle(OutlineButtonStyle())
+            if let peer = chat.peerID, person == nil || peer == person {
+                Button("Send nearby") { Task { do { try await chat.sendInviteNearby(text); chat.notice = "Invitation sent nearby." } catch { chat.notice = error.localizedDescription } } }.buttonStyle(PrimaryButtonStyle())
+            }
         }
     }
 }

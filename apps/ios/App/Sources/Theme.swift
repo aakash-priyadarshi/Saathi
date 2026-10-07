@@ -17,8 +17,11 @@ enum Palette {
     static let ink = dynamic(0x243d35, 0xe6eee6)
     static let surface = dynamic(0xfffefa, 0x1d2e27)
     static let surfaceVariant = dynamic(0xeaf0e7, 0x273b31)
-    static let muted = dynamic(0x626e64, 0xb3bfb5)
+    static let muted = dynamic(0x58645a, 0xbfcac1)
     static let outline = dynamic(0xdedfd5, 0x3b4d41)
+    /// Chat bubbles, same as Android: green for sent, a neutral outlined card for received.
+    static let sent = dynamic(0xd9eadf, 0x2b5544)
+    static let received = dynamic(0xfffefa, 0x26322d)
     static let error = dynamic(0x923d31, 0xffc0ad)
     static let errorContainer = dynamic(0xfae9e4, 0x482c27)
     /// Startup-only values from the supplied identity board.

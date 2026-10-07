@@ -217,16 +217,22 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         }
     }
     fun preferences():JSONObject {
-        val saved=repository.store.get("preferences","local")?:obj("appearance" to "SYSTEM","relay" to "OFF","mediaRelay" to false,"dailyLimitMB" to 500,"batteryMinimum" to 20,"nearbyVisible" to true)
+        val saved=repository.store.get("preferences","local")?:obj("appearance" to "SYSTEM","relay" to "OFF","mediaRelay" to false,"dailyLimitMB" to 2000,"batteryMinimum" to 0,"nearbyVisible" to true,"relayDefaults" to 2)
         if(!saved.has("dailyLimitMB")){
             val previous=saved.optInt("dailyLimitMiB",50)
             saved.put("dailyLimitMB",if(previous<500)500 else previous.coerceAtMost(5000)).remove("dailyLimitMiB")
             repository.store.put("preferences","local",saved)
         }
+        // Once: phones still on the first defaults (500 MB, 20%) move to 2 GB and no battery pause.
+        if(saved.optInt("relayDefaults")<2){
+            if(saved.optInt("dailyLimitMB")==500)saved.put("dailyLimitMB",2000)
+            if(saved.optInt("batteryMinimum",20)==20)saved.put("batteryMinimum",0)
+            repository.store.put("preferences","local",saved.put("relayDefaults",2))
+        }
         return saved
     }
     fun preference(key:String,value:Any){
-        require(when(key){"appearance"->value in listOf("SYSTEM","LIGHT","DARK");"relay"->value in listOf("OFF","WIFI","ANY");"mediaRelay","nearbyVisible"->value is Boolean;"dailyLimitMB"->value is Int && value in 500..5000;"batteryMinimum"->value is Int && value in 10..80;else->false})
+        require(when(key){"appearance"->value in listOf("SYSTEM","LIGHT","DARK");"relay"->value in listOf("OFF","WIFI","ANY");"mediaRelay","nearbyVisible"->value is Boolean;"dailyLimitMB"->value is Int && value in 500..5000;"batteryMinimum"->value is Int && value in 0..80;else->false})
         val next=JSONObject(state.value.preferences.toString()).put(key,value);mutable.update{it.copy(preferences=next)}
         if(key=="nearbyVisible"){if(value==true)startListening() else stopListening()}
         val version=synchronized(preferenceVersions){((preferenceVersions[key]?:0)+1).also{preferenceVersions[key]=it}}

@@ -376,13 +376,13 @@ class ChatRepository(private val context: Context, private val repository: Repos
     } }
     suspend fun createJoinLink(id:String):String=withContext(Dispatchers.IO) { lock.withLock {
         val policy=current(id)?:error("Channel is unavailable.");val b=policy.getJSONObject("body")
-        require(b.getString("visibility")=="INVITE" && !b.getBoolean("deleted")) {"Join links are only available for active private channels."}
+        require(!b.getBoolean("deleted")) {"This group was deleted."}
         require(ChannelGovernance.capabilities(policy,self()).getBoolean("canInvite")) {"You do not have permission to create an invitation."}
         // One reusable link per group: share the current one while it has at least a day left, else sign a new 7-day link.
         val issued=now();store.get("chat-join-links",id)?.takeIf{Instant.parse(it.getString("expiresAt"))>issued.plusSeconds(86400)}?.let{return@withLock it.getString("link")}
         val admission=b.optJSONObject("settings")?.optString("admission")?:"INVITE_AUTO"
         // The document always asks for approval; the managers' phones apply the group's current setting when a request arrives.
-        val invite=signed(obj("v" to 1,"kind" to "CHAT_ADMISSION","id" to UUID.randomUUID().toString(),"channelId" to id,"name" to b.getString("name"),"owner" to b.getJSONObject("owner"),"issuer" to profile(),"recipientId" to "*","policyHash" to Protocol.hash(policy),"admission" to if(admission=="INVITE_AUTO")"INVITE_PLUS_APPROVAL" else admission,"issuedAt" to issued.toString(),"expiresAt" to issued.plusSeconds(ChannelGovernance.JOIN_LINK_SECONDS).toString()))
+        val invite=signed(obj("v" to 1,"kind" to "CHAT_ADMISSION","id" to UUID.randomUUID().toString(),"channelId" to id,"name" to b.getString("name"),"owner" to b.getJSONObject("owner"),"issuer" to profile(),"recipientId" to "*","policyHash" to Protocol.hash(policy),"admission" to when(admission){"INVITE_AUTO"->"INVITE_PLUS_APPROVAL";"OPEN"->"APPROVAL_ONLY";else->admission},"issuedAt" to issued.toString(),"expiresAt" to issued.plusSeconds(ChannelGovernance.JOIN_LINK_SECONDS).toString()))
         val link=encodeInvite(invite);save("chat-join-links",id,obj("id" to id,"link" to link,"expiresAt" to invite.getJSONObject("body").getString("expiresAt")))
         onChange();link
     } }

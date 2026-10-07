@@ -495,7 +495,7 @@ struct ConversationView: View {
             }
             .padding(12)
             // Received posts are paper cards with a rule, so they read apart from your own tinted bubbles.
-            .background(highlight == messageID ? Palette.primary.opacity(0.25) : mine ? Palette.primaryContainer : Palette.surface, in: RoundedRectangle(cornerRadius: 14))
+            .background(highlight == messageID ? Palette.primary.opacity(0.25) : mine ? Palette.sent : Palette.received, in: RoundedRectangle(cornerRadius: 14))
             .overlay { if !mine { RoundedRectangle(cornerRadius: 14).stroke(Palette.outline) } }
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14))
             .contextMenu {

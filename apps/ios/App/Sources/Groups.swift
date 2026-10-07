@@ -88,12 +88,12 @@ extension ChatEngine {
         if session.confirmed, let peer = peerID, ChatRules.member(policy, peer) { await sendPolicy(policy) }
         return try ChatDocuments.encodeInvite(try ChatDocuments.invite(me, policy: policy, recipient: recipient, at: now()))
     }
-    /// The group's reusable join link for an invite-only group (Android `createJoinLink`): many people can use it for up
+    /// The group's reusable join link, for any group (Android `createJoinLink`): many people can use it for up
     /// to 7 days. The current link is shared again while it has at least a day left. It carries no member list or keys.
     func createJoinLink(_ id: String) throws -> String {
         guard let p = current(id) else { throw ChatRuleError("Group is unavailable.") }
         let b = body(p)
-        try J.req(b["visibility"] as? String == "INVITE" && b["deleted"] as? Bool != true, "Join links are only available for invite-only groups.")
+        try J.req(b["deleted"] as? Bool != true, "This group was deleted.")
         try J.req(ChatRules.capabilities(p, selfID)["canInvite"] == true, "Your role cannot invite people to this group.")
         if let saved = store.get("chat-join-links", id), time(saved["expiresAt"]) > now().addingTimeInterval(86400), let link = saved["link"] as? String { return link }
         let invite = try ChatDocuments.admission(me, profile: profile, policy: p, recipient: "*", at: now()), link = try ChatDocuments.encodeInvite(invite)

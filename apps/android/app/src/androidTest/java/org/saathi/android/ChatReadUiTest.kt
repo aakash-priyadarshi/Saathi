@@ -109,7 +109,8 @@ class ChatReadUiTest {
             ui.onNodeWithContentDescription("Group info").performClick()
             ui.onNodeWithText("Group info").assertIsDisplayed()
             ui.onNodeWithText("Add people").performClick()
-            ui.onNodeWithText("Share join link").assertIsDisplayed()
+            ui.onNodeWithText("Group join link").assertIsDisplayed()
+            ui.waitUntil(15000){ui.onAllNodesWithContentDescription("Invitation QR code").fetchSemanticsNodes().isNotEmpty()}
             ui.onNodeWithText("Done").performClick()
             ui.onNodeWithContentDescription("Back").performClick()
             ui.onNodeWithText("Group info").assertDoesNotExist()
@@ -145,15 +146,15 @@ class ChatReadUiTest {
             ui.onNodeWithText("Fictional: I’m at the public gate.").assertIsDisplayed()
             val sent=ui.onNodeWithTag("chat-bubble-sent-$sentId").assertIsDisplayed().captureToImage().asAndroidBitmap()
             val received=ui.onNodeWithTag("chat-bubble-received-$incomingId").assertIsDisplayed().captureToImage().asAndroidBitmap()
-            assertNotEquals("Sent and received bubbles should use different Material tones",sent.getPixel(sent.width/2,2),received.getPixel(received.width/2,2))
+            assertNotEquals("Sent and received bubbles should use different Material tones",sent.getPixel(10,sent.height/2),received.getPixel(10,received.height/2))
             ui.onRoot().captureToImage().asAndroidBitmap().let{image->saveReviewCapture(context,"chat-bubble-directions.png",image)}
             appearance.value="DARK"
             ui.waitForIdle()
             val darkSent=ui.onNodeWithTag("chat-bubble-sent-$sentId").assertIsDisplayed().captureToImage().asAndroidBitmap()
             val darkReceived=ui.onNodeWithTag("chat-bubble-received-$incomingId").assertIsDisplayed().captureToImage().asAndroidBitmap()
             assertEquals("Dark chat should use the dark app surface",android.graphics.Color.rgb(21,34,30),ui.onRoot().captureToImage().asAndroidBitmap().getPixel(1,1))
-            assertEquals("Outgoing dark bubble should use the brighter forest tone",android.graphics.Color.rgb(62,118,93),darkSent.getPixel(darkSent.width/2,2))
-            assertEquals("Incoming dark bubble should use the warm contrasting tone",android.graphics.Color.rgb(128,103,64),darkReceived.getPixel(darkReceived.width/2,2))
+            assertEquals("Outgoing dark bubble should use the shared green",android.graphics.Color.rgb(0x2b,0x55,0x44),darkSent.getPixel(10,darkSent.height/2))
+            assertEquals("Incoming dark bubble should use the shared neutral card",android.graphics.Color.rgb(0x26,0x32,0x2d),darkReceived.getPixel(10,darkReceived.height/2))
             ui.onRoot().captureToImage().asAndroidBitmap().let{image->saveReviewCapture(context,"chat-bubble-directions-dark.png",image)}
         }finally{
             ui.runOnIdle{shown.value=false;viewModels.clear()};scope.cancel();other.store.close()

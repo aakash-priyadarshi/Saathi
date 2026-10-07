@@ -34,7 +34,8 @@ class CommunityRelayPolicyTest {
     }
     @Test fun invalidSettingsFailClosed(){
         assertFalse(CommunityRelayPolicy.mayForward("UNKNOWN",true,false,true,true))
-        assertFalse(CommunityRelayPolicy.resourcesReady(true,100,0,false,Long.MAX_VALUE))
+        assertTrue(CommunityRelayPolicy.resourcesReady(false,0,0,false,Long.MAX_VALUE))
+        assertFalse(CommunityRelayPolicy.resourcesReady(true,100,-1,false,Long.MAX_VALUE))
         assertTrue(runCatching{CommunityRelayPolicy.nextReservation(0,5001,1)}.isFailure)
         assertTrue(runCatching{CommunityRelayPolicy.nextReservation(-1,500,1)}.isFailure)
     }
