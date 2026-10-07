@@ -201,7 +201,7 @@ struct ConversationView: View {
                     highlight = target; jumpTo = nil
                     Task { @MainActor in
                         try? await Task.sleep(nanoseconds: 1_500_000_000)
-                        withAnimation { highlight = nil }
+                        highlight = nil
                     }
                 }
             }
