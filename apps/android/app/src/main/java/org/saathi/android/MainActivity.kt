@@ -155,7 +155,9 @@ private val tabs = listOf(Triple("Chats",Icons.Outlined.ChatBubbleOutline,"Conve
                             page == "Chats" -> ChatsScreen(vm,state,openChat,{page="Nearby"},{createChannel=true},content)
                             page == "Nearby" -> NearbyPeopleScreen(vm,state,askNearby,openChat,{createChannel=true},{invite=true},{page="Connection"},content)
                             page == "Connection" -> NearbyScreen(vm, state, askNearby, askBle, askCall, content)
-                            page == "More" -> MoreScreen(vm,state,{page="Team"},{page="Saved"},{page="Connection"},content)
+                            // Hidden for the Oct 2026 build: there is no team sign-in, so More has no route into Team or Saved.
+                            // page == "More" -> MoreScreen(vm,state,{page="Team"},{page="Saved"},{page="Connection"},content)
+                            page == "More" -> MoreScreen(vm,state,{},{},{page="Connection"},content)
                             // Hidden for the Oct 2026 build: Saved and Team pages. Any other page falls back to Chats.
                             // page == "Saved" -> SavedScreen(vm, state, { form = it }, content)
                             // else -> TeamScreen(vm, state, { form = it }, { logout = true }, content)
@@ -172,7 +174,8 @@ private val tabs = listOf(Triple("Chats",Icons.Outlined.ChatBubbleOutline,"Conve
     if (state.localCode.isNotBlank() && !state.confirmed) AlertDialog(onDismissRequest = { vm.disconnect() }, title = { Text("Compare both device codes") }, text = { Column { Text(state.localCode, style = MaterialTheme.typography.headlineMedium); Text("Confirm this same code with the other person before sharing.") } }, confirmButton = { TextButton(onClick = { vm.confirmLocal() }) { Text("Codes match") } }, dismissButton = { TextButton(onClick = { vm.disconnect() }) { Text("Decline") } })
     state.fileOffer?.let { offer -> AlertDialog(onDismissRequest = { vm.declineFile() }, title = { Text("Receive a nearby file?") }, text = { Text("${offer.getString("name")} · ${fileSize(offer.getLong("size"))}\n\nOnly accept files from someone you trust. Received files stay private on this phone.") }, confirmButton = { TextButton(onClick = { vm.acceptFile() }) { Text("Receive") } }, dismissButton = { TextButton(onClick = { vm.declineFile() }) { Text("Decline") } }) }
     state.incomingCall?.let { video -> AlertDialog(onDismissRequest = { vm.hangup() }, title = { Text(if (video) "Nearby video call" else "Nearby voice call") }, text = { Text("The connected person would like to call. Microphone${if (video) " and camera" else ""} access starts only when you accept.") }, confirmButton = { TextButton(onClick = { askCall(video, true) }) { Text("Accept") } }, dismissButton = { TextButton(onClick = { vm.hangup() }) { Text("Decline") } }) }
-    if (logout) AlertDialog(onDismissRequest = { logout = false }, title = { Text("Sign out and clear private work?") }, text = { Text("Drafts, messages, events, attachments and this phone’s signing identity will be cleared. Synchronize or share pending work first. Other carriers may retain events already shared.") }, confirmButton = { TextButton(onClick = { logout = false; vm.logout(false) }) { Text("Sign out and clear") } }, dismissButton = { TextButton(onClick = { logout = false }) { Text("Keep my work") } })
+    // Hidden for the Oct 2026 build: sign-out dialog (there is no team sign-in; only the hidden Team page opened it).
+    // if (logout) AlertDialog(onDismissRequest = { logout = false }, title = { Text("Sign out and clear private work?") }, text = { Text("Drafts, messages, events, attachments and this phone’s signing identity will be cleared. Synchronize or share pending work first. Other carriers may retain events already shared.") }, confirmButton = { TextButton(onClick = { logout = false; vm.logout(false) }) { Text("Sign out and clear") } }, dismissButton = { TextButton(onClick = { logout = false }) { Text("Keep my work") } })
 }
 
 @Composable internal fun ConnectionStatus(state:AppState) {
