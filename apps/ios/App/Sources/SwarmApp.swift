@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 import SwarmCore
 
@@ -37,6 +38,7 @@ struct SwarmApp: App {
             nearby.onError = { [weak chat] in chat?.notice = $0 }
             session.onConfirmed = { [weak chat] in await chat?.announce() }
             session.onChat = { [weak chat] frame, generation in await chat?.receive(frame, generation: generation) }
+            session.onFile = { [weak chat] frame, generation in await chat?.receiveFile(frame, generation: generation) }
             session.onReset = { [weak chat] in chat?.reset() }
             session.onError = { [weak chat] in chat?.notice = $0 }
         } catch {
@@ -161,6 +163,7 @@ struct ConversationView: View {
     @ObservedObject var nearby: Nearby
     let id: String
     @State private var draft = ""
+    @State private var photoItem: PhotosPickerItem?
     var body: some View {
         let _ = chat.revision
         let conversation = chat.conversation(id)
@@ -178,6 +181,17 @@ struct ConversationView: View {
             Divider()
             if conversation?["joined"] as? Bool == true && chat.capabilities(id)?["canPostTopLevel"] != false {
                 HStack {
+                    PhotosPicker(selection: $photoItem, matching: .images) { Image(systemName: "photo") }
+                        .onChange(of: photoItem) { item in
+                            guard let item else { return }
+                            photoItem = nil
+                            Task {
+                                do {
+                                    guard let data = try await item.loadTransferable(type: Data.self), let image = UIImage(data: data) else { throw ChatRuleError("This photo could not be opened.") }
+                                    try await chat.sendPhoto(id, image: image)
+                                } catch { chat.notice = error.localizedDescription }
+                            }
+                        }
                     TextField("Message", text: $draft, axis: .vertical).lineLimit(1...5).textFieldStyle(.roundedBorder)
                     Button { let text = draft; draft = ""; Task { do { try await chat.send(id, text: text) } catch { draft = text; chat.notice = error.localizedDescription } } }
                         label: { Image(systemName: "paperplane.fill") }.disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -196,14 +210,24 @@ struct ConversationView: View {
         let b = ((r["envelope"] as? JSON)?["body"] as? JSON) ?? [:]
         let mine = r["owned"] as? Bool == true
         let author = ((b["author"] as? JSON)?["body"] as? JSON)?["name"] as? String ?? ""
-        let text = (r["payload"] as? JSON)?["text"] as? String ?? "Attachment (open on Android for now)"
+        let attachment = chat.attachment(of: r)
+        let attachmentID = attachment?["id"] as? String ?? ""
+        let isPhoto = (attachment?["mime"] as? String ?? "").hasPrefix("image/")
+        let text = (r["payload"] as? JSON)?["text"] as? String
         let when = (try? Instant.parse(b["createdAt"] as? String ?? "")).map { $0.formatted(date: .omitted, time: .shortened) } ?? ""
         let state = r["readAt"] != nil ? "Read" : r["deliveredAt"] != nil ? "Delivered" : r["sentNearby"] != nil ? "Sent" : "Saved"
         HStack {
             if mine { Spacer(minLength: 40) }
             VStack(alignment: .leading, spacing: 4) {
                 if !mine { Text(author).font(.caption.bold()).foregroundStyle(.orange) }
-                Text(text)
+                if isPhoto, let image = chat.photo(attachmentID) {
+                    Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: 240, maxHeight: 280).clipShape(RoundedRectangle(cornerRadius: 10))
+                } else if attachment != nil {
+                    let progress = chat.transfers.progress[attachmentID]
+                    Label(progress.map { "\(isPhoto ? "Photo" : "Attachment") · \(Int($0 * 100))%" } ?? (isPhoto ? (mine ? "Photo" : "Photo · arrives when the sender is nearby") : "Attachment (open on Android for now)"),
+                          systemImage: isPhoto ? "photo" : "paperclip").font(.callout)
+                }
+                if let text { Text(text) }
                 Text(mine ? "\(when) · \(state)" : when).font(.caption2).foregroundStyle(.secondary)
             }
             .padding(10).background(RoundedRectangle(cornerRadius: 14).fill(mine ? Color.orange.opacity(0.18) : Color(.secondarySystemBackground)))

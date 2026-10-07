@@ -141,3 +141,37 @@ final class InteropExportTests: XCTestCase {
         try JSONSerialization.data(withJSONObject: doc).write(to: URL(fileURLWithPath: out))
     }
 }
+
+final class AttachmentTests: XCTestCase {
+    func testV1AndV2DecryptAndRejectTampering() throws {
+        let key = Data((0..<32).map { UInt8($0 * 7 % 256) }), id = UUID().uuidString.lowercased()
+        for size in [1, 1000, 65536, 65537, 200_000] {
+            let plain = Data((0..<size).map { UInt8(truncatingIfNeeded: $0 &* 31 &+ 7) }), hash = ChatCrypto.sha256Hex(plain)
+            let v1 = try AttachmentCrypto.encryptV1(plain, key: key, id: id)
+            XCTAssertEqual(v1.count, size + 28)
+            XCTAssertEqual(try AttachmentCrypto.decrypt(v1, key: key, id: id, plainSize: size, plainHash: hash), plain)
+            let v2 = try AttachmentCrypto.encryptV2(plain, key: key, id: id)
+            XCTAssertEqual(v2.count, size + 8 + 16 * max(1, (size + 65535) / 65536))
+            XCTAssertEqual(try AttachmentCrypto.decrypt(v2, key: key, id: id, plainSize: size, plainHash: hash), plain)
+            var bad = v1; bad[bad.count - 1] ^= 1
+            XCTAssertThrowsError(try AttachmentCrypto.decrypt(bad, key: key, id: id, plainSize: size, plainHash: hash))
+            XCTAssertThrowsError(try AttachmentCrypto.decrypt(v2, key: key, id: "other", plainSize: size, plainHash: hash), "wrong id")
+        }
+    }
+    func testManifestBindsTheSignedMessage() throws {
+        let me = ChatIdentity(), peer = ChatIdentity()
+        let profile = try ChatDocuments.profile(me, name: "A"), peerProfile = try ChatDocuments.profile(peer, name: "B")
+        let conversation = try ChatCrypto.directConversationID(me.participantID, peer.participantID)
+        let plain = Data(repeating: 9, count: 500), key = Data(repeating: 1, count: 32), id = UUID().uuidString.lowercased()
+        let cipher = try AttachmentCrypto.encryptV1(plain, key: key, id: id)
+        let attachment: JSON = ["id": id, "name": "photo.jpg", "mime": "image/jpeg", "size": plain.count, "hash": ChatCrypto.sha256Hex(plain),
+                                "cipherHash": ChatCrypto.sha256Hex(cipher), "key": ChatCrypto.base64url(key)]
+        let envelope = try ChatDocuments.message(me, profile: profile, conversationID: conversation, recipient: peerProfile, sequence: 1,
+                                                 payload: ["attachment": attachment], format: "PHOTO")
+        let messageID = (envelope["body"] as! JSON)["id"] as! String
+        let manifest = try ChatDocuments.attachmentManifest(me, profile: profile, envelope: envelope, attachmentID: id, cipherSize: cipher.count,
+                                                            cipherHash: ChatCrypto.sha256Hex(cipher))
+        try ChatRules.attachmentManifest(manifest, envelope: envelope, attachment: attachment, messageID: messageID)
+        XCTAssertThrowsError(try ChatRules.attachmentManifest(manifest, envelope: envelope, attachment: attachment, messageID: UUID().uuidString.lowercased()))
+    }
+}

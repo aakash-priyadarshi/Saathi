@@ -12,6 +12,7 @@ import SwarmCore
     private var tail: Task<Void, Never>?
     private var assembler = FrameAssembler()
     var onChat: (JSON, Int) async -> Void = { _, _ in }
+    var onFile: (JSON, Int) async -> Void = { _, _ in }
     var onConfirmed: () async -> Void = {}
     var onReset: () -> Void = {}
     var onError: (String) -> Void = { _ in }
@@ -79,7 +80,8 @@ import SwarmCore
                 if let whole = try assembler.accept(try J.obj(frame, "value")) { await onChat(whole, at) }
             default:
                 // Community events, relief inventory, calls and public files are Android-only for now.
-                if confirmed && kind.hasPrefix("CHAT_") { await onChat(frame, at) } else { NSLog("Swarm: not handled %@ confirmed=%d", kind, confirmed ? 1 : 0) }
+                if confirmed && kind.hasPrefix("CHAT_") { await onChat(frame, at) }
+                else if confirmed && (kind.hasPrefix("FILE_") || kind == "ACK") { await onFile(frame, at) } else { NSLog("Swarm: not handled %@ confirmed=%d", kind, confirmed ? 1 : 0) }
             }
         } catch {
             NSLog("Swarm: frame rejected: %@", String(describing: error))

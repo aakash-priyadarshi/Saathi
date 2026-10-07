@@ -17,17 +17,19 @@ import SwarmCore
     private var policyGeneration = -1
     private var sentPolicyFrames = Set<String>()
     private var retryLoop: Task<Void, Never>?
+    let media = MediaFiles()
+    var transfers = Transfers()
     var onIncoming: (JSON) -> Void = { _ in }
 
     init(store: Store, me: ChatIdentity, session: Session) {
         self.store = store; self.me = me; self.session = session
         prune()
     }
-    private func changed() { revision += 1 }
+    func changed() { revision += 1 }
     private func now() -> Date { Date() }
     private func hash(_ v: Any) -> String { (try? ChatCrypto.sha256Hex(Canonical.data(v))) ?? "" }
     private func body(_ envelope: JSON) -> JSON { envelope["body"] as? JSON ?? [:] }
-    private func envelopeBody(_ record: JSON) -> JSON { body(record["envelope"] as? JSON ?? [:]) }
+    func envelopeBody(_ record: JSON) -> JSON { body(record["envelope"] as? JSON ?? [:]) }
     private func time(_ s: Any?) -> Date { (s as? String).flatMap { try? Instant.parse($0) } ?? .distantPast }
 
     // MARK: identity
@@ -91,7 +93,7 @@ import SwarmCore
     func capabilities(_ id: String) -> [String: Bool]? { current(id).map { ChatRules.capabilities($0, selfID) } }
 
     // MARK: channels
-    private func live(_ p: JSON) -> Bool {
+    func live(_ p: JSON) -> Bool {
         let b = body(p)
         return time(b["expiresAt"]) > now() && ChatRules.member(p, selfID) && store.get("chat-conversations", b["id"] as? String ?? "")?["joined"] as? Bool == true
     }
@@ -177,6 +179,10 @@ import SwarmCore
     func send(_ conversationID: String, text: String) async throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         try J.req((1...4000).contains(trimmed.utf16.count), "Write 1 to 4,000 characters.")
+        try await sendPayload(conversationID, payload: ["text": trimmed], format: "TEXT")
+    }
+    /// Signs, stores and (when a member is connected) sends one message; `cipher` adds the attachment manifest.
+    func sendPayload(_ conversationID: String, payload: JSON, format: String, cipher: (id: String, size: Int, hash: String)? = nil) async throws {
         guard let c = conversation(conversationID), c["joined"] as? Bool == true else { throw ChatRuleError("Join this channel before sending.") }
         let direct = c["type"] as? String == "DIRECT", peerID = c["peerId"] as? String
         if let peerID { try J.req(!blocked(peerID), "Unblock this person before sending.") }
@@ -188,9 +194,13 @@ import SwarmCore
         let sequence = ((store.get("chat-sequences", conversationID)?["value"] as? Int) ?? 0) + 1
         let observed = now()
         let envelope = try ChatDocuments.message(me, profile: profile, conversationID: conversationID, recipient: recipient, policy: p, channelKey: key,
-                                                 sequence: sequence, payload: ["text": trimmed], format: "TEXT", at: observed)
+                                                 sequence: sequence, payload: payload, format: format, at: observed)
         let id = try J.str(try J.obj(envelope, "body"), "id")
-        try save("chat-messages", id, ["id": id, "envelope": envelope, "payload": ["text": trimmed], "owned": true, "hops": 0,
+        if let cipher {
+            let manifest = try ChatDocuments.attachmentManifest(me, profile: profile, envelope: envelope, attachmentID: cipher.id, cipherSize: cipher.size, cipherHash: cipher.hash)
+            try save("chat-manifests", id, ["id": id, "manifest": manifest])
+        }
+        try save("chat-messages", id, ["id": id, "envelope": envelope, "payload": payload, "owned": true, "hops": 0,
                                        "receivedAt": Instant.string(observed), "serverSaved": false])
         try store.put("chat-sequences", conversationID, ["value": sequence]); changed()
         if let record = store.get("chat-messages", id) { await sendRecord(record) }
@@ -213,6 +223,8 @@ import SwarmCore
         do {
             try await session.send("CHAT_MESSAGE", ["envelope": record["envelope"]!, "hops": (record["hops"] as? Int ?? 0) + 1])
             var sent = record; sent["sentNearby"] = Instant.string(now()); try save("chat-messages", record["id"] as! String, sent)
+            if let manifest = store.get("chat-manifests", record["id"] as! String)?["manifest"] { try await session.send("CHAT_ATTACHMENT_META", manifest) }
+            await offerAttachment(of: record)
         } catch { }
     }
     private func sendPolicy(_ p: JSON, kind: String = "CHAT_POLICY") async {
@@ -272,6 +284,7 @@ import SwarmCore
         }
         let record: JSON = ["id": id, "envelope": envelope, "payload": payload, "owned": false, "hops": hops, "receivedAt": Instant.string(now()), "serverSaved": false]
         try save("chat-messages", id, record)
+        if let a = attachment(of: record), let aid = a["id"] as? String { revealPhoto(aid) }
         await sendReceipt(record, "DELIVERED")
         changed(); onIncoming(record)
     }
@@ -328,7 +341,7 @@ import SwarmCore
             }
         }
     }
-    func reset() { retryLoop?.cancel(); heldPeer = nil; discovery = []; changed() }
+    func reset() { retryLoop?.cancel(); heldPeer = nil; discovery = []; transfers = Transfers(); changed() }
 
     func receive(_ frame: JSON, generation: Int) async {
         guard generation == session.generation, session.confirmed else {
@@ -384,6 +397,11 @@ import SwarmCore
                 try await receiveMessage(try J.obj(v, "envelope"), hops: try J.int(v, "hops"))
             case "CHAT_RECEIPT":
                 try receiveReceipt(try J.obj(frame, "value"))
+            case "CHAT_ATTACHMENT_META":
+                let manifest = try J.obj(frame, "value"), messageID = try J.str(try J.obj(manifest, "body"), "messageId")
+                guard let record = store.get("chat-messages", messageID), let a = attachment(of: record), let envelope = record["envelope"] as? JSON else { return }
+                try ChatRules.attachmentManifest(manifest, envelope: envelope, attachment: a, messageID: messageID, now: now())
+                try save("chat-manifests", messageID, ["id": messageID, "manifest": manifest])
             case "CHAT_INVITE":
                 let link = try J.str(frame, "value")
                 try ChatRules.invite(try ChatDocuments.decodeInvite(link), recipient: selfID, now: now())
