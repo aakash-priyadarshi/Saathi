@@ -62,6 +62,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     private var reconnectCheck: Job? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var deliveryRetry: Job? = null
+    private var backgroundRefresh: Job? = null
     private var lastChatAnnounceAt = 0L
     private var ringTimeout: Job? = null
     private val incomingChats=mutableSetOf<String>()
@@ -131,7 +132,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         ble.onPeers = { peers -> mutable.update { it.copy(peers = peers) } }
         ble.onPair = { code -> mutable.update { it.copy(pairCode = code) } }
         ble.onFrame = { session.incoming(it) }; ble.onError = { notice(it) }
-        refreshLocal(); if(startServices){refresh(); foregroundActive()}
+        refreshLocal(); if(startServices){refreshInBackground(); foregroundActive()}
     }
     fun notice(text: String?) { mutable.update { it.copy(notice = text) } }
     private fun scheduleNearbyDeliveryRetries() {
@@ -182,7 +183,20 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
                     events=events,messages=messages,files=files,drafts=drafts,donations=donations,operations=operations,preparation=preparation,account=account,confirmed=confirmed,media=media,needsEnabled=repository.needsEnabled) }
             } catch (_: Exception) { notice("Saved information could not be unlocked. Do not clear app storage if you need to recover work.") }
     }
-    fun refresh() = action { repository.refresh(); if (repository.preparation != null) loadDashboard();if(BuildConfig.CHAT_ENABLED){runCatching {chat.sync()};runCatching{community.sync()}} }
+    private suspend fun refreshRemote() {
+        repository.refresh()
+        if (repository.preparation != null) loadDashboard()
+        if (BuildConfig.CHAT_ENABLED) { runCatching { chat.sync() }; runCatching { community.sync() } }
+    }
+    private fun refreshInBackground() {
+        if (backgroundRefresh?.isActive == true) return
+        backgroundRefresh = viewModelScope.launch {
+            try { refreshRemote() }
+            catch (e: Exception) { if (e !is CancellationException) mutable.update { it.copy(reachable = repository.reachable, needsEnabled = repository.needsEnabled) } }
+            finally { mutable.update { it.copy(reachable = repository.reachable, needsEnabled = repository.needsEnabled) }; refreshLocal() }
+        }
+    }
+    fun refresh() = action { backgroundRefresh?.join(); refreshRemote() }
     fun helpRequest(help:JSONObject,id:String?=null,saved:()->Unit={})=chatAction{community.saveHelp(help,id);saved();notice("Help saved on your phone. Sharing nearby when connected.");runCatching{community.sync()}}
     fun offerHelp(id:String)=chatAction{community.offer(id);runCatching{community.sync()}}
     fun checkHelpArea(area:String)=chatAction{require(CommunityProtocol.publicText(area,80)){"Choose an approximate public area without contact details."};repository.store.put("community-meta","area",obj("area" to area));community.sync()}
