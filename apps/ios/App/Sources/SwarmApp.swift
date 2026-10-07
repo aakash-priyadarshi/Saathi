@@ -5,7 +5,7 @@ import SwarmCore
 struct SwarmApp: App {
     @StateObject private var model = AppModel()
     @AppStorage("appearance") private var appearance = "SYSTEM"
-    @State private var revealing = true
+    @State private var revealing = !Demo.reviewing
     var body: some Scene {
         WindowGroup {
             ZStack {
@@ -36,6 +36,9 @@ struct SwarmApp: App {
         do {
             let chat = ChatEngine(store: store, me: try Keychain.identity(), session: session)
             self.chat = chat
+            #if DEBUG
+            Demo.seed(chat)
+            #endif
             nearby.onFrame = { [session] in session.enqueue($0) }
             nearby.onConnected = { [session] in session.markConfirmed(); Task { await session.confirm() } }
             nearby.onDisconnected = { [session] in session.reset() }
@@ -90,7 +93,7 @@ enum Tab: Hashable { case chats, nearby, more }
 struct RootView: View {
     @ObservedObject var chat: ChatEngine
     @ObservedObject var nearby: Nearby
-    @State private var tab = Tab.chats
+    @State private var tab = Demo.reviewing ? Demo.startTab : Tab.chats
     init(chat: ChatEngine, nearby: Nearby) {
         self.chat = chat; self.nearby = nearby
         let bar = UITabBarAppearance(); bar.configureWithOpaqueBackground()

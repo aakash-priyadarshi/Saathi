@@ -9,6 +9,7 @@ struct ChatsView: View {
     let findPeople: () -> Void
     @State private var search = ""
     @State private var joining = false
+    @State private var opened: String? = Demo.startConversation
 
     struct Row: Identifiable { let id: String; let title: String; let preview: String; let channel: Bool; let unread: Int; let last: String; let status: String? }
 
@@ -42,6 +43,9 @@ struct ChatsView: View {
             .mastheadToolbar()
             .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button { joining = true } label: { Image(systemName: "qrcode") }.accessibilityLabel("Join with invite") } }
             .sheet(isPresented: $joining) { JoinInviteSheet(chat: chat, showing: $joining) }
+            .navigationDestination(isPresented: Binding(get: { opened != nil }, set: { if !$0 { opened = nil } })) {
+                if let id = opened { ConversationView(chat: chat, nearby: nearby, id: id) }
+            }
         }
     }
 
