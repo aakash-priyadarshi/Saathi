@@ -127,15 +127,22 @@ struct RootView: View {
     }
 }
 
-/// Toolbar for the three destinations: full SWARM masthead on the leading side.
+/// Top-level destinations draw their own SWARM masthead row; the system bar (a glass button on iOS 26) stays hidden.
 struct MastheadToolbar: ViewModifier {
     func body(content: Content) -> some View {
-        content.navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .navigationBarLeading) { Masthead() } }
-            .background(Palette.background.ignoresSafeArea())
+        content.toolbar(.hidden, for: .navigationBar).background(Palette.background.ignoresSafeArea())
     }
 }
 extension View { func mastheadToolbar() -> some View { modifier(MastheadToolbar()) } }
+
+/// SWARM / by CJP with an optional trailing action, at the top of each destination.
+struct TopBar<Trailing: View>: View {
+    @ViewBuilder var trailing: Trailing
+    var body: some View {
+        HStack(alignment: .center) { Masthead(); Spacer(); trailing }.padding(.bottom, 4)
+    }
+}
+extension TopBar where Trailing == EmptyView { init() { self.init { EmptyView() } } }
 
 /// Paste a `cjpswarm://invite/…` link from a channel admin.
 struct JoinInviteSheet: View {

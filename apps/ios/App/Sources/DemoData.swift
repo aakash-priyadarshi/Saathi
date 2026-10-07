@@ -52,7 +52,7 @@ import SwarmCore
 
                 // An open channel owned by Asha, with Vikram posting.
                 channelID = UUID().uuidString.lowercased()
-                let issued = now.addingTimeInterval(-300)
+                let issued = now.addingTimeInterval(-3600)
                 let members: [JSON] = [["profile": asha, "role": "OWNER", "joinedAt": Instant.string(issued), "removedAt": NSNull()],
                                        ["profile": myProfile, "role": "MEMBER", "joinedAt": Instant.string(issued), "removedAt": NSNull()],
                                        ["profile": vikram, "role": "MEMBER", "joinedAt": Instant.string(issued), "removedAt": NSNull()]]

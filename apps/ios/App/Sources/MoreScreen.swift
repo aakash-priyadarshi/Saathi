@@ -12,6 +12,7 @@ struct MoreView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    TopBar()
                     Heading(title: "More", text: "Your profile, appearance and information about Swarm.")
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(spacing: 12) {

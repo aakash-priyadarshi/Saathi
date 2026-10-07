@@ -9,14 +9,15 @@ struct ChatsView: View {
     let findPeople: () -> Void
     @State private var search = ""
     @State private var joining = false
-    @State private var opened: String? = Demo.startConversation
+    @State private var path: [String] = Demo.startConversation.map { [$0] } ?? []
 
     struct Row: Identifiable { let id: String; let title: String; let preview: String; let channel: Bool; let unread: Int; let last: String; let status: String? }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
+                    TopBar { Button { joining = true } label: { Image(systemName: "qrcode").font(.title3).foregroundStyle(Palette.primary) }.accessibilityLabel("Join with invite") }
                     Heading(title: "Chats", text: "Direct messages and channels stay on this phone and travel when you meet people.")
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass").foregroundStyle(Palette.muted)
@@ -41,11 +42,8 @@ struct ChatsView: View {
                 }.padding(20)
             }
             .mastheadToolbar()
-            .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button { joining = true } label: { Image(systemName: "qrcode") }.accessibilityLabel("Join with invite") } }
             .sheet(isPresented: $joining) { JoinInviteSheet(chat: chat, showing: $joining) }
-            .navigationDestination(isPresented: Binding(get: { opened != nil }, set: { if !$0 { opened = nil } })) {
-                if let id = opened { ConversationView(chat: chat, nearby: nearby, id: id) }
-            }
+            .navigationDestination(for: String.self) { id in ConversationView(chat: chat, nearby: nearby, id: id) }
         }
     }
 
@@ -53,7 +51,7 @@ struct ChatsView: View {
         Text(title).font(Type.titleLarge).foregroundStyle(Palette.ink).padding(.top, 8)
         VStack(spacing: 0) {
             ForEach(rows) { row in
-                NavigationLink { ConversationView(chat: chat, nearby: nearby, id: row.id) } label: { rowView(row) }.buttonStyle(.plain)
+                NavigationLink(value: row.id) { rowView(row) }.buttonStyle(.plain)
                 Divider().overlay(Palette.outline)
             }
         }
@@ -144,6 +142,7 @@ struct ConversationView: View {
         .background(Palette.background.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .principal) { Masthead(compact: true) } }
+        .toolbar(.hidden, for: .tabBar) // Android hides the bottom destinations inside a conversation
         .task(id: messages.count) { await chat.read(id) }
         .sheet(item: Binding(get: { viewing.map(IdentifiedImage.init) }, set: { viewing = $0?.image })) { item in
             ZStack(alignment: .topTrailing) {
@@ -164,7 +163,7 @@ struct ConversationView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
                 Avatar(name: title, channel: channel)
-                Text((channel ? "# " : "") + title).font(Type.titleLarge).foregroundStyle(Palette.ink).lineLimit(2)
+                Text(title).font(Type.titleLarge).foregroundStyle(Palette.ink).lineLimit(2)
                 Spacer(minLength: 0)
             }
             HStack(spacing: 6) {
@@ -245,7 +244,9 @@ struct ConversationView: View {
                 Text(mine ? "\(when) · \(deliveryState(r))" : when).font(Type.labelSmall).foregroundStyle(Palette.muted)
             }
             .padding(12)
-            .background(mine ? Palette.primaryContainer : Palette.surfaceVariant, in: RoundedRectangle(cornerRadius: 14))
+            // Received posts are paper cards with a rule, so they read apart from your own tinted bubbles.
+            .background(mine ? Palette.primaryContainer : Palette.surface, in: RoundedRectangle(cornerRadius: 14))
+            .overlay { if !mine { RoundedRectangle(cornerRadius: 14).stroke(Palette.outline) } }
             if !mine { Spacer(minLength: 48) }
         }
     }

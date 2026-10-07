@@ -14,6 +14,7 @@ struct NearbyView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    TopBar()
                     Heading(title: "Nearby", text: "Meet people around you. Keep your conversations when the connection changes.")
                     swarmCard(peer: peer)
                     Text("People").font(Type.titleLarge).foregroundStyle(Palette.ink)
