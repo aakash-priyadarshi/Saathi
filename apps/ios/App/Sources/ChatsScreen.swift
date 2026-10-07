@@ -179,7 +179,9 @@ struct ConversationView: View {
                         if messages.isEmpty {
                             EmptyState(title: channel ? "No posts yet" : "Say hello", text: "Messages are signed on this phone and delivered when you meet the other person or a member nearby.", icon: "text.bubble")
                         }
-                        ForEach(messages.indices, id: \.self) { i in bubble(messages[i], channel: channel, gone: gone, canPost: canPost, info: info).id(messages[i]["id"] as? String ?? "\(i)") }
+                        ForEach(messages.indices, id: \.self) { index in
+                            messageRow(messages[index], index: index, channel: channel, gone: gone, canPost: canPost, info: info)
+                        }
                     }.padding(16)
                 }
                 .onAppear { proxy.scrollTo(messages.last?["id"] as? String ?? "", anchor: .bottom) }
@@ -251,6 +253,12 @@ struct ConversationView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(Palette.primaryContainer.opacity(0.5))
+    }
+
+    private func messageRow(_ message: JSON, index: Int, channel: Bool, gone: Set<String>, canPost: Bool, info: Threads) -> some View {
+        let messageID = message["id"] as? String ?? String(index)
+        return bubble(message, channel: channel, gone: gone, canPost: canPost, info: info)
+            .id(messageID)
     }
 
     private func jumpToMessage(_ target: String, proxy: ScrollViewProxy, visibleMessages: [JSON], allMessages: [JSON], roots: [String: String]) {
