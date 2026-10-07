@@ -192,17 +192,7 @@ struct ConversationView: View {
                 // Tapping a quote scrolls to the quoted message (opening its thread when it lives in one) and flashes it.
                 .onChange(of: jumpTo) { target in
                     guard let target else { return }
-                    if !messages.contains(where: { $0["id"] as? String == target }) {
-                        if all.contains(where: { $0["id"] as? String == target }) { thread = info.roots[target]; Task { try? await Task.sleep(nanoseconds: 300_000_000); jumpTo = nil; jumpTo = target } }
-                        else { chat.notice = "The quoted message is not on this phone."; jumpTo = nil }
-                        return
-                    }
-                    withAnimation { proxy.scrollTo(target, anchor: .center) }
-                    highlight = target; jumpTo = nil
-                    Task { @MainActor in
-                        try? await Task.sleep(nanoseconds: 1_500_000_000)
-                        highlight = nil
-                    }
+                    jumpToMessage(target, proxy: proxy, visibleMessages: messages, allMessages: all, roots: info.roots)
                 }
             }
             composer(conversation, canPost: canPost, channel: channel, threadRoot: info.announce ? thread : nil, info: info)
@@ -251,6 +241,35 @@ struct ConversationView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { _ in Text("A report requests review; it does not remove copies from other phones.") }
+    }
+
+    private func jumpToMessage(_ target: String, proxy: ScrollViewProxy, visibleMessages: [JSON], allMessages: [JSON], roots: [String: String]) {
+        let isVisible = visibleMessages.contains { ($0["id"] as? String) == target }
+        guard isVisible else {
+            let isAvailable = allMessages.contains { ($0["id"] as? String) == target }
+            guard isAvailable else {
+                chat.notice = "The quoted message is not on this phone."
+                jumpTo = nil
+                return
+            }
+            thread = roots[target]
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                jumpTo = nil
+                jumpTo = target
+            }
+            return
+        }
+
+        withAnimation(.easeInOut(duration: 0.2)) {
+            proxy.scrollTo(target, anchor: .center)
+        }
+        highlight = target
+        jumpTo = nil
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            if highlight == target { highlight = nil }
+        }
     }
 
     /// The newest incoming voice message whose audio is on this phone.
