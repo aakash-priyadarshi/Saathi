@@ -85,12 +85,13 @@ Earlier milestone recorded 5 October 2026 under the former **Saathi** name. The 
 - [x] Native Android client, foreground Nearby discovery and original-author relay through a temporary carrier
 - [x] Direct Android BLE/GATT for bounded nearby messages and small structured updates; S24/Tab S9 passed physical Wi-Fi-off bidirectional message/ACK checks
 - [ ] Automatic Nearby-to-BLE identity-preserving recovery, wider device compatibility, range, battery and screen-lock/background behavior
-- [ ] iOS client, broader radio adapters and background hub policy
-- [x] Physical Windows Chromium ↔ Android native messages/files/events/reconnect and two-hop receipt relay; Android-browser/iOS proofs remain unverified
+- [x] Native SwiftUI iOS communication preview with Keychain identity, Nearby chat/groups/media and signed server sync; see the iPhone device record and platform gaps in [the iOS guide](../apps/ios/README.md)
+- [x] iPhone 17 Pro Max ↔ Pixel 8 same-Wi-Fi discovery, DMs and receipts; offline Bluetooth DMs/receipts/inventory were also exercised, with one-way discovery and a failed Wi-Fi bandwidth upgrade recorded as limitations
+- [x] Physical Windows Chromium ↔ Android native messages/files/events/reconnect and two-hop receipt relay; Android-browser and Android↔iPhone app/browser proofs remain unverified
 - [x] Server-only same-origin `/api/v1` proxy resolves the separate API at runtime from `API_INTERNAL_URL`; request/status/cookie forwarding and outage behavior have unit coverage.
 - [x] Commit `887645de142f4f1eff7282d4f9434a94d81e1cd8` was built and deployed to the existing Lightsail staging stack. The web page, same-origin config/requests/feed, and API health/readiness returned HTTP 200; public events returned HTTP 200 with `text/event-stream`.
 
-The browser nearby feature is a **phone-testing preview**. It requires a previously prepared secure origin, a reachable local Wi-Fi/hotspot path and foreground use. It cannot enable system radios or discover arbitrary nearby phones. Native Android Nearby and bounded foreground BLE/GATT now have product evidence above; Wi-Fi Direct/Aware and iOS remain unsupported. The Bluetooth-only evidence covers code-confirmed pairing and text messages, not automatic fallback, files, calls, range, battery or background reliability.
+The browser nearby feature is a **phone-testing preview**. It requires a previously prepared secure origin, a reachable local Wi-Fi/hotspot path and foreground use. It cannot enable system radios or discover arbitrary nearby phones. Native Android Nearby and bounded foreground BLE/GATT have product evidence above. The iPhone app has a limited iPhone↔Pixel test record; reverse iPhone discovery, entitlement-dependent Wi-Fi upgrade, sustained range/battery and lifecycle behavior remain open. Wi-Fi Direct/Aware adapters are not implemented. The Android Bluetooth-only evidence covers code-confirmed pairing and text messages, not automatic fallback, files, calls, range, battery or background reliability.
 
 ## Validation recorded
 
@@ -111,11 +112,11 @@ The browser nearby feature is a **phone-testing preview**. It requires a previou
 
 ## Later phases and release gates
 
-- [ ] iOS app, broader native transport/device verification and platform background policy; Android and OS-secured credentials are implemented above
+- [x] Native iOS communication preview implemented; additional iPhone/Android transport, background, entitlement and release verification remain open
 - [ ] Physical range, sustained battery, degraded calls, screen-lock and battery-saver tests; foreground native reconnect is verified on S24/tablet only
 - [ ] MFA enrollment, encrypted secret provisioning, recovery codes, password reset and production operator bootstrap UI
 - [ ] Independent security/load review, least-privilege infrastructure, distributed rate limiting and deployed media-container containment verification
 - [ ] Cursor pagination and shared SSE polling for larger installations
 - [ ] Production backup/restore drill, retention policy, alerting, real provider integration and deployment-specific TLS/CSP verification
 
-The implemented browser protocol is documented in `offline-protocol.md`. Research and native release gates are in `nearby-connectivity-research.md`, `nearby-connectivity-architecture.md` and `android-field-test-guide.md`. See `deployment.md`, `security.md` and `threat-model.md` for the remaining live-service gates.
+The implemented browser protocol is documented in `offline-protocol.md`. iOS build and hardware results are in `../apps/ios/README.md`; Android release gates are in `nearby-connectivity-research.md`, `nearby-connectivity-architecture.md` and `android-field-test-guide.md`. See `deployment.md`, `security.md` and `threat-model.md` for the remaining live-service gates.

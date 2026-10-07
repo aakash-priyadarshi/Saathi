@@ -90,7 +90,8 @@ input, resized to 1600 pixels at output, JPEG re-encoded and thumbnailed. Videos
 of any length or resolution up to 250 MB are asynchronously remuxed from supported
 AVC/HEVC/AAC tracks to a file (never held in memory); location/container metadata is not
 copied. Android does not transcode: unsupported inputs are rejected with a gallery
-fallback. Reports publish without approval, labelled unverified. The existing server FFmpeg pipeline
+fallback. Reports are labelled unverified and stay out of the public feed until a coordinator or
+administrator approves them. The existing server FFmpeg pipeline
 normalizes accepted public video again before publication. Selected originals
 are never overwritten. No AI alters factual imagery.
 

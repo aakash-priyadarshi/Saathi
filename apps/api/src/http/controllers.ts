@@ -116,7 +116,7 @@ export class GuestController {
   constructor(@Inject(RequestsService) private readonly requests: RequestsService) {}
   @Post('posts')
   @Throttle({ default: { limit: 10, ttl: 3600000 } })
-  @ApiOperation({ summary: 'Share photos or videos without an account (unverified, no approval)' })
+  @ApiOperation({ summary: 'Submit an unverified photo/video post for administrator review' })
   publish(@Req() req: Request, @Body() body: unknown) {
     const b = z
       .object({

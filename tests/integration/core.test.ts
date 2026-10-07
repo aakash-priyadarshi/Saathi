@@ -512,7 +512,7 @@ describe('Real PostgreSQL core workflow', () => {
     expect((await requests.get(first.body.publicId!)).status).toBe('CANCELLED');
     expect((await sync.ingest(envelope, randomUUID())).body.status).toBe('INVALIDATED');
   });
-  it('attaches later media to the original offline field post without approval and propagates withdrawal', async () => {
+  it('keeps offline field reports private until review after later media arrives and propagates withdrawal', async () => {
     const { sync, keys, device } = await signedNeed();
     const envelope = await createEnvelope(
       {
@@ -529,8 +529,9 @@ describe('Real PostgreSQL core workflow', () => {
       keys,
     );
     const receipt = await sync.ingest(envelope, randomUUID());
-    expect(receipt.body.status).toBe('PUBLISHED');
+    expect(receipt.body.status).toBe('ACCEPTED');
     expect(receipt.body.fieldId).toBeTruthy();
+    expect((await requests.feed()).some((post) => post.id === receipt.body.fieldId)).toBe(false);
     const bytes = await sharp({
       create: { width: 30, height: 30, channels: 3, background: '#216352' },
     })
@@ -543,19 +544,29 @@ describe('Real PostgreSQL core workflow', () => {
       status: 403,
     });
     const attached = await sync.attachMedia(volunteer, envelope.body.id, [asset.id]);
-    expect(attached.body.status).toBe('PUBLISHED');
-    expect(
-      (await requests.feed()).find((post) => post.id === receipt.body.fieldId)?.media,
-    ).toHaveLength(1);
+    expect(attached.body.status).toBe('ACCEPTED');
+    expect(attached.body.message).toContain('administrator review');
+    expect((await requests.feed()).some((post) => post.id === receipt.body.fieldId)).toBe(false);
+    expect(await db.mediaAsset.findUniqueOrThrow({ where: { id: asset.id } })).toMatchObject({
+      moderation: 'PENDING',
+      processingState: 'READY',
+    });
     await sync.attachMedia(volunteer, envelope.body.id, [asset.id]);
     expect(await db.mediaAsset.count({ where: { fieldUpdateId: receipt.body.fieldId } })).toBe(1);
-    const published = (await sync.receipts([envelope.body.id]))[0]!;
-    expect(published.body.status).toBe('PUBLISHED');
-    expect(await validReceipt(published, sync.receiptKey().publicKey, envelope)).toBe(true);
+    const pending = (await sync.receipts([envelope.body.id]))[0]!;
+    expect(pending.body.status).toBe('ACCEPTED');
+    expect(await validReceipt(pending, sync.receiptKey().publicKey, envelope)).toBe(true);
     const admin = await db.user.findUniqueOrThrow({
       where: { email: 'admin@saathi.test' },
       include: actorInclude,
     });
+    await app.get(ManagementService).moderate(admin, receipt.body.fieldId!, 'APPROVED');
+    const published = (await sync.receipts([envelope.body.id]))[0]!;
+    expect(published.body.status).toBe('PUBLISHED');
+    expect(
+      (await requests.feed()).find((post) => post.id === receipt.body.fieldId)?.media,
+    ).toHaveLength(1);
+    expect(await validReceipt(published, sync.receiptKey().publicKey, envelope)).toBe(true);
     expect((await sync.invalidate(admin, envelope.body.id)).body.status).toBe('INVALIDATED');
     expect((await requests.feed()).some((post) => post.id === receipt.body.fieldId)).toBe(false);
   });
@@ -578,6 +589,12 @@ describe('Real PostgreSQL core workflow', () => {
     );
     const receipt = await sync.ingest(envelope, randomUUID());
     expect(receipt.body.status).toBe('ACCEPTED');
+    const admin = await db.user.findUniqueOrThrow({
+      where: { email: 'admin@saathi.test' },
+      include: actorInclude,
+    });
+    await app.get(ManagementService).moderate(admin, receipt.body.fieldId!, 'APPROVED');
+    expect((await sync.receipts([envelope.body.id]))[0]!.body.status).toBe('ACCEPTED');
     await db.fieldUpdate.update({
       where: { id: receipt.body.fieldId! },
       data: { publishAt: new Date(Date.now() - 1000) },
@@ -834,7 +851,7 @@ describe('Real PostgreSQL core workflow', () => {
     await expect(donations.tracking('not-a-valid-token')).rejects.toMatchObject({ status: 404 });
     expect(await donations.tracking(c.trackingToken)).not.toHaveProperty('email');
   });
-  it('atomically publishes a text update and a linked need', async () => {
+  it('holds a verified field update for review while atomically creating its linked need', async () => {
     const input = {
       reliefPointId: pointId,
       category: 'WATER' as const,
@@ -851,9 +868,15 @@ describe('Real PostgreSQL core workflow', () => {
       mediaIds: [],
       request: input,
     });
-    expect(post.moderation).toBe('APPROVED');
+    expect(post.moderation).toBe('PENDING');
     const row = await db.fieldUpdate.findUniqueOrThrow({ where: { id: post.id } });
     expect(row.requestId).toBeTruthy();
+    expect((await requests.feed()).some((p) => p.id === row.id)).toBe(false);
+    const administrator = await db.user.findUniqueOrThrow({
+      where: { email: 'admin@saathi.test' },
+      include: actorInclude,
+    });
+    await app.get(ManagementService).moderate(administrator, row.id, 'APPROVED');
     expect((await requests.feed()).some((p) => p.id === row.id)).toBe(true);
   });
   it('blocks audit mutation and request deletion at the database layer', async () => {
@@ -880,7 +903,7 @@ describe('Real PostgreSQL core workflow', () => {
   it('rejects organization spoofing using server-side membership', () => {
     expect(() => auth.requireOrg(volunteer, doctor.memberships[0]!.organizationId)).toThrow();
   });
-  it('sanitizes image metadata, publishes media without approval, then removes hidden derivatives', async () => {
+  it('keeps sanitized field media private until approval and removes derivatives when hidden', async () => {
     const bytes = await sharp({
       create: { width: 40, height: 30, channels: 3, background: '#216352' },
     })
@@ -914,18 +937,21 @@ describe('Real PostgreSQL core workflow', () => {
       reliefPointId: pointId,
       mediaIds: [a.id],
     });
-    expect(p.moderation).toBe('APPROVED');
-    expect((await requests.feed()).find((item) => item.id === p.id)?.media).toHaveLength(1);
+    expect(p.moderation).toBe('PENDING');
+    expect((await requests.feed()).some((item) => item.id === p.id)).toBe(false);
     const coordinator = await db.user.findUniqueOrThrow({
       where: { email: 'coordinator@saathi.test' },
       include: actorInclude,
     });
+    await expect(storage.readPublic(row.publicKey!)).rejects.toThrow();
+    await management.moderate(coordinator, p.id, 'APPROVED');
+    expect((await requests.feed()).find((item) => item.id === p.id)?.media).toHaveLength(1);
     expect((await storage.readPublic(row.publicKey!)).length).toBeGreaterThan(0);
     await management.moderate(coordinator, p.id, 'HIDDEN');
     expect((await requests.feed()).some((item) => item.id === p.id)).toBe(false);
     await expect(storage.readPublic(row.publicKey!)).rejects.toThrow();
   });
-  it('lets a guest share a multi-part upload over HTTP with no account and no approval', async () => {
+  it('lets a guest submit a multi-part upload without an account, pending admin review', async () => {
     const server = app.getHttpServer(),
       token = randomBytes(32).toString('base64url'),
       other = randomBytes(32).toString('base64url');
@@ -980,6 +1006,12 @@ describe('Real PostgreSQL core workflow', () => {
     expect((await post(token, 'Call me on +91 98765 43210')).status).toBe(400);
     const shared = await post(token, 'Fictional flooding near the gate');
     expect(shared.status, shared.body.message).toBe(201);
+    expect((await requests.feed()).some((p) => p.id === shared.body.id)).toBe(false);
+    const administrator = await db.user.findUniqueOrThrow({
+      where: { email: 'admin@saathi.test' },
+      include: actorInclude,
+    });
+    await app.get(ManagementService).moderate(administrator, shared.body.id, 'APPROVED');
     const item = (await requests.feed()).find((p) => p.id === shared.body.id);
     expect(item?.verificationState).toBe('PARTICIPANT');
     expect(item?.author.displayName).toBe('Guest');

@@ -244,6 +244,10 @@ export class ManagementService {
         where: { fieldUpdateId: id },
         data: { moderation: action },
       });
+      await tx.communityEvent.updateMany({
+        where: { objectId: id, type: 'REPORT' },
+        data: { moderation: action },
+      });
       await audit(
         tx,
         'FIELD_POST_MODERATED',

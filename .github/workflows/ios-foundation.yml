@@ -1,4 +1,4 @@
-name: Swarm iOS foundation
+name: Swarm iOS
 on:
   push:
     paths: ['apps/ios/**', '.github/workflows/ios-foundation.yml']
@@ -10,7 +10,17 @@ permissions:
 jobs:
   swift:
     runs-on: macos-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - run: swift test --package-path apps/ios
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the iOS app project
+        working-directory: apps/ios/App
+        run: xcodegen generate
+      - name: Build the app for iOS Simulator
+        run: >-
+          xcodebuild -quiet -project apps/ios/App/Swarm.xcodeproj -scheme Swarm
+          -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO build
