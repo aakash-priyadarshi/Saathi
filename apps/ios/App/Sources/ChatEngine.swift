@@ -363,6 +363,7 @@ import SwarmCore
         }
         let inventory = messages().filter { eligible($0, person) }.prefix(500).map { ["id": $0["id"]!, "conversationId": envelopeBody($0)["conversationId"]!] as JSON }
         try? await session.send("CHAT_INVENTORY", Array(inventory))
+        await offerUndelivered()
         scheduleRetries()
     }
     /// Resends recent messages this peer has not acknowledged, with stable IDs for de-duplication (Android parity).

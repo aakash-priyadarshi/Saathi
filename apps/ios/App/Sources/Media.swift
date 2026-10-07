@@ -90,13 +90,29 @@ extension ChatEngine {
 
     /// After a message (and its manifest) goes out, offer its ciphertext unless this peer already acknowledged it.
     func offerAttachment(of record: JSON) async {
-        guard let a = attachment(of: record), let id = a["id"] as? String, let person = peerID,
-              let file = store.get("attachments", id), file["complete"] as? Bool == true, let hash = file["hash"] as? String,
-              !((file["deliveredTo"] as? [String]) ?? []).contains(person), !transfers.offered.contains(id), fileAllowed(id, cipherHash: hash) else { return }
-        transfers.offered.insert(id)
+        guard let a = attachment(of: record), let id = a["id"] as? String else { return }
+        guard let person = peerID, let file = store.get("attachments", id), file["complete"] as? Bool == true, let hash = file["hash"] as? String,
+              !((file["deliveredTo"] as? [String]) ?? []).contains(person), !transfers.offered.contains(id), fileAllowed(id, cipherHash: hash) else {
+            NSLog("Swarm: offer skipped %@ peer=%d file=%d complete=%d offered=%d", String(id.prefix(8)), peerID == nil ? 0 : 1, store.get("attachments", id) == nil ? 0 : 1,
+                  store.get("attachments", id)?["complete"] as? Bool == true ? 1 : 0, transfers.offered.contains(id) ? 1 : 0)
+            return
+        }
+        NSLog("Swarm: offering %@ (%d bytes)", String(id.prefix(8)), file["size"] as? Int ?? 0)
+        transfers.offered.insert(id); transfers.awaiting[id] = Date()
         try? await session.send("FILE_OFFER", ["id": id, "name": "Encrypted attachment", "mime": "application/octet-stream", "size": file["size"] ?? 0, "hash": hash])
     }
 
+    /// Offers this phone's attachments the connected person has not received yet, one at a time (Android takes two
+    /// at most), so a clip or photo sent while the link was down still arrives after reconnecting.
+    func offerUndelivered() async {
+        guard let person = peerID, session.confirmed, !transfers.awaiting.values.contains(where: { Date().timeIntervalSince($0) < 60 }) else { return }
+        let next = messages().filter { $0["owned"] as? Bool == true }.sorted { ($0["receivedAt"] as? String ?? "") < ($1["receivedAt"] as? String ?? "") }.first { record in
+            guard let id = attachment(of: record)?["id"] as? String, let file = store.get("attachments", id), file["complete"] as? Bool == true,
+                  let hash = file["hash"] as? String else { return false }
+            return !((file["deliveredTo"] as? [String]) ?? []).contains(person) && fileAllowed(id, cipherHash: hash)
+        }
+        if let next { transfers.offered.remove(attachment(of: next)?["id"] as? String ?? ""); await offerAttachment(of: next) }
+    }
     func receiveFile(_ frame: JSON, generation: Int) async {
         guard generation == session.generation, session.confirmed, peer != nil else { return }
         do {
@@ -161,6 +177,7 @@ extension ChatEngine {
                 var to = (file["deliveredTo"] as? [String]) ?? []; if !to.contains(person) { to.append(person) }
                 file["deliveredTo"] = to; try store.put("attachments", id, file)
                 transfers.progress[id] = nil; changed()
+                if transfers.awaiting.removeValue(forKey: id) != nil { await offerUndelivered() }
             default: break
             }
         } catch {
@@ -186,4 +203,6 @@ struct Transfers {
     var sending = Set<String>()
     var accepted: [String: (size: Int, hash: String, requested: Int)] = [:]
     var progress: [String: Double] = [:]
+    /// Offers not yet acknowledged on this connection, with when they were made.
+    var awaiting: [String: Date] = [:]
 }
