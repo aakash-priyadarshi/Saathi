@@ -1,0 +1,49 @@
+{
+  "source": "GET https://api.swarm.cockroachjantaparty.org/api/v1/sync/service-config + vars.SAATHI_STAGING_CONFIG_ROOT_PUBLIC_JWK, fetched 2026-10-07",
+  "root": {
+    "kty": "EC",
+    "x": "LTpqRXn5h8YzeWHf0YU12JdyZZPk9WSrA2_OKsKL4Xg",
+    "y": "0RRd7aDOmQ2la2nUdpQXn-jJkzjp5D4hiCLNKO2Z7Og",
+    "crv": "P-256"
+  },
+  "config": {
+    "body": {
+      "format": "saathi-service-config-v1",
+      "environment": "staging",
+      "version": 2,
+      "issuedAt": "2026-10-06T13:13:55.753Z",
+      "expiresAt": "2026-11-05T13:13:55.753Z",
+      "protocolVersions": [
+        1
+      ],
+      "minimumAndroidVersionCode": 1,
+      "apiEndpoints": [
+        "https://api.swarm.cockroachjantaparty.org"
+      ],
+      "publicUrl": "https://swarm.cockroachjantaparty.org",
+      "webOrigin": "https://swarm.cockroachjantaparty.org",
+      "receiptKeys": [
+        {
+          "keyId": "ec1e30edda8268409671755199fef810de30f34ffb0d226ff8ec3c53b8f1ad47",
+          "publicKey": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "hXbk3m6Tkl9PQSPzyvmm7oXUcAxP8-XkkmSgBELKYho",
+            "y": "rh1k1WLp1mSy2FoSNDbZleGDHkBUvPcy52JhjtjTKWA"
+          },
+          "status": "ACTIVE",
+          "signingFrom": "2026-10-05T13:13:55.753Z",
+          "signingUntil": "2027-01-04T13:13:55.753Z",
+          "verifyUntil": "2027-10-06T13:13:55.753Z"
+        }
+      ],
+      "features": {
+        "nearby": true,
+        "localCalls": true,
+        "largeFiles": true
+      }
+    },
+    "rootKeyId": "0c9c1962d584a68fa7ed31572031e871177c4abdfad5bf79c8f0963ac5bbe68d",
+    "signature": "8JJ7k5QAqx15dCD--at-ovf4z5u6eCcjG__ZQx2gCkvSA7VokQyz3IRWzRgTQG9mnXD2MJ_XpYiWaX_THd13SA"
+  }
+}

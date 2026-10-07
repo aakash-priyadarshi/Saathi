@@ -14,6 +14,31 @@ Implement and report the actual capability boundaries: integrate and qualify Goo
 
 Run the Swift package and protocol-vector tests, add and build the native app target, and use Simulator plus real iPhone↔S24/Tab tests for each claimed transport and lifecycle behavior. Exercise offline reopen, pairing-code confirmation, text and media integrity, reconnect/inventory/receipts, BLE fallback limits, PTT release/interruption, and stale gateway-route handling. Test three-device forwarding only when three devices are available; otherwise record it as unverified. Do not claim 1,000-device scale from unit tests or two-device tests. Add macOS app-build CI after it builds reliably, keep signing credentials outside this public repository, and submit the implementation as a PR. If the Mac or iPhone is unavailable, leave the app explicitly unimplemented and report the blocker instead of claiming completion.
 
+## iPhone app status and device results (7 October 2026)
+
+`apps/ios/App` (XcodeGen, `xcodegen generate`) builds **CJP Swarm** (`org.cjp.swarm.staging`), which speaks the Android QA protocol (`org.saathi.nearby.v1.staging`) and matches the Android app screen for screen (Chats, Nearby, More; Group info; contact info).
+
+Implemented and interoperating with Android:
+
+- **Identity and pairing:** signed identity in the Keychain; the code is compared on the first pairing only, known people reconnect automatically (identity checked against the saved contact), auto-connect retries every 35 seconds.
+- **Chats:** end-to-end encrypted DMs, receipts, inventory/need store-and-forward; long-press Reply, Copy, Forward, Save, Report, Delete for me / for everyone; Telegram-style reply threads with jump-to-quote; contact info (mute, block, report, clear).
+- **Groups:** create (free chat, admins post with member replies, view only), make/remove admins, roles, remove/ban with confirmation, approval of join requests (removed members need approval), personal invitations (QR, link, send nearby) and single-use join links, reports to review and recent admin changes.
+- **Media:** photos (1280 px), videos (720p, metadata removed), files (text, audio, MP4), hold-to-talk voice clips that play automatically in the open chat; items up to 100 MB; attachments a peer missed are re-offered after reconnecting.
+- **Online:** signed CHAT_SYNC every 20 seconds while open, encrypted attachment upload/download, endpoints from the verified signed service configuration (`ServiceConfig` in SwarmCore).
+- **Background:** Bluetooth background modes keep the link and search running; local notifications for new messages (no server push).
+
+Build: `cd apps/ios/App && xcodegen generate`, then build the `Swarm` scheme with your own Apple team (`DEVELOPMENT_TEAM=...`). Tests: `swift test --package-path apps/ios` (SwarmCore, protocol vectors, service config) and the TypeScript interop check `SWARM_INTEROP_OUT=/tmp/x.json swift test --package-path apps/ios --filter InteropExportTests && node apps/ios/scripts/ios-interop.mjs /tmp/x.json`. Simulator review: launch with `-SwarmDemo 1 [-SwarmTab chats|nearby|more] [-SwarmOpen dm|channel|owned|info]` (DEBUG only; the simulator cannot run Nearby because it has no Bluetooth).
+
+Still open: TestFlight distribution, the Hotspot Configuration and Wi-Fi Aware entitlements (all need a paid Apple Developer team), live walkie-talkie and calls (Android-only), server push.
+
+Measured with an iPhone 17 Pro Max (iOS 27.2) and a Pixel 8 (Android 17 beta, Swarm QA 0.1.1):
+
+- Same Wi-Fi network: discovery both ways; DMs and receipts both ways (WIFI_LAN medium).
+- Airplane mode with Bluetooth on: **the iPhone discovers the Android phone; the Android phone does not discover an advertising iPhone.** DMs, receipts and inventory/need work over BLE.
+- iPhone discovery reads the Android GATT advertisement; after repeated advertise/stop cycles on the Android phone those reads timed out until Bluetooth was restarted on both phones.
+- Bandwidth upgrade fails: Android offers WIFI_HOTSPOT and the iPhone cannot join it because `NEHotspotConfiguration` needs the Hotspot Configuration entitlement, which free (personal) teams cannot use. Without a paid Apple team the iPhone stays on BLE (probe: about 4.5 KB/s application throughput, 1 MiB in 3 m 49 s).
+- Free-team installs must be opened once with internet after each install before they launch offline; they expire after 7 days.
+
 ## Fetch and run the foundation on a Mac
 
 Install the Xcode version compatible with your macOS from [Apple's requirements](https://developer.apple.com/xcode/system-requirements), select its command-line tools, then:

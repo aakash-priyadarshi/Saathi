@@ -1,0 +1,59 @@
+# CJP Swarm for iPhone. Generate the Xcode project with: xcodegen generate
+# Build for your own iPhone with your Apple ID team:
+#   xcodebuild -scheme Swarm -destination id=<UDID> DEVELOPMENT_TEAM=<team> -allowProvisioningUpdates
+name: Swarm
+options:
+  bundleIdPrefix: org.cjp.swarm
+  deploymentTarget: { iOS: "16.0" }
+packages:
+  SwarmCore:
+    path: ..
+  NearbyConnections:
+    url: https://github.com/google/nearby
+    revision: 4f4c36caa883a4c43d7a48c561636280f5b2a53f
+targets:
+  Swarm:
+    type: application
+    platform: iOS
+    sources: [Sources, Resources]
+    dependencies:
+      - package: SwarmCore
+      - package: NearbyConnections
+    settings:
+      base:
+        # Talks to the Android QA (staging) build: Nearby service org.saathi.nearby.v1.staging.
+        PRODUCT_BUNDLE_IDENTIFIER: org.cjp.swarm.staging
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_VERSION: "5.0"
+        DEVELOPMENT_TEAM: ""
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        MARKETING_VERSION: "0.2.0"
+        CURRENT_PROJECT_VERSION: "2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # WiFiAware exists from iOS 26; weak-link it so the app still launches on iOS 16-25.
+        OTHER_LDFLAGS: ["-weak_framework", "WiFiAware"]
+        INFOPLIST_KEY_CFBundleDisplayName: CJP Swarm
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: Swarm finds and talks to nearby team phones over Bluetooth, without internet.
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: Swarm finds and talks to nearby team phones on local Wi-Fi, without internet.
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: iOS requires location access to join a nearby phone's fast Wi-Fi link.
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Hold the mic to talk; Swarm records only while you hold it and sends the clip to the chat.
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: Swarm saves a photo from a chat to your library when you choose Save.
+        INFOPLIST_KEY_NSCameraUsageDescription: Scan a channel invitation QR code.
+    info:
+      path: Sources/Info.plist
+      properties:
+        # Lora and Manrope (SIL OFL 1.1), as bundled in the Android app.
+        UIAppFonts: [lora.ttf, manrope.ttf]
+        # Keep the nearby Bluetooth link (and search) alive while Swarm is in the background, so messages still arrive.
+        UIBackgroundModes: [bluetooth-central, bluetooth-peripheral]
+        CFBundleURLTypes:
+          - CFBundleURLSchemes: [cjpswarm]
+        # "_" + first 12 hex chars of SHA-256(service ID), uppercase: development, staging, production.
+        NSBonjourServices:
+          - _7E8E2BF69E50._tcp
+          - _F02AC9190703._tcp
+          - _7A8E729F4BC1._tcp
