@@ -92,7 +92,7 @@ struct MoreView: View {
                         Image("SwarmLockup").resizable().scaledToFit().frame(height: 56).accessibilityLabel("SWARM by CJP")
                         Text("Connect nearby. Coordinate together.").font(Type.bodyMedium).foregroundStyle(Palette.ink).padding(.top, 2)
                         Text("Developed by Cockroach Janta Party").font(Type.bodySmall).foregroundStyle(Palette.muted).padding(.top, 12)
-                        Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") · iPhone · staging")
+                        Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") · iPhone")
                             .font(Type.bodySmall).foregroundStyle(Palette.muted)
                         Text("Messages are end-to-end encrypted and travel from phone to phone nearby, or online when there's internet. Swarm's encryption has not yet had an independent security review.")
                             .font(Type.bodySmall).foregroundStyle(Palette.muted)
