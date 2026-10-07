@@ -199,7 +199,10 @@ struct ConversationView: View {
                     }
                     withAnimation { proxy.scrollTo(target, anchor: .center) }
                     highlight = target; jumpTo = nil
-                    Task { try? await Task.sleep(nanoseconds: 1_500_000_000); withAnimation { highlight = nil } }
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                        withAnimation { highlight = nil }
+                    }
                 }
             }
             composer(conversation, canPost: canPost, channel: channel, threadRoot: info.announce ? thread : nil, info: info)

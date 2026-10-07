@@ -514,6 +514,13 @@ describe('Real PostgreSQL core workflow', () => {
   });
   it('keeps offline field reports private until review after later media arrives and propagates withdrawal', async () => {
     const { sync, keys, device } = await signedNeed();
+    const bytes = await sharp({
+      create: { width: 30, height: 30, channels: 3, background: '#216352' },
+    })
+      .jpeg()
+      .toBuffer();
+    const media = app.get(MediaService),
+      storage = app.get(S3Storage);
     const envelope = await createEnvelope(
       {
         type: 'FIELD_PUBLISHED',
@@ -532,43 +539,84 @@ describe('Real PostgreSQL core workflow', () => {
     expect(receipt.body.status).toBe('ACCEPTED');
     expect(receipt.body.fieldId).toBeTruthy();
     expect((await requests.feed()).some((post) => post.id === receipt.body.fieldId)).toBe(false);
-    const bytes = await sharp({
-      create: { width: 30, height: 30, channels: 3, background: '#216352' },
-    })
-      .jpeg()
-      .toBuffer();
-    const asset = await app
-      .get(MediaService)
-      .upload(volunteer, volunteer.memberships[0]!.organizationId, await onDisk(bytes));
-    await expect(sync.attachMedia(doctor, envelope.body.id, [asset.id])).rejects.toMatchObject({
-      status: 403,
-    });
-    const attached = await sync.attachMedia(volunteer, envelope.body.id, [asset.id]);
-    expect(attached.body.status).toBe('ACCEPTED');
-    expect(attached.body.message).toContain('administrator review');
-    expect((await requests.feed()).some((post) => post.id === receipt.body.fieldId)).toBe(false);
-    expect(await db.mediaAsset.findUniqueOrThrow({ where: { id: asset.id } })).toMatchObject({
-      moderation: 'PENDING',
-      processingState: 'READY',
-    });
-    await sync.attachMedia(volunteer, envelope.body.id, [asset.id]);
-    expect(await db.mediaAsset.count({ where: { fieldUpdateId: receipt.body.fieldId } })).toBe(1);
-    const pending = (await sync.receipts([envelope.body.id]))[0]!;
-    expect(pending.body.status).toBe('ACCEPTED');
-    expect(await validReceipt(pending, sync.receiptKey().publicKey, envelope)).toBe(true);
+    const initialAsset = await media.upload(
+      volunteer,
+      volunteer.memberships[0]!.organizationId,
+      await onDisk(bytes),
+    );
+    const initialMedia = await db.mediaAsset.findUniqueOrThrow({ where: { id: initialAsset.id } });
+    const initialAttachment = await sync.attachMedia(volunteer, envelope.body.id, [
+      initialAsset.id,
+    ]);
+    expect(initialAttachment.body.status).toBe('ACCEPTED');
+    await expect(storage.readPublic(initialMedia.publicKey!)).rejects.toThrow();
     const admin = await db.user.findUniqueOrThrow({
       where: { email: 'admin@saathi.test' },
       include: actorInclude,
     });
-    await app.get(ManagementService).moderate(admin, receipt.body.fieldId!, 'APPROVED');
+    const management = app.get(ManagementService);
+    await management.moderate(admin, receipt.body.fieldId!, 'APPROVED');
+    const firstPublished = await db.mediaAsset.findUniqueOrThrow({
+      where: { id: initialAsset.id },
+    });
+    expect((await storage.readPublic(firstPublished.publicKey!)).length).toBeGreaterThan(0);
+    expect(firstPublished.thumbnailKey).toBeTruthy();
+    expect((await storage.readPublic(firstPublished.thumbnailKey!)).length).toBeGreaterThan(0);
+
+    const attachedAsset = await media.upload(
+      volunteer,
+      volunteer.memberships[0]!.organizationId,
+      await onDisk(bytes),
+    );
+    await expect(
+      sync.attachMedia(doctor, envelope.body.id, [attachedAsset.id]),
+    ).rejects.toMatchObject({
+      status: 403,
+    });
+    const attached = await sync.attachMedia(volunteer, envelope.body.id, [attachedAsset.id]);
+    expect(attached.body.status).toBe('ACCEPTED');
+    expect(attached.body.message).toContain('administrator review');
+    expect((await requests.feed()).some((post) => post.id === receipt.body.fieldId)).toBe(false);
+    expect(await db.mediaAsset.findUniqueOrThrow({ where: { id: initialAsset.id } })).toMatchObject(
+      {
+        moderation: 'PENDING',
+        processingState: 'READY',
+      },
+    );
+    expect(
+      await db.mediaAsset.findUniqueOrThrow({ where: { id: attachedAsset.id } }),
+    ).toMatchObject({
+      moderation: 'PENDING',
+      processingState: 'READY',
+    });
+    await expect(storage.readPublic(firstPublished.publicKey!)).rejects.toThrow();
+    await expect(storage.readPublic(firstPublished.thumbnailKey!)).rejects.toThrow();
+    await sync.attachMedia(volunteer, envelope.body.id, [attachedAsset.id]);
+    expect(await db.mediaAsset.count({ where: { fieldUpdateId: receipt.body.fieldId } })).toBe(2);
+    const pending = (await sync.receipts([envelope.body.id]))[0]!;
+    expect(pending.body.status).toBe('ACCEPTED');
+    expect(await validReceipt(pending, sync.receiptKey().publicKey, envelope)).toBe(true);
+    await management.moderate(admin, receipt.body.fieldId!, 'APPROVED');
     const published = (await sync.receipts([envelope.body.id]))[0]!;
     expect(published.body.status).toBe('PUBLISHED');
     expect(
       (await requests.feed()).find((post) => post.id === receipt.body.fieldId)?.media,
-    ).toHaveLength(1);
+    ).toHaveLength(2);
+    const republished = await db.mediaAsset.findUniqueOrThrow({ where: { id: initialAsset.id } });
+    expect((await storage.readPublic(republished.publicKey!)).length).toBeGreaterThan(0);
+    expect((await storage.readPublic(republished.thumbnailKey!)).length).toBeGreaterThan(0);
+    const newlyPublished = await db.mediaAsset.findUniqueOrThrow({
+      where: { id: attachedAsset.id },
+    });
+    expect((await storage.readPublic(newlyPublished.publicKey!)).length).toBeGreaterThan(0);
+    expect((await storage.readPublic(newlyPublished.thumbnailKey!)).length).toBeGreaterThan(0);
     expect(await validReceipt(published, sync.receiptKey().publicKey, envelope)).toBe(true);
     expect((await sync.invalidate(admin, envelope.body.id)).body.status).toBe('INVALIDATED');
     expect((await requests.feed()).some((post) => post.id === receipt.body.fieldId)).toBe(false);
+    await expect(storage.readPublic(republished.publicKey!)).rejects.toThrow();
+    await expect(storage.readPublic(republished.thumbnailKey!)).rejects.toThrow();
+    await expect(storage.readPublic(newlyPublished.publicKey!)).rejects.toThrow();
+    await expect(storage.readPublic(newlyPublished.thumbnailKey!)).rejects.toThrow();
   });
   it('does not report a scheduled offline field post as published early', async () => {
     const { sync, keys, device } = await signedNeed();

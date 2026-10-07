@@ -87,7 +87,7 @@ Earlier milestone recorded 5 October 2026 under the former **Saathi** name. The 
 - [ ] Automatic Nearby-to-BLE identity-preserving recovery, wider device compatibility, range, battery and screen-lock/background behavior
 - [x] Native SwiftUI iOS communication preview with Keychain identity, Nearby chat/groups/media and signed server sync; see the iPhone device record and platform gaps in [the iOS guide](../apps/ios/README.md)
 - [x] iPhone 17 Pro Max ↔ Pixel 8 same-Wi-Fi discovery, DMs and receipts; offline Bluetooth DMs/receipts/inventory were also exercised, with one-way discovery and a failed Wi-Fi bandwidth upgrade recorded as limitations
-- [x] Physical Windows Chromium ↔ Android native messages/files/events/reconnect and two-hop receipt relay; Android-browser and Android↔iPhone app/browser proofs remain unverified
+- [x] Physical Windows Chromium ↔ Android native messages/files/events/reconnect and two-hop receipt relay; browser↔Android and browser↔iPhone pairing remain unverified. Native iPhone↔Android app results are limited to the single tested pair listed above.
 - [x] Server-only same-origin `/api/v1` proxy resolves the separate API at runtime from `API_INTERNAL_URL`; request/status/cookie forwarding and outage behavior have unit coverage.
 - [x] Commit `887645de142f4f1eff7282d4f9434a94d81e1cd8` was built and deployed to the existing Lightsail staging stack. The web page, same-origin config/requests/feed, and API health/readiness returned HTTP 200; public events returned HTTP 200 with `text/event-stream`.
 
@@ -95,8 +95,8 @@ The browser nearby feature is a **phone-testing preview**. It requires a previou
 
 ## Validation recorded
 
-- `pnpm test`: **37 unit tests passed**, including the three runtime API proxy cases; S3 pagination-response and stalled-token fixtures are not live S3 verification.
-- `pnpm test:integration`: **33 integration tests passed**, using a separate test schema on PostgreSQL 17 and a dedicated temporary filesystem root for pruning.
+- `pnpm test`: **48 unit tests passed**, including the three runtime API proxy cases; S3 pagination-response and stalled-token fixtures are not live S3 verification.
+- `pnpm test:integration`: **61 integration tests passed**, using a separate test schema on PostgreSQL 17 and a dedicated temporary filesystem root for pruning. Coverage includes offline signed-event relay, admin moderation, chat/channel governance, community reporting, media privacy, delivery transactions and authorization failures.
 - Browser validation: **all 14 cases passed in a full GitHub Actions run**, across desktop and mobile-width projects, including the six original workflows and eight connectivity cases. Capability recovery is tested by deliberately dropping the initial capability frame; file sharing waits for actual remote support.
 - `pnpm lint`, `pnpm typecheck` and `pnpm build`: passed across all nine workspaces. The root TypeScript check also covers the test sources.
 - Image/video sanitization, publication/withdrawal, concurrent final-quantity allocation, twenty competing partial contributions, duplicate idempotent retries, CSRF, cross-organization access, session revocation, volunteer approval/suspension and audit constraints have automated coverage.

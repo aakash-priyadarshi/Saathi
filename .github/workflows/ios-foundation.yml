@@ -5,20 +5,24 @@ on:
   pull_request:
     paths: ['apps/ios/**', '.github/workflows/ios-foundation.yml']
   workflow_dispatch:
-permissions:
-  contents: read
 jobs:
   swift:
     runs-on: macos-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - run: swift test --package-path apps/ios
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Install pinned XcodeGen
+        run: |
+          brew install mint
+          mint run yonaskolb/XcodeGen@2.46.0 xcodegen --version
       - name: Generate the iOS app project
         working-directory: apps/ios/App
-        run: xcodegen generate
+        run: mint run yonaskolb/XcodeGen@2.46.0 xcodegen generate
       - name: Build the app for iOS Simulator
         run: >-
           xcodebuild -quiet -project apps/ios/App/Swarm.xcodeproj -scheme Swarm

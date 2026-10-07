@@ -529,6 +529,9 @@ export class SyncService {
         throw new BadRequestException(
           'Media must belong to the original author, not have failed processing, and not already be attached.',
         );
+      // Re-review the whole update as one publication unit. Previously public
+      // derivatives must be withdrawn until the new attachment is approved too.
+      await this.media.publication(post.media, false);
       await tx.fieldUpdate.update({
         where: { id: post.id },
         data: {
@@ -537,10 +540,10 @@ export class SyncService {
           publishedAt: null,
         },
       });
-      await this.requests.holdForReview(tx, newIds);
+      await this.requests.holdForReview(tx, [...post.media.map((asset) => asset.id), ...newIds]);
       const receipt = await this.receipt(
         record.envelope as unknown as Envelope,
-        previous.body.status,
+        'ACCEPTED',
         'Media reached Saathi and the update is queued for administrator review.',
         previous.body.publicId,
         post.id,

@@ -32,9 +32,10 @@ The offline behavior above does not prove broad device compatibility, sustained 
 Use a Mac with Xcode installed. Windows can maintain shared protocol docs and fixtures, but cannot build or qualify the native iOS app or simulator.
 
 ```sh
+brew install mint
 swift test --package-path apps/ios
 cd apps/ios/App
-xcodegen generate
+mint run yonaskolb/XcodeGen@2.46.0 xcodegen generate
 xcodebuild -project Swarm.xcodeproj -scheme Swarm \
   -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
 ```
@@ -44,10 +45,13 @@ To install on a physical iPhone, select your Apple team and provisioning profile
 The TypeScript/Swift interop fixture can be checked with:
 
 ```sh
+cd ../..
 SWARM_INTEROP_OUT=/tmp/swarm-vectors.json \
   swift test --package-path apps/ios --filter InteropExportTests
 node apps/ios/scripts/ios-interop.mjs /tmp/swarm-vectors.json
 ```
+
+XcodeGen is pinned to version 2.46.0 in this guide and in GitHub Actions so local project generation matches CI.
 
 For simulator UI review, launch the `Swarm` scheme with `-SwarmDemo 1` and optional `-SwarmTab chats|nearby|more` or `-SwarmOpen dm|channel|owned|info`. Demo data is DEBUG-only; the simulator has no Bluetooth radio and cannot prove Nearby behavior.
 
