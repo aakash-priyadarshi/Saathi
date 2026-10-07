@@ -23,7 +23,7 @@ struct SwarmApp: App {
             .onOpenURL { url in model.openInvite(url.absoluteString) }
             // Search automatically whenever Swarm is on screen; iOS suspends radios in the background anyway.
             .onChange(of: phase) { value in
-                if value == .active { model.nearby.resume(); UNUserNotificationCenter.current().removeAllDeliveredNotifications() }
+                if value == .active { model.nearby.resumeIfVisible(); UNUserNotificationCenter.current().removeAllDeliveredNotifications() }
                 else if value == .background { model.nearby.pause() }
             }
         }
@@ -146,10 +146,10 @@ struct RootView: View {
                 .tabItem { Label("Chats", systemImage: "bubble.left.and.bubble.right") }.tag(Tab.chats)
             NearbyView(chat: chat, nearby: nearby)
                 .tabItem { Label("Nearby", systemImage: "dot.radiowaves.left.and.right") }.tag(Tab.nearby)
-            MoreView(chat: chat)
+            MoreView(chat: chat, nearby: nearby)
                 .tabItem { Label("More", systemImage: "ellipsis.circle") }.tag(Tab.more)
         }
-        .onAppear { nearby.resume() } // first launch and right after choosing a name
+        .onAppear { nearby.resumeIfVisible() } // first launch and right after choosing a name
         .alert("Notice", isPresented: Binding(get: { chat.notice != nil }, set: { if !$0 { chat.notice = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(chat.notice ?? "") }

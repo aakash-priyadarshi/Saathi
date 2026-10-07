@@ -65,7 +65,9 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent:Intent){super.onNewIntent(intent);setIntent(intent);model?.receiveInvite(intent.dataString)}
 }
 
-private val tabs = listOf(Triple("Updates", Icons.Outlined.Feed, "Public field updates"),Triple("Chats",Icons.Outlined.ChatBubbleOutline,"Conversations"),Triple("Nearby",Icons.Outlined.Groups,"Nearby people and channels"),Triple("Needs",Icons.Outlined.VolunteerActivism,"Relief needs"),Triple("More",Icons.Outlined.MoreHoriz,"Profile and saved work"))
+// Hidden for the Oct 2026 build: Updates and Needs tabs (only Chats, Nearby and More are shown). Restore the full list below to bring them back.
+// private val tabs = listOf(Triple("Updates", Icons.Outlined.Feed, "Public field updates"),Triple("Chats",Icons.Outlined.ChatBubbleOutline,"Conversations"),Triple("Nearby",Icons.Outlined.Groups,"Nearby people and channels"),Triple("Needs",Icons.Outlined.VolunteerActivism,"Relief needs"),Triple("More",Icons.Outlined.MoreHoriz,"Profile and saved work"))
+private val tabs = listOf(Triple("Chats",Icons.Outlined.ChatBubbleOutline,"Conversations"),Triple("Nearby",Icons.Outlined.Groups,"Nearby people and channels"),Triple("More",Icons.Outlined.MoreHoriz,"Profile and settings"))
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun SaathiApp(vm: SaathiViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -81,7 +83,9 @@ private val tabs = listOf(Triple("Updates", Icons.Outlined.Feed, "Public field u
             if (form == "request" || form?.startsWith("update:") == true || draftType == "request") form = null
         }
     }
-    val visibleTabs = if (state.needsEnabled) tabs else tabs.filterNot { it.first == "Needs" }
+    // Hidden for the Oct 2026 build: the Needs tab is not in `tabs`, so the needsEnabled filter is not needed.
+    // val visibleTabs = if (state.needsEnabled) tabs else tabs.filterNot { it.first == "Needs" }
+    val visibleTabs = tabs
     val openChat:(String)->Unit={conversation=it;page="Chats";detail=null;form=null}
     var pendingPermission by remember { mutableStateOf<(() -> Unit)?>(null) }
     val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
@@ -123,7 +127,9 @@ private val tabs = listOf(Triple("Updates", Icons.Outlined.Feed, "Public field u
                     if(inConversation) Text(BuildConfig.BRAND_DISPLAY, style = MaterialTheme.typography.titleMedium)
                     else Column { Text(BuildConfig.BRAND_DISPLAY, style = MaterialTheme.typography.titleLarge); Text(BuildConfig.BRAND_BYLINE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 } }, navigationIcon = { if (detail != null || form != null || conversation!=null || page in listOf("Team","Saved","Connection")) IconButton(onClick = navigateBack) { Icon(Icons.Outlined.ArrowBack, "Back") } },
-                    actions = { if(!inConversation) TextButton(onClick = { page = "Team"; detail = null; form = null;conversation=null }) { Text(if (state.preparation == null) "Team sign in" else "My team") } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)) },
+                    // Hidden for the Oct 2026 build: Team sign in / My team top-bar action.
+                    // actions = { if(!inConversation) TextButton(onClick = { page = "Team"; detail = null; form = null;conversation=null }) { Text(if (state.preparation == null) "Team sign in" else "My team") } },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)) },
                 bottomBar = { if (!wide && !inConversation) NavigationBar(modifier=Modifier.heightIn(min=if(largeNavigationText)112.dp else 80.dp),containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) { visibleTabs.forEach { (name, icon, description) -> NavigationBarItem(page == name, { page = name; detail = null; form = null;conversation=null }, { Icon(icon, "$name · $description") }, label = { Text(name, maxLines=if(largeNavigationText)2 else 1, overflow=TextOverflow.Ellipsis,textAlign=TextAlign.Center) }) } } }
             ) { padding ->
                 Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
@@ -142,15 +148,18 @@ private val tabs = listOf(Triple("Updates", Icons.Outlined.Feed, "Public field u
                             form != null -> DraftForm(vm, form!!, { form = null }, content)
                             detail != null -> RequestDetail(vm, JSONObject(detail!!), { form = "update:" + detail!! }, content,{need->vm.discuss(obj("type" to "NEED","id" to need.getString("publicId"),"title" to need.getString("title")),openChat)})
                             conversation!=null -> ConversationScreen(vm,state,conversation!!,askCall,askRecord,{message->if(state.needsEnabled)vm.needFromChat(message){form=it}else vm.notice("Public relief needs are temporarily paused.")},{id->if(!state.needsEnabled)vm.notice("Public relief needs are temporarily paused.")else state.requests.plus(state.completed).firstOrNull{it.optString("publicId")==id}?.let{detail=it.toString()}?:vm.notice("Refresh Needs to check this reference’s latest public status.")},content)
-                            page == "Needs" && state.needsEnabled -> NeedsHub(vm,state,{detail=it.toString()},wide,content,{form=it})
-                            page == "Needs" -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Notice("Relief needs are paused", "Connect to the internet later to check when this feature is available again.", Icons.Outlined.VolunteerActivism) }
-                            page == "Updates" -> UpdatesHub(vm,state,content,{page="Team";form="field"},{post->vm.discuss(obj("type" to "UPDATE","id" to post.getString("id"),"title" to post.getString("caption").take(120)),openChat)})
+                            // Hidden for the Oct 2026 build: Needs and Updates pages.
+                            // page == "Needs" && state.needsEnabled -> NeedsHub(vm,state,{detail=it.toString()},wide,content,{form=it})
+                            // page == "Needs" -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Notice("Relief needs are paused", "Connect to the internet later to check when this feature is available again.", Icons.Outlined.VolunteerActivism) }
+                            // page == "Updates" -> UpdatesHub(vm,state,content,{page="Team";form="field"},{post->vm.discuss(obj("type" to "UPDATE","id" to post.getString("id"),"title" to post.getString("caption").take(120)),openChat)})
                             page == "Chats" -> ChatsScreen(vm,state,openChat,{page="Nearby"},{createChannel=true},content)
                             page == "Nearby" -> NearbyPeopleScreen(vm,state,askNearby,openChat,{createChannel=true},{invite=true},{page="Connection"},content)
                             page == "Connection" -> NearbyScreen(vm, state, askNearby, askBle, askCall, content)
                             page == "More" -> MoreScreen(vm,state,{page="Team"},{page="Saved"},{page="Connection"},content)
-                            page == "Saved" -> SavedScreen(vm, state, { form = it }, content)
-                            else -> TeamScreen(vm, state, { form = it }, { logout = true }, content)
+                            // Hidden for the Oct 2026 build: Saved and Team pages. Any other page falls back to Chats.
+                            // page == "Saved" -> SavedScreen(vm, state, { form = it }, content)
+                            // else -> TeamScreen(vm, state, { form = it }, { logout = true }, content)
+                            else -> ChatsScreen(vm,state,openChat,{page="Nearby"},{createChannel=true},content)
                         }
                     }
                 }
