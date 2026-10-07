@@ -267,7 +267,7 @@ import SwarmCore
         try? save("chat-receipts", id, ["id": id, "receipt": r])
         if session.confirmed && peer != nil { try? await session.send("CHAT_RECEIPT", r) }
     }
-    private func receiveReceipt(_ r: JSON) throws {
+    func receiveReceipt(_ r: JSON) throws {
         let b = try J.obj(r, "body")
         guard var message = store.get("chat-messages", try J.str(b, "messageId")), let envelope = message["envelope"] as? JSON else { return }
         try ChatRules.receipt(r, message: envelope, policy: current(try J.str(b, "conversationId")), now: now())
@@ -276,14 +276,14 @@ import SwarmCore
         if message["owned"] as? Bool == true { message[status == "READ" ? "readAt" : "deliveredAt"] = b["recordedAt"]; try save("chat-messages", message["id"] as! String, message) }
         changed()
     }
-    private func receiveMessage(_ envelope: JSON, hops: Int) async throws {
+    func receiveMessage(_ envelope: JSON, hops: Int, server: Bool = false) async throws {
         try J.req((0...6).contains(hops))
         let b = try J.obj(envelope, "body"), id = try J.str(b, "id"), author = ChatRules.participant(try J.obj(b, "author"))
         if blocked(author) { return }
         let p: JSON? = J.isNull(b, "policyHash") ? nil : (store.get("chat-policy-history", try J.str(b, "policyHash"))?["policy"] as? JSON)
         if !J.isNull(b, "policyHash") && p == nil { throw ChatRuleError("Channel history is unavailable.") }
         let cp = p == nil ? nil : current(try J.str(b, "conversationId"))
-        if p != nil { guard let cp, live(cp) else { throw ChatRuleError("Channel membership needs a refresh.") }; try J.req(ChatRules.member(cp, author), "This author's membership has been removed.") }
+        if p != nil { guard let cp, live(cp) else { throw ChatRuleError("Channel membership needs a refresh.") }; if !server { try J.req(ChatRules.member(cp, author), "This author's membership has been removed.") } }
         if let cp, hash(cp) == (b["policyHash"] as? String) { try J.req(!pendingMembership(cp), "Waiting for fresh membership.") }
         try ChatRules.message(envelope, policy: p, now: now(), history: true)
         if let old = store.get("chat-messages", id) {
@@ -309,7 +309,7 @@ import SwarmCore
             try save("chat-conversations", conversation, ["id": conversation, "type": "DIRECT", "peerId": author, "title": body(try J.obj(b, "author"))["name"] ?? "Person",
                                                          "muted": false, "joined": true, "lastRead": Instant.string(.distantPast)])
         }
-        let record: JSON = ["id": id, "envelope": envelope, "payload": payload, "owned": false, "hops": hops, "receivedAt": Instant.string(now()), "serverSaved": false]
+        let record: JSON = ["id": id, "envelope": envelope, "payload": payload, "owned": false, "hops": hops, "receivedAt": Instant.string(now()), "serverSaved": server]
         try save("chat-messages", id, record)
         if let a = attachment(of: record), let aid = a["id"] as? String { revealPhoto(aid) }
         applyDelete(payload, author: author)
@@ -476,7 +476,7 @@ import SwarmCore
         }
     }
 
-    private func prune() {
+    func prune() {
         let t = now()
         for r in store.all("chat-messages") where time(envelopeBody(r)["expiresAt"]) <= t { store.remove("chat-messages", r["id"] as? String ?? "") }
         for j in store.all("chat-joins") where time(body(j["request"] as? JSON ?? [:])["expiresAt"]) <= t {

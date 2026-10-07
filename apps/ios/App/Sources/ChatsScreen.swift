@@ -104,7 +104,7 @@ struct ChatsView: View {
     }
     func preview(_ r: JSON) -> String {
         if let text = (r["payload"] as? JSON)?["text"] as? String { return text }
-        return chat.attachment(of: r).map { ($0["mime"] as? String ?? "").hasPrefix("image/") ? "Photo" : "Attachment" } ?? "Message"
+        return chat.attachment(of: r).map { let m = $0["mime"] as? String ?? ""; return m.hasPrefix("image/") ? "Photo" : m.hasPrefix("audio/") ? "Voice message" : "Attachment" } ?? "Message"
     }
 }
 
@@ -141,6 +141,11 @@ struct ConversationView: View {
     @State private var forwarding: String?
     @State private var deleting: JSON?
     @State private var reporting: String?
+    @StateObject private var recorder = VoiceRecorder()
+    @ObservedObject private var player = VoicePlayer.shared
+    @State private var holding = false
+    @State private var heardVoice: String?
+    @Environment(\.scenePhase) private var phase
 
     var body: some View {
         let _ = chat.revision
@@ -173,6 +178,14 @@ struct ConversationView: View {
         .toolbar { ToolbarItem(placement: .principal) { Masthead(compact: true) } }
         .toolbar(.hidden, for: .tabBar) // Android hides the bottom destinations inside a conversation
         .task(id: messages.count) { await chat.read(id) }
+        // Hold-to-talk: a clip that arrives while this chat is open plays by itself, like a walkie-talkie.
+        .onAppear { heardVoice = latestVoice(messages) }
+        .onChange(of: latestVoice(messages)) { newest in
+            guard let newest, newest != heardVoice else { return }
+            heardVoice = newest
+            if phase == .active && !recorder.recording { player.play(newest, chat.voice(newest)) }
+        }
+        .onDisappear { player.stop(); if recorder.recording { _ = recorder.stop() } }
         .sheet(item: Binding(get: { viewing.map(IdentifiedImage.init) }, set: { viewing = $0?.image })) { item in
             ZStack(alignment: .topTrailing) {
                 Color.black.ignoresSafeArea()
@@ -205,6 +218,12 @@ struct ConversationView: View {
         } message: { _ in Text("A report requests review; it does not remove copies from other phones.") }
     }
 
+    /// The newest incoming voice message whose audio is on this phone.
+    func latestVoice(_ messages: [JSON]) -> String? {
+        messages.last { $0["owned"] as? Bool != true && (chat.attachment(of: $0)?["mime"] as? String ?? "").hasPrefix("audio/") && chat.voice(chat.attachment(of: $0)?["id"] as? String ?? "") != nil }
+            .flatMap { chat.attachment(of: $0)?["id"] as? String }
+    }
+
     func header(title: String, channel: Bool, conversation: JSON?) -> some View {
         let peerID = conversation?["peerId"] as? String
         let here = nearby.connected != nil && chat.peer != nil && (!channel ? chat.peerID == peerID : (chat.current(id).map { ChatRules.member($0, chat.peerID ?? "") } ?? false))
@@ -230,6 +249,9 @@ struct ConversationView: View {
     @ViewBuilder func composer(_ conversation: JSON?, canPost: Bool, channel: Bool) -> some View {
         if canPost {
             VStack(spacing: 8) {
+                if recorder.recording {
+                    Label("Recording… release to send", systemImage: "waveform").font(Type.label).foregroundStyle(Palette.error).frame(maxWidth: .infinity, alignment: .leading)
+                }
                 if let replyTo {
                     HStack {
                         ReplyQuote(chat: chat, message: replyTo, deleted: false)
@@ -256,6 +278,25 @@ struct ConversationView: View {
                         .padding(.horizontal, 14).padding(.vertical, 10)
                         .background(Palette.surface, in: RoundedRectangle(cornerRadius: 20)).overlay(RoundedRectangle(cornerRadius: 20).stroke(Palette.outline))
                     let empty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    if empty {
+                        // Hold to talk, release to send (a tap shorter than half a second is ignored).
+                        Image(systemName: recorder.recording ? "mic.fill" : "mic").font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(recorder.recording ? Palette.onPrimary : Palette.primary)
+                            .frame(width: 40, height: 40).background(recorder.recording ? Palette.error : Palette.primaryContainer, in: Circle())
+                            .scaleEffect(recorder.recording ? 1.15 : 1).animation(.easeOut(duration: 0.15), value: recorder.recording)
+                            .gesture(DragGesture(minimumDistance: 0)
+                                .onChanged { _ in
+                                    guard !holding else { return }
+                                    holding = true; player.stop()
+                                    Task { if !(await recorder.start()) { holding = false; chat.notice = "Allow the microphone in Settings to talk." } }
+                                }
+                                .onEnded { _ in
+                                    holding = false
+                                    guard let clip = recorder.stop() else { return }
+                                    Task { do { try await chat.sendVoice(id, clip: clip) } catch { chat.notice = error.localizedDescription } }
+                                })
+                            .accessibilityLabel("Hold to talk").accessibilityHint("Records while held and sends when released")
+                    } else {
                     Button {
                         let text = draft, reply = replyTo?["id"] as? String; draft = ""; replyTo = nil
                         Task { do { try await chat.send(id, text: text, replyTo: reply) } catch { draft = text; chat.notice = error.localizedDescription } }
@@ -263,6 +304,7 @@ struct ConversationView: View {
                         Image(systemName: "arrow.up").font(.system(size: 17, weight: .bold)).foregroundStyle(Palette.onPrimary)
                             .frame(width: 40, height: 40).background(Palette.primary.opacity(empty ? 0.4 : 1), in: Circle())
                     }.disabled(empty).accessibilityLabel("Send")
+                    }
                 }
             }
             .padding(.horizontal, 12).padding(.vertical, 10).background(Palette.surface)
@@ -302,13 +344,19 @@ struct ConversationView: View {
                     Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: 260, maxHeight: 300)
                         .clipShape(RoundedRectangle(cornerRadius: 10)).onTapGesture { viewing = image }
                         .accessibilityLabel("Photo from \(mine ? "you" : author)").accessibilityAddTraits(.isButton)
+                } else if (attachment?["mime"] as? String ?? "").hasPrefix("audio/"), let clip = chat.voice(attachmentID) {
+                    Button { player.toggle(attachmentID, clip) } label: {
+                        Label(player.playing == attachmentID ? "Playing… tap to stop" : "Voice message", systemImage: player.playing == attachmentID ? "stop.circle.fill" : "play.circle.fill")
+                            .font(Type.bodyMedium).foregroundStyle(Palette.primary)
+                    }.buttonStyle(.plain)
                 } else if attachment != nil {
                     let progress = chat.transfers.progress[attachmentID]
                     HStack(spacing: 8) {
                         Image(systemName: isPhoto ? "photo" : "paperclip").foregroundStyle(Palette.primary)
                         VStack(alignment: .leading, spacing: 4) {
                             Text(progress.map { "\(isPhoto ? "Photo" : "Attachment") · \(Int($0 * 100))%" }
-                                 ?? (isPhoto ? (mine ? "Photo" : "Photo · arrives when the sender is nearby") : "Attachment · open it on Android for now"))
+                                 ?? (isPhoto ? (mine ? "Photo" : "Photo · arrives when the sender is nearby")
+                                     : (attachment?["mime"] as? String ?? "").hasPrefix("audio/") ? "Voice message · arrives when the sender is nearby" : "Attachment · open it on Android for now"))
                                 .font(Type.bodyMedium).foregroundStyle(Palette.ink)
                             if let progress { ProgressView(value: progress).tint(Palette.primary).frame(width: 160) }
                         }

@@ -40,6 +40,7 @@ targets:
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: Swarm finds and talks to nearby team phones over Bluetooth, without internet.
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: Swarm finds and talks to nearby team phones on local Wi-Fi, without internet.
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: iOS requires location access to join a nearby phone's fast Wi-Fi link.
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Hold the mic to talk; Swarm records only while you hold it and sends the clip to the chat.
         INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: Swarm saves a photo from a chat to your library when you choose Save.
         INFOPLIST_KEY_NSCameraUsageDescription: Scan a channel invitation QR code.
     info:
@@ -47,6 +48,8 @@ targets:
       properties:
         # Lora and Manrope (SIL OFL 1.1), as bundled in the Android app.
         UIAppFonts: [lora.ttf, manrope.ttf]
+        # Keep the nearby Bluetooth link (and search) alive while Swarm is in the background, so messages still arrive.
+        UIBackgroundModes: [bluetooth-central, bluetooth-peripheral]
         CFBundleURLTypes:
           - CFBundleURLSchemes: [cjpswarm]
         # "_" + first 12 hex chars of SHA-256(service ID), uppercase: development, staging, production.

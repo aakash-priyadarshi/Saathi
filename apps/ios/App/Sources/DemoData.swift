@@ -13,6 +13,8 @@ import SwarmCore
     static var dmID = "", channelID = "", ownedID = ""
 
     static func seed(_ chat: ChatEngine) {
+        // `-SwarmName X` makes a fresh identity without demo content (for testing online sync against staging).
+        if let name = UserDefaults.standard.string(forKey: "SwarmName"), !chat.hasProfile { Task { try? await chat.setName(name) } }
         guard enabled else { return }
         do {
             if !chat.hasProfile {

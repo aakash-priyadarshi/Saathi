@@ -78,11 +78,9 @@ import SwarmCore
         foreground = true
         if connected == nil && pending == nil && !searching && !displayName().isEmpty { start() }
     }
-    /// iOS suspends background apps, so radios stop with the app; saved work stays on the phone.
-    func pause() {
-        foreground = false
-        if connected == nil { stopRadios(); peers = [:]; status = "Paused while Swarm is in the background." }
-    }
+    /// In the background the Bluetooth link and search keep running (Bluetooth background modes), so messages still arrive;
+    /// iOS slows background Bluetooth and pauses Wi-Fi, so delivery can be slower until Swarm is opened again.
+    func pause() { foreground = false }
 
     /// Searches and stays visible until connected, stopped or backgrounded (Android's automatic mode, without the
     /// one-minute limit: the iPhone only searches while Swarm is open). Stale searches restart every two minutes.
@@ -144,10 +142,10 @@ import SwarmCore
         guard was else { return }
         status = "Nearby connection ended. Your messages are saved."; onDisconnected()
         // A dropped link (walking apart, airplane mode, radio change) goes straight back to searching.
-        if reconnect && foreground {
+        if reconnect {
             Task { [weak self] in
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
-                guard let self, self.connected == nil, self.pending == nil, self.foreground else { return }
+                guard let self, self.connected == nil, self.pending == nil else { return }
                 self.start()
             }
         }

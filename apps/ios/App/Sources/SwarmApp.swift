@@ -1,5 +1,6 @@
 import SwiftUI
 import SwarmCore
+import UserNotifications
 
 @main
 struct SwarmApp: App {
@@ -21,7 +22,10 @@ struct SwarmApp: App {
             .tint(Palette.primary)
             .onOpenURL { url in model.openInvite(url.absoluteString) }
             // Search automatically whenever Swarm is on screen; iOS suspends radios in the background anyway.
-            .onChange(of: phase) { value in if value == .active { model.nearby.resume() } else if value == .background { model.nearby.pause() } }
+            .onChange(of: phase) { value in
+                if value == .active { model.nearby.resume(); UNUserNotificationCenter.current().removeAllDeliveredNotifications() }
+                else if value == .background { model.nearby.pause() }
+            }
         }
     }
 }
@@ -59,12 +63,35 @@ struct SwarmApp: App {
                 Task { try? await Task.sleep(nanoseconds: 2_000_000_000); nearby.resume() }
             }
             session.onConfirmed = { [weak chat] in await chat?.announce() }
+            // A phone notification for each new message that arrives while Swarm is not on screen.
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+            chat.onIncoming = { [weak chat] record in
+                guard let chat, UIApplication.shared.applicationState != .active else { return }
+                let b = chat.envelopeBody(record), payload = record["payload"] as? JSON ?? [:]
+                guard payload["deletes"] == nil, let id = b["conversationId"] as? String, let c = chat.conversation(id), c["muted"] as? Bool != true else { return }
+                let author = ((b["author"] as? JSON)?["body"] as? JSON)?["name"] as? String ?? "Someone"
+                let mime = chat.attachment(of: record)?["mime"] as? String ?? ""
+                let text = payload["text"] as? String ?? (mime.hasPrefix("image/") ? "Photo" : mime.hasPrefix("audio/") ? "Voice message" : "New message")
+                let content = UNMutableNotificationContent()
+                let group = c["type"] as? String == "CHANNEL"
+                content.title = group ? (c["title"] as? String ?? "Group") : author
+                content.body = group ? "\(author): \(text)" : text
+                content.sound = .default; content.threadIdentifier = id
+                UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+            }
             session.onChat = { [weak chat] frame, generation in await chat?.receive(frame, generation: generation) }
             session.onFile = { [weak chat] frame, generation in await chat?.receiveFile(frame, generation: generation) }
             session.onReset = { [weak chat] in chat?.reset() }
             session.onError = { [weak chat] in chat?.notice = $0 }
             // Group creators re-sign every few hours so their groups keep working offline (policies last six hours).
             Task { [weak chat] in while let chat { chat.renewOwned(); try? await Task.sleep(nanoseconds: 600_000_000_000) } }
+            // Online sync while Swarm is open (Android checks every 30 seconds); offline it simply fails quietly.
+            Task { [weak chat] in
+                while let chat {
+                    if UIApplication.shared.applicationState == .active { try? await chat.sync() }
+                    try? await Task.sleep(nanoseconds: 20_000_000_000)
+                }
+            }
         } catch {
             failure = (error as? LocalizedError)?.errorDescription ?? "Swarm could not open this phone's identity."
         }

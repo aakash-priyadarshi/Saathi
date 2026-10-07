@@ -72,16 +72,19 @@ extension ChatEngine {
 
     /// Sends a photo as an end-to-end encrypted V1 attachment (readable by every Android Swarm build).
     func sendPhoto(_ conversationID: String, image: UIImage, forwarded: Bool = false) async throws {
-        let jpeg = try Photo.prepare(image)
+        try await sendMedia(conversationID, plain: try Photo.prepare(image), name: "photo.jpg", mime: "image/jpeg", format: "PHOTO", forwarded: forwarded)
+    }
+    /// Encrypts, saves and sends any small attachment (photos and voice messages) as V1.
+    func sendMedia(_ conversationID: String, plain: Data, name: String, mime: String, format: String, forwarded: Bool = false) async throws {
         let id = UUID().uuidString.lowercased(), key = Data((0..<32).map { _ in UInt8.random(in: 0...255) })
-        let cipher = try AttachmentCrypto.encryptV1(jpeg, key: key, id: id), cipherHash = ChatCrypto.sha256Hex(cipher)
-        try media.saveCipher(id, cipher); try media.savePlain(id, jpeg)
+        let cipher = try AttachmentCrypto.encryptV1(plain, key: key, id: id), cipherHash = ChatCrypto.sha256Hex(cipher)
+        try media.saveCipher(id, cipher); try media.savePlain(id, plain)
         try store.put("attachments", id, ["id": id, "size": cipher.count, "hash": cipherHash, "direction": "OUT", "complete": true, "deliveredTo": [String]()])
-        let attachment: JSON = ["id": id, "name": "photo.jpg", "mime": "image/jpeg", "size": jpeg.count, "hash": ChatCrypto.sha256Hex(jpeg),
+        let attachment: JSON = ["id": id, "name": name, "mime": mime, "size": plain.count, "hash": ChatCrypto.sha256Hex(plain),
                                 "cipherHash": cipherHash, "key": ChatCrypto.base64url(key)]
         var payload: JSON = ["attachment": attachment]
         if forwarded { payload["forwarded"] = true }
-        do { try await sendPayload(conversationID, payload: payload, format: "PHOTO", cipher: (id, cipher.count, cipherHash)) }
+        do { try await sendPayload(conversationID, payload: payload, format: format, cipher: (id, cipher.count, cipherHash)) }
         catch { media.remove(id); store.remove("attachments", id); throw error }
     }
 
