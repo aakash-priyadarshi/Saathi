@@ -65,6 +65,7 @@ export function ConnectivityPage() {
     });
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
+    [preparingOffline, setPreparingOffline] = useState(false),
     [notice, setNotice] = useState('');
   const [devices, setDevices] = useState<
     { id: string; createdAt: string; revokedAt: string | null }[]
@@ -119,6 +120,8 @@ export function ConnectivityPage() {
     }
   }
   async function prepare() {
+    if (!window.isSecureContext || !('serviceWorker' in navigator))
+      throw new Error('Offline opening needs a secure browser that supports service workers.');
     const registration = await navigator.serviceWorker.ready;
     const reply = await new Promise<{ ok: boolean }>((resolve, reject) => {
       const channel = new MessageChannel();
@@ -140,6 +143,18 @@ export function ConnectivityPage() {
         ? 'Swarm is ready to open offline. Your browser granted protected storage.'
         : 'Swarm is ready to open offline. Export important work: this browser may remove stored data when space is low.',
     );
+  }
+  async function prepareOffline() {
+    if (preparingOffline) return;
+    setPreparingOffline(true);
+    setError('');
+    try {
+      await prepare();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Please try again.');
+    } finally {
+      setPreparingOffline(false);
+    }
   }
   const storageUsable = local.storage && !c.storageError;
   const can = [
@@ -271,8 +286,8 @@ export function ConnectivityPage() {
         <div className="connect-actions">
           <button
             className="button secondary"
-            disabled={busy || !('serviceWorker' in navigator)}
-            onClick={() => void run(prepare)}
+            disabled={preparingOffline}
+            onClick={() => void prepareOffline()}
           >
             Save app for offline opening
           </button>
