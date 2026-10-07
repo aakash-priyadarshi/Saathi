@@ -557,10 +557,10 @@ private fun roleLabel(role:String)=when(role){"OWNER"->"Group creator";"ADMIN"->
     AlertDialog(onDismissRequest=close,title={Text(if(link==null)"Add people" else "Invitation ready")},text={Column(Modifier.heightIn(max=520.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
         val ready=link
         if(ready==null){
+            if(state.channelPolicy(id)?.getJSONObject("body")?.optString("visibility")=="INVITE")Button(onClick={vm.createChannelJoinLink(id){link=it;invited=null;joinLink=true}},enabled=!state.busy){Icon(Icons.Outlined.Link,null);Spacer(Modifier.width(8.dp));Text("Share join link")}
             Text("Choose someone you've met nearby. They join with a personal invitation.",style=MaterialTheme.typography.bodyMedium)
             val people=state.chatContacts.filter{it.getString("id") !in members&&it.getString("id")!=me}
             if(people.isEmpty())Text("No one to add yet. Meet people in Nearby first; everyone you connect with appears here.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            if(state.channelPolicy(id)?.getJSONObject("body")?.optString("visibility")=="INVITE")OutlinedButton(onClick={vm.createChannelJoinLink(id){link=it;invited=null;joinLink=true}},enabled=!state.busy){Icon(Icons.Outlined.Link,null);Spacer(Modifier.width(8.dp));Text("Share join link")}
             people.forEach{person->val name=person.getJSONObject("profile").getJSONObject("body").getString("name")
                 Row(Modifier.fillMaxWidth().clickable(enabled=!state.busy){vm.invitePerson(id,person.getJSONObject("profile")){link=it;invited=person.getString("id");joinLink=false}}.padding(vertical=6.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){Avatar(name);Text(name,Modifier.weight(1f),style=MaterialTheme.typography.titleMedium);Icon(Icons.Outlined.AddCircleOutline,null,tint=MaterialTheme.colorScheme.primary)}}
         }else{
@@ -570,7 +570,7 @@ private fun roleLabel(role:String)=when(role){"OWNER"->"Group creator";"ADMIN"->
             FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){
                 OutlinedButton(onClick={context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply{type="text/plain";putExtra(Intent.EXTRA_TEXT,ready)},"Share Swarm invitation"))}){Text("Share link")}
                 TextButton(onClick={clipboard.setText(AnnotatedString(ready));vm.notice("Invitation copied.")}){Text("Copy")}
-                if(state.chatPeer?.let{ChatProtocol.participant(it)}==invited)Button(onClick={vm.sendNearbyInvite(ready)}){Text("Send nearby")}
+                if(state.chatPeer?.let{joinLink||ChatProtocol.participant(it)==invited}==true)Button(onClick={vm.sendNearbyInvite(ready)}){Text("Send nearby")}
             }
         }
     }},confirmButton={TextButton(onClick=close){Text("Done")}})

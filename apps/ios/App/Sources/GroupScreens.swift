@@ -263,20 +263,20 @@ struct AddPeopleSheet: View {
                         } else { Text("This invitation is too large for a QR code. Share the link instead.").font(Type.bodySmall).foregroundStyle(Palette.muted) }
                         HStack {
                             ShareLink(item: link) { Label("Share link", systemImage: "square.and.arrow.up") }.buttonStyle(OutlineButtonStyle())
-                            if chat.peerID == invitedID {
+                            if let peer = chat.peerID, joinLink || peer == invitedID {
                                 Button("Send nearby") { Task { do { try await chat.sendInviteNearby(link); chat.notice = "Invitation sent nearby." } catch { chat.notice = error.localizedDescription } } }.buttonStyle(PrimaryButtonStyle())
                             }
                         }
                     } else {
                         Heading(title: "Add people", text: "Choose someone you've met nearby. They join with a personal invitation.")
-                        let members = Set(((chat.current(id)?["body"] as? JSON)?["members"] as? [JSON] ?? []).filter { J.isNull($0, "removedAt") }.map { ChatRules.participant($0["profile"] as? JSON ?? [:]) })
-                        let people = chat.contacts().filter { !members.contains($0["id"] as? String ?? "") && $0["id"] as? String != chat.selfID }
-                        if people.isEmpty { EmptyState(title: "No one to add yet", text: "Meet people in Nearby first. Everyone you connect with appears here.", icon: "person.2") }
                         if (chat.current(id)?["body"] as? JSON)?["visibility"] as? String == "INVITE" {
                             Button { do { link = try chat.createJoinLink(id); invitedID = nil; joinLink = true } catch { chat.notice = error.localizedDescription } } label: {
                                 Label("Share join link", systemImage: "link")
-                            }.buttonStyle(OutlineButtonStyle())
+                            }.buttonStyle(PrimaryButtonStyle())
                         }
+                        let members = Set(((chat.current(id)?["body"] as? JSON)?["members"] as? [JSON] ?? []).filter { J.isNull($0, "removedAt") }.map { ChatRules.participant($0["profile"] as? JSON ?? [:]) })
+                        let people = chat.contacts().filter { !members.contains($0["id"] as? String ?? "") && $0["id"] as? String != chat.selfID }
+                        if people.isEmpty { EmptyState(title: "No one to add yet", text: "Meet people in Nearby first. Everyone you connect with appears here.", icon: "person.2") }
                         ForEach(people.indices, id: \.self) { i in
                             let person = people[i]["profile"] as? JSON ?? [:], name = ((person["body"] as? JSON)?["name"] as? String) ?? "Person"
                             Button {
