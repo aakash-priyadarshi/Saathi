@@ -26,12 +26,12 @@ extension ChatEngine {
         return ((current(channelID).map(body)?["moderation"] as? JSON)?["hiddenMessages"] as? [String] ?? []).contains(messageID)
     }
 
-    func send(_ conversationID: String, text: String, replyTo: String?) async throws {
+    func send(_ conversationID: String, text: String, replyTo: String?, threadRootID: String? = nil) async throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         try J.req((1...4000).contains(trimmed.utf16.count), "Write 1 to 4,000 characters.")
         var payload: JSON = ["text": trimmed]
         if let replyTo { payload["replyTo"] = replyTo }
-        try await sendPayload(conversationID, payload: payload, format: "TEXT")
+        try await sendPayload(conversationID, payload: payload, format: "TEXT", threadRootID: threadRootID)
     }
     /// Text and photos forward as new messages marked "Forwarded".
     func forward(_ messageID: String, to targets: [String]) async throws {
@@ -52,7 +52,8 @@ extension ChatEngine {
     /// Delete for everyone: a signed SYSTEM message naming the author's own message; every phone hides it.
     func deleteForEveryone(_ messageID: String) async throws {
         guard let record = store.get("chat-messages", messageID), record["owned"] as? Bool == true else { throw ChatRuleError("Only the sender can delete a message for everyone.") }
-        try await sendPayload(envelopeBody(record)["conversationId"] as? String ?? "", payload: ["deletes": messageID], format: "SYSTEM")
+        try await sendPayload(envelopeBody(record)["conversationId"] as? String ?? "", payload: ["deletes": messageID], format: "SYSTEM",
+                              threadRootID: envelopeBody(record)["threadRootId"] as? String)
         if let id = attachment(of: record)?["id"] as? String { media.remove(id) }
         changed()
     }

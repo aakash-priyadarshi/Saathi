@@ -50,8 +50,8 @@ import SwarmCore
 }
 
 extension ChatEngine {
-    func sendVoice(_ conversationID: String, clip: Data) async throws {
-        try await sendMedia(conversationID, plain: clip, name: "Voice message.m4a", mime: "audio/mp4", format: "VOICE")
+    func sendVoice(_ conversationID: String, clip: Data, threadRootID: String? = nil) async throws {
+        try await sendMedia(conversationID, plain: clip, name: "Voice message.m4a", mime: "audio/mp4", format: "VOICE", threadRootID: threadRootID)
     }
     /// The decrypted bytes of a held voice message, if they have arrived.
     func voice(_ attachmentID: String) -> Data? { media.plain(attachmentID) }

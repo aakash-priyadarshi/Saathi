@@ -35,14 +35,14 @@ extension ChatEngine {
 
     // MARK: owner actions
     /// Creates a group owned by this phone. Open groups appear to people nearby; invite-only groups are encrypted.
-    @discardableResult func createGroup(name raw: String, inviteOnly: Bool, approval: Bool, announcements: Bool) async throws -> String {
+    @discardableResult func createGroup(name raw: String, inviteOnly: Bool, approval: Bool, type: GroupType) async throws -> String {
         let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         try J.req((1...48).contains(name.utf16.count), "Choose a group name of 1 to 48 characters.")
         try J.req(conversations().filter { $0["type"] as? String == "CHANNEL" && $0["joined"] as? Bool == true }.count < 16, "You can be in at most 16 groups.")
         let members: [JSON] = [["profile": profile, "role": "OWNER", "joinedAt": Instant.string(now()), "removedAt": NSNull()]]
         let admission = inviteOnly ? (approval ? "INVITE_PLUS_APPROVAL" : "INVITE_AUTO") : (approval ? "APPROVAL_ONLY" : "OPEN")
         let policy = try revised(nil, name: name, visibility: inviteOnly ? "INVITE" : "OPEN", members: members,
-                                 settings: ["mode": announcements ? "ANNOUNCEMENT" : "DISCUSSION", "admission": admission])
+                                 settings: type.settings(admission: admission))
         try applyPolicy(policy, consent: true)
         await announce()
         return try J.str(try J.obj(policy, "body"), "id")
@@ -56,12 +56,11 @@ extension ChatEngine {
             }
         }
     }
-    func configure(_ id: String, announcements: Bool, approval: Bool) async throws {
+    func configure(_ id: String, type: GroupType, approval: Bool) async throws {
         guard let p = current(id) else { throw ChatRuleError("Group is unavailable.") }
         let b = body(p); try J.req(isOwner(p) && !pendingMembership(p), "Only the group creator can change these settings.")
         let open = b["visibility"] as? String == "OPEN"
-        let settings: JSON = ["mode": announcements ? "ANNOUNCEMENT" : "DISCUSSION",
-                              "admission": open ? (approval ? "APPROVAL_ONLY" : "OPEN") : (approval ? "INVITE_PLUS_APPROVAL" : "INVITE_AUTO")]
+        let settings = type.settings(admission: open ? (approval ? "APPROVAL_ONLY" : "OPEN") : (approval ? "INVITE_PLUS_APPROVAL" : "INVITE_AUTO"))
         try applyPolicy(try revised(p, name: b["name"] as? String ?? "", visibility: b["visibility"] as? String ?? "OPEN", members: (b["members"] as? [JSON]) ?? [], settings: settings), consent: true)
         await announce()
     }
@@ -265,5 +264,33 @@ extension ChatEngine {
                   ChatRules.participant(body(proof)["owner"] as? JSON ?? [:]) == ChatRules.participant(body(p)["owner"] as? JSON ?? [:]))
         let h = hash(proof); try save("chat-policy-history", h, ["id": h, "policy": proof])
         try await receiveAction(e, server: false)
+    }
+}
+
+/// Group types, built from existing channel settings (Android `GroupType`): free chat, admins post with member replies
+/// in threads, or view only (members read and react).
+enum GroupType: String, CaseIterable, Identifiable {
+    case free, announce, view
+    var id: String { rawValue }
+    var title: String { switch self { case .free: return "Free chat"; case .announce: return "Admins post, members reply"; case .view: return "View only" } }
+    var detail: String {
+        switch self {
+        case .free: return "Everyone can post and reply."
+        case .announce: return "Only admins post; members reply in each post's thread."
+        case .view: return "Only admins post; members read and react."
+        }
+    }
+    func settings(admission: String) -> JSON {
+        var s: JSON = ["mode": self == .free ? "DISCUSSION" : "ANNOUNCEMENT", "admission": admission]
+        if self == .view {
+            s["capabilities"] = ["MEMBER": ["canRead": true, "canPostTopLevel": false, "canReplyInThreads": false, "canCreateThreads": false, "canAttachMedia": false,
+                                            "canReact": true, "canInvite": false, "canModerate": false, "canStartCalls": false, "canJoinCalls": false, "canManageMembers": false]]
+        }
+        return s
+    }
+    init(settings: JSON?) {
+        if settings?["mode"] as? String != "ANNOUNCEMENT" { self = .free }
+        else if (((settings?["capabilities"] as? JSON)?["MEMBER"] as? JSON)?["canReplyInThreads"] as? Bool) == false { self = .view }
+        else { self = .announce }
     }
 }

@@ -207,7 +207,7 @@ import SwarmCore
         try await sendPayload(conversationID, payload: ["text": trimmed], format: "TEXT")
     }
     /// Signs, stores and (when a member is connected) sends one message; `cipher` adds the attachment manifest.
-    func sendPayload(_ conversationID: String, payload: JSON, format: String, cipher: (id: String, size: Int, hash: String)? = nil) async throws {
+    func sendPayload(_ conversationID: String, payload: JSON, format: String, cipher: (id: String, size: Int, hash: String)? = nil, threadRootID: String? = nil) async throws {
         guard let c = conversation(conversationID), c["joined"] as? Bool == true else { throw ChatRuleError("Join this channel before sending.") }
         let direct = c["type"] as? String == "DIRECT", peerID = c["peerId"] as? String
         if let peerID { try J.req(!blocked(peerID), "Unblock this person before sending.") }
@@ -220,7 +220,7 @@ import SwarmCore
         let sequence = ((store.get("chat-sequences", conversationID)?["value"] as? Int) ?? 0) + 1
         let observed = now()
         let envelope = try ChatDocuments.message(me, profile: profile, conversationID: conversationID, recipient: recipient, policy: p, channelKey: key,
-                                                 sequence: sequence, payload: payload, format: format, at: observed)
+                                                 sequence: sequence, payload: payload, format: format, threadRootID: threadRootID, at: observed)
         let id = try J.str(try J.obj(envelope, "body"), "id")
         if let cipher {
             let manifest = try ChatDocuments.attachmentManifest(me, profile: profile, envelope: envelope, attachmentID: cipher.id, cipherSize: cipher.size, cipherHash: cipher.hash)

@@ -145,19 +145,32 @@ struct ConversationView: View {
     @ObservedObject private var player = VoicePlayer.shared
     @State private var holding = false
     @State private var heardVoice: String?
+    @State private var thread: String?
     @Environment(\.scenePhase) private var phase
 
     var body: some View {
         let _ = chat.revision
         let conversation = chat.conversation(id)
-        let messages = chat.shown(in: id)
+        let all = chat.shown(in: id)
         let gone = chat.deletedForEveryone(in: id)
         let channel = conversation?["type"] as? String == "CHANNEL"
         let title = conversation?["title"] as? String ?? "Chat"
-        let canPost = conversation?["joined"] as? Bool == true && (!channel || chat.capabilities(id)?["canPostTopLevel"] == true)
+        let info = threads(all, channel: channel, conversation: conversation)
+        // Admin-post groups keep replies inside each post's thread; free chats and DMs also show replies inline with a quote.
+        let messages = thread == nil ? all.filter { chat.envelopeBody($0)["threadRootId"] == nil }
+            : all.filter { ($0["id"] as? String) == thread || info.roots[$0["id"] as? String ?? ""] == thread }
+        let canPost = thread != nil ? info.canReplyThreads : conversation?["joined"] as? Bool == true && (!channel || chat.capabilities(id)?["canPostTopLevel"] == true)
         VStack(spacing: 0) {
             NavigationLink { InfoView(chat: chat, nearby: nearby, id: id) } label: { header(title: title, channel: channel, conversation: conversation) }
                 .buttonStyle(.plain).accessibilityHint(channel ? "Opens group members and settings" : "Opens this person's options")
+            if let thread {
+                HStack(spacing: 8) {
+                    Button { self.thread = nil; replyTo = nil } label: { Image(systemName: "chevron.left").font(.headline) }.accessibilityLabel("Back to chat")
+                    let n = info.counts[thread] ?? 0
+                    Text("Thread · \(n) \(n == 1 ? "reply" : "replies")").font(Type.titleMedium).foregroundStyle(Palette.ink)
+                    Spacer()
+                }.padding(.horizontal, 16).padding(.vertical, 10).background(Palette.primaryContainer.opacity(0.5))
+            }
             Divider().overlay(Palette.outline)
             ScrollViewReader { proxy in
                 ScrollView {
@@ -165,13 +178,13 @@ struct ConversationView: View {
                         if messages.isEmpty {
                             EmptyState(title: channel ? "No posts yet" : "Say hello", text: "Messages are signed on this phone and delivered when you meet the other person or a member nearby.", icon: "text.bubble")
                         }
-                        ForEach(messages.indices, id: \.self) { i in bubble(messages[i], channel: channel, gone: gone, canPost: canPost).id(i) }
+                        ForEach(messages.indices, id: \.self) { i in bubble(messages[i], channel: channel, gone: gone, canPost: canPost, info: info).id(i) }
                     }.padding(16)
                 }
                 .onAppear { proxy.scrollTo(messages.count - 1, anchor: .bottom) }
                 .onChange(of: messages.count) { _ in withAnimation { proxy.scrollTo(messages.count - 1, anchor: .bottom) } }
             }
-            composer(conversation, canPost: canPost, channel: channel)
+            composer(conversation, canPost: canPost, channel: channel, threadRoot: info.announce ? thread : nil, info: info)
         }
         .background(Palette.background.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
@@ -246,7 +259,28 @@ struct ConversationView: View {
         }.padding(.horizontal, 16).padding(.vertical, 12).frame(maxWidth: .infinity, alignment: .leading).background(Palette.background).contentShape(Rectangle())
     }
 
-    @ViewBuilder func composer(_ conversation: JSON?, canPost: Bool, channel: Bool) -> some View {
+    struct Threads { let roots: [String: String]; let counts: [String: Int]; let announce: Bool; let canReplyThreads: Bool }
+    /// Telegram-style threads: each reply belongs to the top-level message it (transitively) answers.
+    func threads(_ all: [JSON], channel: Bool, conversation: JSON?) -> Threads {
+        let byID = Dictionary(all.map { ($0["id"] as? String ?? "", $0) }, uniquingKeysWith: { a, _ in a })
+        var roots: [String: String] = [:]
+        for m in all {
+            guard let mid = m["id"] as? String else { continue }
+            if let root = chat.envelopeBody(m)["threadRootId"] as? String { roots[mid] = root; continue }
+            guard var target = (m["payload"] as? JSON)?["replyTo"] as? String else { continue }
+            for _ in 0..<20 {
+                guard let t = byID[target] else { break }
+                guard let up = (chat.envelopeBody(t)["threadRootId"] as? String) ?? ((t["payload"] as? JSON)?["replyTo"] as? String) else { break }
+                target = up
+            }
+            roots[mid] = target
+        }
+        let announce = channel && ((chat.current(id)?["body"] as? JSON)?["settings"] as? JSON)?["mode"] as? String == "ANNOUNCEMENT"
+        let canReply = conversation?["joined"] as? Bool == true && (!channel || chat.capabilities(id)?[announce ? "canReplyInThreads" : "canPostTopLevel"] == true)
+        return Threads(roots: roots, counts: Dictionary(roots.values.map { ($0, 1) }, uniquingKeysWith: +), announce: announce, canReplyThreads: canReply)
+    }
+
+    @ViewBuilder func composer(_ conversation: JSON?, canPost: Bool, channel: Bool, threadRoot: String?, info: Threads) -> some View {
         if canPost {
             VStack(spacing: 8) {
                 if recorder.recording {
@@ -270,7 +304,7 @@ struct ConversationView: View {
                         Task {
                             do {
                                 guard let data = try await item.loadTransferable(type: Data.self), let image = UIImage(data: data) else { throw ChatRuleError("This photo could not be opened.") }
-                                try await chat.sendPhoto(id, image: image)
+                                try await chat.sendPhoto(id, image: image, threadRootID: threadRoot)
                             } catch { chat.notice = error.localizedDescription }
                         }
                     }
@@ -293,13 +327,13 @@ struct ConversationView: View {
                                 .onEnded { _ in
                                     holding = false
                                     guard let clip = recorder.stop() else { return }
-                                    Task { do { try await chat.sendVoice(id, clip: clip) } catch { chat.notice = error.localizedDescription } }
+                                    Task { do { try await chat.sendVoice(id, clip: clip, threadRootID: threadRoot) } catch { chat.notice = error.localizedDescription } }
                                 })
                             .accessibilityLabel("Hold to talk").accessibilityHint("Records while held and sends when released")
                     } else {
                     Button {
-                        let text = draft, reply = replyTo?["id"] as? String; draft = ""; replyTo = nil
-                        Task { do { try await chat.send(id, text: text, replyTo: reply) } catch { draft = text; chat.notice = error.localizedDescription } }
+                        let text = draft, reply = (replyTo?["id"] as? String) ?? thread; draft = ""; replyTo = nil
+                        Task { do { try await chat.send(id, text: text, replyTo: reply, threadRootID: threadRoot) } catch { draft = text; chat.notice = error.localizedDescription } }
                     } label: {
                         Image(systemName: "arrow.up").font(.system(size: 17, weight: .bold)).foregroundStyle(Palette.onPrimary)
                             .frame(width: 40, height: 40).background(Palette.primary.opacity(empty ? 0.4 : 1), in: Circle())
@@ -311,12 +345,13 @@ struct ConversationView: View {
             .overlay(alignment: .top) { Divider().overlay(Palette.outline) }
         } else {
             Text(conversation?["pendingJoin"] as? Bool == true ? "You can post after a group admin adds you."
-                 : conversation?["joined"] as? Bool == true && channel ? "Only group admins can post here." : "Sending is unavailable. Saved history remains here.")
+                 : conversation?["joined"] as? Bool == true && channel ? (info.announce && info.canReplyThreads ? "Only group admins post here. Tap Reply under a post to answer in its thread." : "Only group admins can post here.")
+                 : "Sending is unavailable. Saved history remains here.")
                 .font(Type.bodySmall).foregroundStyle(Palette.muted).padding(16).frame(maxWidth: .infinity).background(Palette.surface)
         }
     }
 
-    @ViewBuilder func bubble(_ r: JSON, channel: Bool, gone: Set<String>, canPost: Bool) -> some View {
+    @ViewBuilder func bubble(_ r: JSON, channel: Bool, gone: Set<String>, canPost: Bool, info: Threads) -> some View {
         let b = ((r["envelope"] as? JSON)?["body"] as? JSON) ?? [:]
         let messageID = r["id"] as? String ?? ""
         let mine = r["owned"] as? Bool == true
@@ -338,7 +373,7 @@ struct ConversationView: View {
                     Text(deleted ? "This message was deleted" : "Removed by a group admin").font(Type.bodyMedium).italic().foregroundStyle(Palette.muted)
                 } else {
                     if payload["forwarded"] as? Bool == true { Label("Forwarded", systemImage: "arrowshape.turn.up.right").font(Type.labelSmall).italic().foregroundStyle(Palette.muted) }
-                    if let quoted { ReplyQuote(chat: chat, message: chat.store.get("chat-messages", quoted), deleted: gone.contains(quoted)) }
+                    if let quoted, quoted != thread { ReplyQuote(chat: chat, message: chat.store.get("chat-messages", quoted), deleted: gone.contains(quoted)) }
                 }
                 if let image {
                     Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: 260, maxHeight: 300)
@@ -364,6 +399,13 @@ struct ConversationView: View {
                 }
                 if let text { Text(text).font(Type.bodyLarge).foregroundStyle(Palette.ink) }
                 Text(mine ? "\(when) · \(deliveryState(r))" : when).font(Type.labelSmall).foregroundStyle(Palette.muted)
+                // Telegram-style: replies open as a thread under the message they answer.
+                let count = info.counts[messageID] ?? 0
+                if thread == nil && !deleted && (count > 0 || (info.announce && info.canReplyThreads)) {
+                    Button { thread = messageID; replyTo = nil } label: {
+                        Text(count > 0 ? "\(count) \(count == 1 ? "reply" : "replies")" : "Reply").font(Type.label).foregroundStyle(Palette.primary)
+                    }.buttonStyle(.plain)
+                }
             }
             .padding(12)
             // Received posts are paper cards with a rule, so they read apart from your own tinted bubbles.
@@ -372,7 +414,9 @@ struct ConversationView: View {
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14))
             .contextMenu {
                 if !(deleted || hiddenByAdmin) {
-                    if canPost { Button { replyTo = r } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") } }
+                    if thread == nil && info.announce ? info.canReplyThreads : canPost {
+                        Button { if thread == nil && info.announce { thread = info.roots[messageID] ?? messageID }; replyTo = r } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
+                    }
                     if let text { Button { UIPasteboard.general.string = text } label: { Label("Copy", systemImage: "doc.on.doc") } }
                     if text != nil || image != nil { Button { forwarding = messageID } label: { Label("Forward", systemImage: "arrowshape.turn.up.right") } }
                     if let image { Button { UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil); chat.notice = "Saved to Photos." } label: { Label("Save", systemImage: "square.and.arrow.down") } }

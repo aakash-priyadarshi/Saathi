@@ -10,7 +10,7 @@ struct NewGroupSheet: View {
     @State private var name = ""
     @State private var inviteOnly = true
     @State private var approval = false
-    @State private var announcements = false
+    @State private var type = GroupType.free
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -21,10 +21,11 @@ struct NewGroupSheet: View {
                     choice("Invite only", "Encrypted. Only people you or your admins invite can read it.", inviteOnly) { inviteOnly = true }
                     choice("Open nearby", "Readable by members; people nearby can see it and ask to join.", !inviteOnly) { inviteOnly = false }
                     Toggle(isOn: $approval) { label("Admins approve new members", inviteOnly ? "Invitations wait for an admin's approval." : "Join requests wait for an admin.") }.tint(Palette.primary)
-                    Toggle(isOn: $announcements) { label("Announcements only", "Only admins and moderators post; everyone can reply in threads.") }.tint(Palette.primary)
+                    Text("Who can post").font(Type.titleMedium).foregroundStyle(Palette.ink).padding(.top, 4)
+                    ForEach(GroupType.allCases) { t in choice(t.title, t.detail, type == t) { type = t } }
                     Button("Create group") {
                         Task {
-                            do { let id = try await chat.createGroup(name: name, inviteOnly: inviteOnly, approval: approval, announcements: announcements); showing = false; opened(id) }
+                            do { let id = try await chat.createGroup(name: name, inviteOnly: inviteOnly, approval: approval, type: type); showing = false; opened(id) }
                             catch { chat.notice = error.localizedDescription }
                         }
                     }.buttonStyle(PrimaryButtonStyle()).disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -112,11 +113,13 @@ struct GroupInfoView: View {
                 }
                 if owner {
                     Text("Settings").font(Type.titleLarge).foregroundStyle(Palette.ink)
-                    let announcements = settings["mode"] as? String == "ANNOUNCEMENT"
+                    let type = GroupType(settings: settings)
                     let approval = ["APPROVAL_ONLY", "INVITE_PLUS_APPROVAL"].contains(settings["admission"] as? String ?? "")
-                    Toggle("Announcements only", isOn: Binding(get: { announcements }, set: { v in Task { do { try await chat.configure(id, announcements: v, approval: approval) } catch { chat.notice = error.localizedDescription } } }))
-                        .font(Type.bodyLarge).tint(Palette.primary)
-                    Toggle("Admins approve new members", isOn: Binding(get: { approval }, set: { v in Task { do { try await chat.configure(id, announcements: announcements, approval: v) } catch { chat.notice = error.localizedDescription } } }))
+                    Picker("Who can post", selection: Binding(get: { type }, set: { v in Task { do { try await chat.configure(id, type: v, approval: approval) } catch { chat.notice = error.localizedDescription } } })) {
+                        ForEach(GroupType.allCases) { Text($0.title).tag($0) }
+                    }.pickerStyle(.menu).font(Type.bodyLarge).tint(Palette.primary)
+                    Text(type.detail).font(Type.bodySmall).foregroundStyle(Palette.muted)
+                    Toggle("Admins approve new members", isOn: Binding(get: { approval }, set: { v in Task { do { try await chat.configure(id, type: type, approval: v) } catch { chat.notice = error.localizedDescription } } }))
                         .font(Type.bodyLarge).tint(Palette.primary)
                 }
                 Text("Removed people can't rejoin on their own; only an admin can add them back. Changes reach other phones as people meet.")
