@@ -122,6 +122,7 @@ struct GroupInfoView: View {
                     Toggle("Admins approve new members", isOn: Binding(get: { approval }, set: { v in Task { do { try await chat.configure(id, type: type, approval: v) } catch { chat.notice = error.localizedDescription } } }))
                         .font(Type.bodyLarge).tint(Palette.primary)
                 }
+                if caps["canModerate"] == true { moderation(policy: policy, members: members) }
                 Text("Removed people can't rejoin on their own; only an admin can add them back. Changes reach other phones as people meet.")
                     .font(Type.bodySmall).foregroundStyle(Palette.muted)
                 Button(owner ? "Delete group" : "Leave group") { confirmLeave = true }.font(Type.label).foregroundStyle(Palette.error)
@@ -141,6 +142,46 @@ struct GroupInfoView: View {
         } message: { Text(confirmMember?.action == "BAN" ? "They can't rejoin, even with an invitation, until an admin unbans them." : "They stop receiving new posts. Only an admin can add them back.") }
     }
 
+    /// Reports to review (they arrive with online sync) and recent changes by admins, with their status.
+    @ViewBuilder func moderation(policy: JSON?, members: [JSON]) -> some View {
+        let actions = chat.actions(id)
+        let reports = chat.store.all("chat-report-inbox").filter { r in
+            r["channelId"] as? String == id && !actions.contains { a in
+                let b = chat.body(a["envelope"] as? JSON ?? [:])
+                return b["action"] as? String == "REVIEW_REPORT" && b["targetId"] as? String == r["messageId"] as? String && (b["issuedAt"] as? String ?? "") >= (r["createdAt"] as? String ?? "")
+            }
+        }
+        Text("Reports to review · \(reports.count)").font(Type.titleLarge).foregroundStyle(Palette.ink)
+        if reports.isEmpty { Text("Reports from members arrive when Swarm is online.").font(Type.bodySmall).foregroundStyle(Palette.muted) }
+        ForEach(reports.indices, id: \.self) { i in
+            let r = reports[i], messageID = r["messageId"] as? String ?? "", held = chat.store.get("chat-messages", messageID)
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text((r["reason"] as? String ?? "Other").capitalized).font(Type.titleMedium).foregroundStyle(Palette.ink)
+                    Text(held.flatMap { ($0["payload"] as? JSON)?["text"] as? String } ?? (held == nil ? "Message not on this phone" : "Photo or voice message"))
+                        .font(Type.bodySmall).foregroundStyle(Palette.muted).lineLimit(2)
+                }
+                Spacer()
+                if held != nil && !chat.hidden(id, messageID) { Button("Remove") { act("HIDE_MESSAGE", messageID) }.buttonStyle(OutlineButtonStyle()) }
+                Button("Reviewed") { act("REVIEW_REPORT", messageID) }.buttonStyle(PrimaryButtonStyle()).disabled(held == nil)
+            }
+        }
+        let recent = Array(actions.filter { !["REACT", "UNREACT"].contains(chat.body($0["envelope"] as? JSON ?? [:])["action"] as? String ?? "") }.suffix(12).reversed())
+        if !recent.isEmpty {
+            Text("Recent changes").font(Type.titleLarge).foregroundStyle(Palette.ink)
+            ForEach(recent.indices, id: \.self) { i in
+                let row = recent[i], a = chat.body(row["envelope"] as? JSON ?? [:]), kind = a["action"] as? String ?? ""
+                let actor = ((a["actor"] as? JSON)?["body"] as? JSON)?["name"] as? String ?? "Someone"
+                let target = members.first { ChatRules.participant($0["profile"] as? JSON ?? [:]) == a["targetId"] as? String }.flatMap { (($0["profile"] as? JSON)?["body"] as? JSON)?["name"] as? String }
+                let verb = ["SET_ROLE": "changed the role of", "REMOVE": "removed", "BAN": "banned", "UNBAN": "unbanned", "APPROVE_JOIN": "approved", "REJECT_JOIN": "declined",
+                            "HIDE_MESSAGE": "removed a message", "RESTORE_MESSAGE": "restored a message", "REVIEW_REPORT": "reviewed a report",
+                            "LOCK_THREAD": "locked replies", "UNLOCK_THREAD": "unlocked replies"][kind] ?? kind.lowercased()
+                let state = row["rejected"] as? Bool == true ? "Not accepted" : row["serverSaved"] as? Bool == true ? "Confirmed" : "Waiting to reach the group creator"
+                Text("\(actor) \(verb)\(target.map { " \($0)" } ?? "")\(kind == "SET_ROLE" ? " → " + roleLabel(a["role"] as? String ?? "") : "") · \(timeLabel(a["issuedAt"] as? String ?? "")) · \(state)")
+                    .font(Type.bodySmall).foregroundStyle(Palette.muted)
+            }
+        }
+    }
     func name(of person: String) -> String {
         ((chat.store.get("chat-contacts", person)?["profile"] as? JSON).flatMap { ($0["body"] as? JSON)?["name"] as? String }) ?? String(person.prefix(12))
     }

@@ -4,9 +4,23 @@ import SwarmCore
 /// Online chat sync, ported from Android `ChatRepository.sync`: one signed CHAT_SYNC exchange with the Swarm server
 /// carries this phone's unsent messages, receipts, joins, actions and reports, and brings back what it missed.
 extension ChatEngine {
-    // ponytail: staging endpoint is fixed here; Android also verifies the signed service config before using it.
-    static let api = URL(string: "https://api.swarm.cockroachjantaparty.org/api/v1/chat/sync")!
-    static let webOrigin = "https://swarm.cockroachjantaparty.org"
+    // Staging service configuration, signed by the root key (Android's SAATHI_STAGING_CONFIG_* build values).
+    static let bootstrap = URL(string: "https://api.swarm.cockroachjantaparty.org/api/v1/sync/service-config")!
+    static let configRoot: JSON = ["kty": "EC", "crv": "P-256", "x": "LTpqRXn5h8YzeWHf0YU12JdyZZPk9WSrA2_OKsKL4Xg", "y": "0RRd7aDOmQ2la2nUdpQXn-jJkzjp5D4hiCLNKO2Z7Og"]
+
+    /// The verified service configuration: fetched fresh when possible (no rollback below the last trusted version),
+    /// otherwise the last trusted copy while it is still valid. Android's minimum version code gates Android only.
+    func serviceConfig() async throws -> JSON {
+        let cached = store.get("service", "config")?["config"] as? JSON
+        let verify = { (c: JSON) in try ServiceConfig.verify(c, root: Self.configRoot, environment: "staging", versionCode: 1_000_000,
+                                                             previous: cached, minimumVersion: cached.flatMap(ServiceConfig.version) ?? 1, now: self.now()) }
+        if let (data, response) = try? await URLSession.shared.data(from: Self.bootstrap), (response as? HTTPURLResponse)?.statusCode == 200,
+           data.count <= 65536, let fresh = try? JSONSerialization.jsonObject(with: data) as? JSON, (try? verify(fresh)) != nil {
+            try? store.put("service", "config", ["id": "config", "config": fresh]); return fresh
+        }
+        guard let cached else { throw ChatRuleError("Swarm's service information could not be verified.") }
+        return try verify(cached)
+    }
 
     func sync() async throws {
         guard hasProfile else { return }
@@ -60,11 +74,14 @@ extension ChatEngine {
         }
         for a in unsavedActions { if let envelope = a["envelope"] as? JSON, time(body(envelope)["expiresAt"]) > t { add("actions", envelope, 8) } }
 
-        var request = URLRequest(url: Self.api, timeoutInterval: 30)
+        let config = try await serviceConfig(), configBody = config["body"] as? JSON ?? [:]
+        guard let endpoint = ServiceConfig.apiEndpoints(config).first, let url = URL(string: (endpoint.hasSuffix("/") ? String(endpoint.dropLast()) : endpoint) + "/api/v1/chat/sync"),
+              let webOrigin = configBody["webOrigin"] as? String else { throw ChatRuleError("Swarm's service information is incomplete.") }
+        var request = URLRequest(url: url, timeoutInterval: 30)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue(Self.webOrigin, forHTTPHeaderField: "Origin") // the server only accepts writes from its own origin
+        request.setValue(webOrigin, forHTTPHeaderField: "Origin") // the server only accepts writes from its own origin
         request.setValue(UUID().uuidString.lowercased(), forHTTPHeaderField: "Idempotency-Key")
         request.setValue(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0", forHTTPHeaderField: "X-Swarm-App-Version")
         request.httpBody = try JSONSerialization.data(withJSONObject: try me.sign(req))
@@ -101,6 +118,11 @@ extension ChatEngine {
         }
         for id in strs("accepted") { if var m = store.get("chat-messages", id) { m["serverSaved"] = true; try? save("chat-messages", id, m) } }
         for id in strs("acceptedReports") { store.remove("chat-reports", id) }
+        // Reports for groups this phone moderates (the server sends the current list each time).
+        if let reports = r["reports"] as? [JSON] {
+            for old in store.all("chat-report-inbox") { store.remove("chat-report-inbox", old["id"] as? String ?? "") }
+            for x in reports.prefix(100) where capabilities(x["channelId"] as? String ?? "")?["canModerate"] == true { try? save("chat-report-inbox", x["id"] as? String ?? "", x) }
+        }
         for x in objs("rejected") {
             if let id = x["id"] as? String, var m = store.get("chat-messages", id) { m["attention"] = true; m["serverSaved"] = true; try? save("chat-messages", id, m) }
         }

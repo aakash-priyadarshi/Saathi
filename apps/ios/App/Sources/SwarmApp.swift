@@ -64,7 +64,9 @@ struct SwarmApp: App {
             }
             session.onConfirmed = { [weak chat] in await chat?.announce() }
             // A phone notification for each new message that arrives while Swarm is not on screen.
-            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+            if !UserDefaults.standard.bool(forKey: "SwarmNoAlerts") { // debug runs skip the prompt (simulator sync tests)
+                UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+            }
             chat.onIncoming = { [weak chat] record in
                 guard let chat, UIApplication.shared.applicationState != .active else { return }
                 let b = chat.envelopeBody(record), payload = record["payload"] as? JSON ?? [:]
@@ -88,7 +90,7 @@ struct SwarmApp: App {
             // Online sync while Swarm is open (Android checks every 30 seconds); offline it simply fails quietly.
             Task { [weak chat] in
                 while let chat {
-                    if UIApplication.shared.applicationState == .active { try? await chat.sync() }
+                    if UIApplication.shared.applicationState == .active { do { try await chat.sync() } catch { NSLog("Swarm: sync error %@", String(describing: error)) } }
                     try? await Task.sleep(nanoseconds: 20_000_000_000)
                 }
             }
