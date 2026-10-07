@@ -160,6 +160,7 @@ private fun AppState.threadLocked(id:String,root:String)=moderationFlag(id,root,
 private fun AppState.messageHidden(id:String,message:String)=moderationFlag(id,message,"HIDE_MESSAGE","RESTORE_MESSAGE","hiddenMessages")
 private fun AppState.channelReports(id:String)=chatReportInbox.filter{report->report.getString("channelId")==id && !channelActions(id).any{a->val b=a.getJSONObject("envelope").getJSONObject("body");b.getString("action")=="REVIEW_REPORT" && b.getString("targetId")==report.getString("messageId") && b.getString("issuedAt")>=report.getString("createdAt")}}
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable fun ConversationScreen(vm:SaathiViewModel,state:AppState,id:String,call:(Boolean,Boolean)->Unit,record:()->Unit,createNeed:(JSONObject)->Unit,openNeed:(String)->Unit,modifier:Modifier,onVisibleMessages:suspend (List<String>)->Unit={vm.readChat(id,it)}) {
     val conversation=state.conversations.firstOrNull {it.getString("id")==id}
     if(conversation==null){EmptyState("Conversation unavailable","Return to Chats and try again.",Icons.Outlined.ChatBubbleOutline);return}
@@ -255,23 +256,6 @@ private fun AppState.channelReports(id:String)=chatReportInbox.filter{report->re
                                 Text(timeLabel(body.getString("createdAt"))+if(owned)" · "+chatStatus(message) else "",style=MaterialTheme.typography.labelSmall,color=bubbleContentColor.copy(alpha=.78f))
                                 Box {
                                     IconButton(onClick={messageActionsId=messageId},modifier=Modifier.testTag("message-actions-$messageId")){Icon(Icons.Outlined.MoreVert,"More message actions")}
-                                    DropdownMenu(expanded=messageActionsId==messageId,onDismissRequest={messageActionsId=null}) {
-                                        if(payload.has("text"))DropdownMenuItem(text={Text("Copy message")},onClick={messageActionsId=null;clipboard.setText(AnnotatedString(payload.getString("text")))})
-                                        if(channel&&thread==null&&caps?.optBoolean("canReplyInThreads")==true&&!body.has("threadRootId"))DropdownMenuItem(text={Text("Reply in thread")},onClick={messageActionsId=null;thread=messageId;search="";followLatest=true})
-                                        if(attachment!=null){
-                                            if(attachmentComplete)DropdownMenuItem(text={Text("Save attachment")},onClick={messageActionsId=null;exportId=messageId;exporter.launch(attachment.getString("name"))},enabled=!state.busy)
-                                            if(attachmentComplete&&state.confirmed)DropdownMenuItem(text={Text("Share nearby")},onClick={messageActionsId=null;vm.shareChatAttachment(messageId)},enabled=!state.busy)
-                                            DropdownMenuItem(text={Text(if(attachmentComplete)"Check for updates" else "Download attachment")},onClick={messageActionsId=null;vm.syncChatAttachment(messageId)},enabled=!state.busy)
-                                        }
-                                        if(channel&&caps?.optBoolean("canReact")==true)DropdownMenuItem(text={Text(if(thankedByMe)"Remove thanks"else"Thank sender")},onClick={messageActionsId=null;vm.moderateChannel(id,if(thankedByMe)"UNREACT"else"REACT",messageId,reaction="THANKS")},enabled=!state.busy)
-                                        if(!owned&&!hidden&&payload.has("text"))DropdownMenuItem(text={Text("Create help request")},onClick={messageActionsId=null;helpMessage=message})
-                                        if(state.preparation!=null&&!hidden&&payload.has("text"))DropdownMenuItem(text={Text("Create need from message")},onClick={messageActionsId=null;createNeed(message)})
-                                        if(channel&&caps?.optBoolean("canModerate")==true){
-                                            if(!body.has("threadRootId"))DropdownMenuItem(text={Text(if(state.threadLocked(id,messageId))"Unlock replies"else"Lock replies")},onClick={messageActionsId=null;vm.moderateChannel(id,if(state.threadLocked(id,messageId))"UNLOCK_THREAD"else"LOCK_THREAD",messageId)},enabled=!state.busy)
-                                            DropdownMenuItem(text={Text(if(hidden)"Restore message"else"Hide message")},onClick={messageActionsId=null;vm.moderateChannel(id,if(hidden)"RESTORE_MESSAGE"else"HIDE_MESSAGE",messageId)},enabled=!state.busy)
-                                        }
-                                        if(!owned)DropdownMenuItem(text={Text("Report message")},onClick={messageActionsId=null;reportId=messageId})
-                                    }
                                 }
                             }
                             if(replies.isNotEmpty())TextButton(onClick={thread=messageId;search="";followLatest=true}){Text("${replies.size} replies")}
@@ -296,10 +280,44 @@ private fun AppState.channelReports(id:String)=chatReportInbox.filter{report->re
           }
         }
     }
+    allMessages.firstOrNull{it.getString("id")==messageActionsId}?.let{selected->
+        val selectedId=selected.getString("id")
+        val selectedBody=selected.getJSONObject("envelope").getJSONObject("body")
+        val selectedPayload=selected.getJSONObject("payload")
+        val selectedOwned=selected.optBoolean("owned")
+        val selectedHidden=state.messageHidden(id,selectedId)
+        val selectedAttachment=selectedPayload.optJSONObject("attachment")?.takeUnless{selectedHidden}
+        val selectedAttachmentComplete=selectedAttachment?.let{attachment->state.files.firstOrNull{it.getString("id")==attachment.getString("id")}?.optBoolean("complete")==true}==true
+        val selectedReactions=if(channel)state.channelActions(id).filter{it.getJSONObject("envelope").getJSONObject("body").let{action->action.getString("targetId")==selectedId&&action.getString("action") in listOf("REACT","UNREACT")}}else emptyList()
+        val selectedThankedByMe=selectedReactions.groupBy{ChatProtocol.participant(it.getJSONObject("envelope").getJSONObject("body").getJSONObject("actor"))}[state.chatProfile?.let{ChatProtocol.participant(it)}]?.last()?.getJSONObject("envelope")?.getJSONObject("body")?.getString("action")=="REACT"
+        ModalBottomSheet(onDismissRequest={messageActionsId=null},sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)){
+            Column(Modifier.fillMaxWidth().heightIn(max=560.dp).verticalScroll(rememberScrollState()).padding(horizontal=16.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){
+                Text("Message actions",Modifier.padding(start=8.dp,bottom=4.dp),style=MaterialTheme.typography.titleMedium)
+                if(selectedPayload.has("text"))MessageAction("Copy message",Icons.Outlined.ContentCopy){messageActionsId=null;clipboard.setText(AnnotatedString(selectedPayload.getString("text")))}
+                if(channel&&thread==null&&caps?.optBoolean("canReplyInThreads")==true&&!selectedBody.has("threadRootId"))MessageAction("Reply in thread",Icons.Outlined.ChatBubbleOutline){messageActionsId=null;thread=selectedId;search="";followLatest=true}
+                selectedAttachment?.let{attachment->
+                    if(selectedAttachmentComplete)MessageAction("Save attachment",Icons.Outlined.Save,enabled=!state.busy){messageActionsId=null;exportId=selectedId;exporter.launch(attachment.getString("name"))}
+                    if(selectedAttachmentComplete&&state.confirmed)MessageAction("Share nearby",Icons.Outlined.Share,enabled=!state.busy){messageActionsId=null;vm.shareChatAttachment(selectedId)}
+                    MessageAction(if(selectedAttachmentComplete)"Check for updates"else"Download attachment",Icons.Outlined.CloudDownload,enabled=!state.busy){messageActionsId=null;vm.syncChatAttachment(selectedId)}
+                }
+                if(channel&&caps?.optBoolean("canReact")==true)MessageAction(if(selectedThankedByMe)"Remove thanks"else"Thank sender",Icons.Outlined.VolunteerActivism,enabled=!state.busy){messageActionsId=null;vm.moderateChannel(id,if(selectedThankedByMe)"UNREACT"else"REACT",selectedId,reaction="THANKS")}
+                if(!selectedOwned&&!selectedHidden&&selectedPayload.has("text"))MessageAction("Create help request",Icons.Outlined.AddCircleOutline){messageActionsId=null;helpMessage=selected}
+                if(state.preparation!=null&&!selectedHidden&&selectedPayload.has("text"))MessageAction("Create need from message",Icons.Outlined.VolunteerActivism){messageActionsId=null;createNeed(selected)}
+                if(channel&&caps?.optBoolean("canModerate")==true){
+                    if(!selectedBody.has("threadRootId"))MessageAction(if(state.threadLocked(id,selectedId))"Unlock replies"else"Lock replies",Icons.Outlined.Lock,enabled=!state.busy){messageActionsId=null;vm.moderateChannel(id,if(state.threadLocked(id,selectedId))"UNLOCK_THREAD"else"LOCK_THREAD",selectedId)}
+                    MessageAction(if(selectedHidden)"Restore message"else"Hide message",Icons.Outlined.VisibilityOff,enabled=!state.busy){messageActionsId=null;vm.moderateChannel(id,if(selectedHidden)"RESTORE_MESSAGE"else"HIDE_MESSAGE",selectedId)}
+                }
+                if(!selectedOwned)MessageAction("Report message",Icons.Outlined.Flag){messageActionsId=null;reportId=selectedId}
+            }
+        }
+    }
     if(settings)ConversationSettings(vm,state,conversation,{settings=false})
     reportId?.let{messageId->ReportReason({reason->vm.reportChat(messageId,when(reason){"HARASSMENT"->"ABUSE";"UNSAFE"->"SAFETY";else->reason});reportId=null},{reportId=null})}
     helpMessage?.let{message->HelpComposer(vm,state,null,{helpMessage=null},message.getJSONObject("payload").optString("text"))}
     if(mentionPicker){val policy=state.chatPolicies.firstOrNull{it.getJSONObject("body").getString("id")==id};AlertDialog(onDismissRequest={mentionPicker=false},title={Text("Mention members")},text={Column(Modifier.heightIn(max=360.dp).verticalScroll(rememberScrollState())){policy?.getJSONObject("body")?.getJSONArray("members")?.objects()?.filter{it.isNull("removedAt")&&ChatProtocol.participant(it.getJSONObject("profile"))!=state.chatProfile?.let{p->ChatProtocol.participant(p)}}?.forEach{member->val person=member.getJSONObject("profile");val personId=ChatProtocol.participant(person);Row(verticalAlignment=Alignment.CenterVertically){Checkbox(personId in mentions,{selected->mentions=if(selected)(mentions+personId).distinct().take(8)else mentions-personId});Text(person.getJSONObject("body").getString("name"))}}}},confirmButton={TextButton(onClick={mentionPicker=false}){Text("Done")}})}
+}
+@Composable private fun MessageAction(label:String,icon:ImageVector,enabled:Boolean=true,onClick:()->Unit){
+    TextButton(onClick=onClick,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp),enabled=enabled){Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(16.dp)){Icon(icon,null);Text(label)}}
 }
 @Composable fun ChannelCreate(create:(String,String,String,String)->Unit,close:()->Unit,busy:Boolean){
     var name by rememberSaveable{mutableStateOf("")};var visibility by rememberSaveable{mutableStateOf("OPEN")}
