@@ -18,7 +18,7 @@ The web/API, browser offline foundation and native Android product use real Post
 
 [Download CJP Swarm Android QA v0.1.11](https://github.com/aakash-priyadarshi/Saathi/releases/tag/android-v0.1.11) and install `CJP-Swarm-Android-QA.apk`. This version renders dark chats on the app’s dark surface with brighter forest-green sent bubbles and warm amber received bubbles; the UI test checks the actual dark surface and both bubble colors. It includes inline photo thumbnails with a tap-to-enlarge preview, compact direction-colored light-mode bubbles, a compact-screen-safe message-actions sheet and approval-gated private-channel join links. The public pre-release is built and tested by GitHub Actions, signed with the persistent QA key, and uses staging services and test data. It is for testing, not production. The attached `.sha256` file lets you verify the APK before installing it. Future QA versions keep the same package and signing identity so Android can install them as updates.
 
-### Chat changes on `dev` (in the next QA release after v0.1.11)
+### Chat changes in 1.0.0 (Android and iPhone; the next QA release after v0.1.11)
 
 These are merged with the v0.1.11 dark-mode and photo work and apply to Android and the iPhone app alike:
 

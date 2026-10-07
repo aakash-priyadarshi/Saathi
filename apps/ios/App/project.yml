@@ -28,7 +28,7 @@ targets:
         DEVELOPMENT_TEAM: ""
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: YES
-        MARKETING_VERSION: "0.2.0"
+        MARKETING_VERSION: "1.0.0" # the same as Android
         CURRENT_PROJECT_VERSION: "2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # WiFiAware exists from iOS 26; weak-link it so the app still launches on iOS 16-25.
