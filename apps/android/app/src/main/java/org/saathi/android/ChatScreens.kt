@@ -23,6 +23,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -50,7 +52,16 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 fun chatPreview(message:JSONObject?):String {
     if(message==null)return "Start a conversation"
     val payload=message.getJSONObject("payload")
-    return payload.optString("text").ifBlank { payload.optJSONObject("reference")?.optString("title") ?: payload.optJSONObject("attachment")?.optString("name") ?: "Message" }
+    val format=message.optJSONObject("envelope")?.optJSONObject("body")?.optString("format")
+    return payload.optString("text").ifBlank {
+        payload.optJSONObject("reference")?.optString("title") ?: when(format) {
+            "PHOTO" -> "Photo"
+            "VIDEO" -> "Video"
+            "VOICE" -> "Voice note"
+            "FILE" -> "Attachment"
+            else -> "Message"
+        }
+    }
 }
 
 private fun admissionState(conversation:JSONObject):String?=when(conversation.optString("joinStatus")){
@@ -181,6 +192,7 @@ fun threadRoot(m:JSONObject,byId:Map<String,JSONObject>):String?{
 fun AppState.shownMessages(conversationId:String)=chatMessages.filter{it.body().getString("conversationId")==conversationId && !it.getJSONObject("payload").has("deletes") && it.getString("id") !in chatDeleted}
     .sortedWith(compareBy<JSONObject>{it.body().getString("createdAt")}.thenBy{it.getString("id")})
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable fun ConversationScreen(vm:SaathiViewModel,state:AppState,id:String,call:(Boolean,Boolean)->Unit,record:()->Unit,createNeed:(JSONObject)->Unit,openNeed:(String)->Unit,modifier:Modifier,onVisibleMessages:suspend (List<String>)->Unit={vm.readChat(id,it)}) {
     val conversation=state.conversations.firstOrNull {it.getString("id")==id}
     if(conversation==null){EmptyState("Conversation unavailable","Return to Chats and try again.",Icons.Outlined.ChatBubbleOutline);return}
@@ -259,30 +271,40 @@ fun AppState.shownMessages(conversationId:String)=chatMessages.filter{it.body().
                 var menu by remember{mutableStateOf(false)};val haptics=LocalHapticFeedback.current
                 val attachment=payload.optJSONObject("attachment")?.takeIf{!deleted&&!hidden};val file=attachment?.let{a->state.files.firstOrNull{it.getString("id")==a.getString("id")}};val complete=file?.optBoolean("complete")==true
                 Row(Modifier.fillMaxWidth().animateItem(fadeInSpec=tween(140),placementSpec=null,fadeOutSpec=null),horizontalArrangement=if(owned)Arrangement.End else Arrangement.Start){
-                    Box{
+                    Box(Modifier.testTag("message-$messageId")){
                         // Bubbles fit their content, with a tail corner on the sender's side; time and status sit bottom-right.
                         val format=body.getString("format");val shape=RoundedCornerShape(topStart=16.dp,topEnd=16.dp,bottomStart=if(owned)16.dp else 4.dp,bottomEnd=if(owned)4.dp else 16.dp)
-                        val bubbleColor=if(messageId==highlight)MaterialTheme.colorScheme.tertiaryContainer else if(owned)MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-                        Surface(Modifier.widthIn(min=96.dp,max=300.dp).testTag("message-$messageId").combinedClickable(onClick={if(attachment!=null&&!complete)vm.syncChatAttachment(messageId) else if(attachment!=null&&format!="VOICE")viewing=messageId},onLongClick={haptics.performHapticFeedback(HapticFeedbackType.LongPress);menu=true},onLongClickLabel="Message options"),shape=shape,color=bubbleColor,border=if(owned)null else BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)){
+                        // Aakash's dark-mode palette and contrast: green for sent, amber for received, light text in dark mode.
+                        val darkTheme=MaterialTheme.colorScheme.background.luminance()<.5f
+                        val bubbleColor=when{
+                            messageId==highlight->MaterialTheme.colorScheme.tertiaryContainer
+                            darkTheme&&owned->Color(0xff3e765d)
+                            darkTheme->Color(0xff806740)
+                            owned->MaterialTheme.colorScheme.primaryContainer
+                            else->MaterialTheme.colorScheme.secondaryContainer
+                        }
+                        val bubbleContentColor=if(darkTheme)Color(0xfff7f4e8) else if(owned)MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
+                        Surface(Modifier.widthIn(min=96.dp,max=300.dp).testTag(if(owned)"chat-bubble-sent-$messageId" else "chat-bubble-received-$messageId").combinedClickable(onClick={if(attachment!=null&&!complete)vm.syncChatAttachment(messageId) else if(attachment!=null&&format!="VOICE"&&format!="PHOTO")viewing=messageId},onLongClick={haptics.performHapticFeedback(HapticFeedbackType.LongPress);menu=true},onLongClickLabel="Message options"),shape=shape,color=bubbleColor,contentColor=bubbleContentColor){
                             Column(Modifier.width(IntrinsicSize.Max).padding(horizontal=12.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){
-                                if(channel&&!owned)Text(body.getJSONObject("author").getJSONObject("body").getString("name"),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
-                                if(deleted||hidden)Text(if(deleted)"This message was deleted" else "Removed by a group admin",style=MaterialTheme.typography.bodyMedium,fontStyle=FontStyle.Italic,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                                if(channel&&!owned)Text(body.getJSONObject("author").getJSONObject("body").getString("name"),style=MaterialTheme.typography.labelLarge,color=bubbleContentColor,fontWeight=FontWeight.SemiBold)
+                                if(deleted||hidden)Text(if(deleted)"This message was deleted" else "Removed by a group admin",style=MaterialTheme.typography.bodyMedium,fontStyle=FontStyle.Italic,color=bubbleContentColor.copy(alpha=.78f))
                                 else {
-                                    if(payload.optBoolean("forwarded"))Text("Forwarded",style=MaterialTheme.typography.labelSmall,fontStyle=FontStyle.Italic,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                                    if(payload.optBoolean("forwarded"))Text("Forwarded",style=MaterialTheme.typography.labelSmall,fontStyle=FontStyle.Italic,color=bubbleContentColor.copy(alpha=.78f))
                                     (payload.optString("replyTo").ifEmpty{null}?:body.optString("threadRootId").ifEmpty{null})?.takeIf{it!=thread}?.let{q->ReplyQuote(byId[q],q in gone){jump(q)}}
                                     payload.optJSONObject("reference")?.let {r->Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Outlined.VolunteerActivism,null);TextButton(onClick={if(r.getString("type")=="NEED")openNeed(r.getString("id")) else vm.notice("Find this public update in Updates and check its latest status.")}){Text(r.getString("title"))}}}
                                     attachment?.let{a->
                                         val progress=state.transfers[a.getString("id")]
                                         when{
-                                            complete&&format=="PHOTO"->Box(Modifier.width(240.dp).heightIn(min=120.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),contentAlignment=Alignment.Center){PrivatePhoto(vm,messageId)}
-                                            complete&&format=="VOICE"->VoiceBubble(vm,messageId,MaterialTheme.colorScheme.primary)
+                                            // Photos: Aakash's verified preview (loading/unavailable states, tap to enlarge) in a fixed-width tile.
+                                            complete&&format=="PHOTO"->Box(Modifier.width(240.dp)){PrivatePhoto(vm,messageId,true){haptics.performHapticFeedback(HapticFeedbackType.LongPress);menu=true}}
+                                            complete&&format=="VOICE"->VoiceBubble(vm,messageId,bubbleContentColor)
                                             complete&&format=="VIDEO"->VideoTile(a.getLong("size"))
                                             else->Row(horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=Alignment.CenterVertically){
                                                 Surface(Modifier.size(40.dp),shape=CircleShape,color=MaterialTheme.colorScheme.secondaryContainer){Box(contentAlignment=Alignment.Center){Icon(when(format){"PHOTO"->Icons.Outlined.Image;"VIDEO"->Icons.Outlined.Movie;"VOICE"->Icons.Outlined.Mic;else->Icons.Outlined.Description},null)}}
                                                 Column(verticalArrangement=Arrangement.spacedBy(4.dp)){
                                                     val kind=when(format){"PHOTO"->"Photo";"VIDEO"->"Video";"VOICE"->"Voice message";else->a.getString("name")}
                                                     Text(if(complete)kind else if(progress!=null)"$kind · ${(progress*100).toInt()}%" else if(owned)kind else "$kind · arrives when the sender is nearby",style=MaterialTheme.typography.bodyMedium,maxLines=2,overflow=TextOverflow.Ellipsis)
-                                                    Text(fileSize(a.getLong("size"))+if(complete&&format=="FILE")" · tap to open" else "",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                                                    Text(fileSize(a.getLong("size"))+if(complete&&format=="FILE")" · tap to open" else "",style=MaterialTheme.typography.labelSmall,color=bubbleContentColor.copy(alpha=.78f))
                                                     if(progress!=null&&!complete)LinearProgressIndicator({progress},Modifier.width(160.dp))
                                                 }
                                             }
@@ -291,10 +313,10 @@ fun AppState.shownMessages(conversationId:String)=chatMessages.filter{it.body().
                                     if(payload.has("text"))Text(payload.getString("text"),style=MaterialTheme.typography.bodyLarge)
                                 }
                                 Text(java.time.format.DateTimeFormatter.ofPattern("h:mm a").withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.parse(body.getString("createdAt")))+if(owned)" · "+bubbleStatus(message) else "",
-                                    Modifier.align(Alignment.End),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Modifier.align(Alignment.End),style=MaterialTheme.typography.labelSmall,color=bubbleContentColor.copy(alpha=.78f))
                                 // Telegram-style: replies open as a thread under the message they answer.
                                 val count=replyCounts[messageId]?:0
-                                if(thread==null&&!deleted&&(count>0||(announce&&canReplyThreads))){HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant);Text(if(count>0)"$count ${if(count==1)"reply" else "replies"}" else "Reply",Modifier.fillMaxWidth().clickable{thread=messageId;replyTo=null;followLatest=true}.padding(vertical=2.dp),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)}
+                                if(thread==null&&!deleted&&(count>0||(announce&&canReplyThreads))){HorizontalDivider(color=bubbleContentColor.copy(alpha=.2f));Text(if(count>0)"$count ${if(count==1)"reply" else "replies"}" else "Reply",Modifier.fillMaxWidth().clickable{thread=messageId;replyTo=null;followLatest=true}.padding(vertical=2.dp),style=MaterialTheme.typography.labelLarge,color=bubbleContentColor,fontWeight=FontWeight.SemiBold)}
                             }
                         }
                         MessageMenu(menu,{menu=false},deleted=deleted||hidden,text=payload.optString("text").ifEmpty{null},canReply=if(thread==null&&announce)canReplyThreads else canPost,canForward=payload.has("text")||complete,canSave=complete,owned=owned,
