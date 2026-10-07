@@ -12,6 +12,8 @@ jobs:
   android:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      qa_ready: ${{ steps.qa-signing.outputs.ready }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -40,7 +42,7 @@ jobs:
           script: ./gradlew :app:connectedDebugAndroidTest --no-daemon
       - name: Prepare persistent QA signer
         id: qa-signing
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.SAATHI_STAGING_CONFIG_ROOT_PUBLIC_JWK != '' && vars.SAATHI_STAGING_CONFIG_BOOTSTRAP != ''
+        if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/android-v')) && github.event_name != 'pull_request' && vars.SAATHI_STAGING_CONFIG_ROOT_PUBLIC_JWK != '' && vars.SAATHI_STAGING_CONFIG_BOOTSTRAP != ''
         env:
           QA_KEYSTORE_BASE64: ${{ secrets.SAATHI_QA_KEYSTORE_BASE64 }}
           QA_STORE_PASSWORD: ${{ secrets.SAATHI_QA_STORE_PASSWORD }}
@@ -65,6 +67,13 @@ jobs:
           SAATHI_QA_KEY_ALIAS: ${{ secrets.SAATHI_QA_KEY_ALIAS }}
           SAATHI_QA_KEY_PASSWORD: ${{ secrets.SAATHI_QA_KEY_PASSWORD }}
         run: ./gradlew :app:assembleStaging :app:lintStaging :app:testStagingUnitTest --no-daemon
+      - name: Match Android version to release tag
+        if: startsWith(github.ref, 'refs/tags/android-v')
+        working-directory: apps/android
+        run: |
+          version=$(sed -n "s/^[[:space:]]*versionName '\([^']*\)'/\1/p" app/build.gradle | head -n 1)
+          tag_version="${GITHUB_REF_NAME#android-v}"
+          test "$version" = "$tag_version" || { echo "Tag $tag_version does not match app version $version"; exit 1; }
       - uses: actions/upload-artifact@v4
         if: steps.qa-signing.outputs.ready == 'true'
         with:
@@ -80,3 +89,28 @@ jobs:
           name: android-verification-reports
           path: apps/android/app/build/reports/
           retention-days: 7
+  publish-qa-release:
+    if: startsWith(github.ref, 'refs/tags/android-v') && needs.android.outputs.qa_ready == 'true'
+    needs: android
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: saathi-android-qa
+          path: dist
+      - name: Publish public QA pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apk='dist/app-staging.apk'
+          public_apk='dist/CJP-Swarm-Android-QA.apk'
+          test -s "$apk"
+          cp "$apk" "$public_apk"
+          sha256sum "$public_apk" > "$public_apk.sha256"
+          gh release create "$GITHUB_REF_NAME" "$public_apk" "$public_apk.sha256" \
+            --title "CJP Swarm Android QA $GITHUB_REF_NAME" \
+            --prerelease \
+            --notes "Public staging build for testers. Package: org.saathi.android.qa. Uses the staging service and test data; not for production. Verify the APK with the attached SHA-256 file."

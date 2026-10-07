@@ -71,9 +71,9 @@ class ChannelGovernanceStoreTest {
         val vm=SaathiViewModel(app,namespace,false)
         try{
             val identity=ChatProtocol.participant(vm.chat.profile())
-            vm.preference("appearance","DARK");vm.preference("relay","WIFI");vm.preference("dailyLimitMiB",25)
+            vm.preference("appearance","DARK");vm.preference("relay","WIFI");vm.preference("dailyLimitMB",1500)
             assertEquals("DARK",vm.state.value.preferences.getString("appearance"))
-            withTimeout(5000){while(vm.preferences().optInt("dailyLimitMiB")!=25 || vm.preferences().optString("appearance")!="DARK" || vm.preferences().optString("relay")!="WIFI")delay(25)}
+            withTimeout(5000){while(vm.preferences().optInt("dailyLimitMB")!=1500 || vm.preferences().optString("appearance")!="DARK" || vm.preferences().optString("relay")!="WIFI")delay(25)}
             val reopened=Repository(app,namespace)
             try{assertEquals("DARK",reopened.store.get("preferences","local")!!.getString("appearance"));assertEquals(identity,ChatProtocol.participant(reopened.store.get("chat","profile")!!))}finally{reopened.store.close()}
             vm.preference("appearance","LIGHT");assertEquals("LIGHT",vm.state.value.preferences.getString("appearance"));vm.preference("appearance","SYSTEM");assertEquals("SYSTEM",vm.state.value.preferences.getString("appearance"))
