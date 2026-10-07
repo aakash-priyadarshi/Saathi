@@ -151,15 +151,14 @@ export class RequestsService {
       return { ok: true };
     });
   }
-  /** Marks attached media approved and publishes whatever has finished processing. */
-  async attachApproved(tx: Prisma.TransactionClient, ids: string[]) {
+  /** Keep attached derivatives private until an administrator approves the field update. */
+  async holdForReview(tx: Prisma.TransactionClient, ids: string[]) {
     await tx.mediaAsset.updateMany({
       where: { id: { in: ids } },
-      data: { moderation: 'APPROVED' },
+      data: { moderation: 'PENDING' },
     });
-    await this.media.publishReady(tx, ids);
   }
-  /** Anyone can share photos/videos; posts are labelled unverified and need no approval. */
+  /** Guest posts are unverified and stay out of the public feed until admin review. */
   async publishGuest(
     ownerId: string,
     input: { caption: string; area: string; contentWarning: boolean; mediaIds: string[] },
@@ -182,12 +181,11 @@ export class RequestsService {
           participantName: 'Guest',
           publicArea: input.area,
           contentWarning: input.contentWarning,
-          moderation: 'APPROVED',
-          publishedAt: new Date(),
+          moderation: 'PENDING',
           media: { connect: assets.map((a) => ({ id: a.id })) },
         },
       });
-      await this.attachApproved(
+      await this.holdForReview(
         tx,
         assets.map((a) => a.id),
       );
@@ -238,12 +236,12 @@ export class RequestsService {
         reliefPointId: point.id,
         requestId,
         publishAt: input.publishAt ? new Date(input.publishAt) : new Date(),
-        // No approval step: posts and their media are public once media is sanitized.
-        moderation: 'APPROVED',
+        // Sanitized derivatives remain private until an administrator approves the post.
+        moderation: 'PENDING',
         media: { connect: assets.map((a) => ({ id: a.id })) },
       },
     });
-    await this.attachApproved(
+    await this.holdForReview(
       tx,
       assets.map((a) => a.id),
     );

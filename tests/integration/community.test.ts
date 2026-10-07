@@ -206,7 +206,7 @@ describe('Participant help and report publication on PostgreSQL', () => {
     expect((await sync(author, [reopen])).rejected).toHaveLength(1);
     expect(await db.reliefRequest.count({ where: { creatorId: author.profile.body.id } })).toBe(0);
   });
-  it('deduplicates competing carriers, preserves report author/time, publishes without approval and authenticates receipts', async () => {
+  it('deduplicates reports, keeps them private pending admin review, then publishes signed receipts', async () => {
     const author = await chatPerson('Original reporter'),
       b = await chatPerson('Carrier B'),
       d = await chatPerson('Carrier D');
@@ -231,7 +231,22 @@ describe('Participant help and report publication on PostgreSQL', () => {
     expect(post.participantName).toBe('Original reporter');
     expect(post.createdAt.toISOString()).toBe(createdAt);
     expect(post.receivedAt.getTime()).toBeGreaterThan(Date.parse(createdAt));
-    expect(post.moderation).toBe('APPROVED');
+    expect(post.moderation).toBe('PENDING');
+    expect((await new PublicReadService(db).feed()).some((p) => p.id === report.body.id)).toBe(
+      false,
+    );
+    expect(
+      (await app.get(ManagementService).moderation(admin)).find((p) => p.id === post.id),
+    ).toMatchObject({ moderation: 'PENDING', participantName: 'Original reporter' });
+    const pending = await sync(b, [], [report.body.id]);
+    expect(
+      pending.receipts.find((r: { body: { eventId: string } }) => r.body.eventId === report.body.id)
+        .body.status,
+    ).toBe('ACCEPTED');
+    await app.get(ManagementService).moderate(admin, post.id, 'APPROVED');
+    expect(
+      await db.communityEvent.findUniqueOrThrow({ where: { id: report.body.id } }),
+    ).toMatchObject({ moderation: 'APPROVED' });
     const published = (await new PublicReadService(db).feed()).find(
       (p) => p.id === report.body.id,
     )!;
@@ -266,7 +281,7 @@ describe('Participant help and report publication on PostgreSQL', () => {
       (await db.fieldUpdate.findUniqueOrThrow({ where: { id: report.body.id } })).moderation,
     ).toBe('HIDDEN');
   });
-  it('resumes signed derivative chunks, rejects altered parts, sanitizes again and publishes one asset', async () => {
+  it('keeps relayed media private until moderation, resumes chunks and publishes only after approval', async () => {
     const author = await chatPerson('Photo author'),
       carrier = await chatPerson('Photo carrier');
     const raw = await sharp({
@@ -305,11 +320,18 @@ describe('Participant help and report publication on PostgreSQL', () => {
     ).toBe(true);
     const asset = await db.mediaAsset.findUniqueOrThrow({ where: { id } });
     expect(asset.processingState).toBe('READY');
+    expect(asset.moderation).toBe('PENDING');
     const sanitized = await app.get(S3Storage).readPrivate(asset.publicKey!);
     expect((await sharp(sanitized).metadata()).exif).toBeUndefined();
+    await expect(app.get(S3Storage).readPublic(asset.publicKey!)).rejects.toThrow();
+    expect((await new PublicReadService(db).feed()).some((p) => p.id === report.body.id)).toBe(
+      false,
+    );
+    await app.get(ManagementService).moderate(admin, report.body.id, 'APPROVED');
     expect(
       (await new PublicReadService(db).feed()).find((p) => p.id === report.body.id)!.media,
     ).toHaveLength(1);
+    expect((await app.get(S3Storage).readPublic(asset.publicKey!)).length).toBeGreaterThan(0);
     const large = Buffer.concat([raw, Buffer.alloc(9000)]);
     const second = await communityEvent(author, 'REPORT', {
       caption: 'Fictional transfer test',

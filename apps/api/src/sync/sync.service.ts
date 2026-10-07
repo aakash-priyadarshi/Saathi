@@ -320,14 +320,18 @@ export class SyncService {
           });
           if (point?.organizationId !== body.organizationId) throw new ForbiddenException();
           fieldId = (await this.requests.publishIn(tx, author, body.payload)).id;
-          published = !body.payload.publishAt || Date.parse(body.payload.publishAt) <= Date.now();
+          // A server receipt means the report is safely stored. It is not public
+          // until an administrator approves it (and any schedule has elapsed).
+          published = false;
         }
         const accepted = await this.receipt(
           envelope,
           published ? 'PUBLISHED' : 'ACCEPTED',
           published
             ? 'Published on Saathi.'
-            : 'Reached Saathi. It will appear at the scheduled time.',
+            : fieldId
+              ? 'Received online; awaiting administrator review.'
+              : 'Reached Saathi. It will appear at the scheduled time.',
           publicId,
           fieldId,
         );
@@ -458,12 +462,16 @@ export class SyncService {
         post.organization?.active === true &&
         post.organization.verified;
       const rejected = ['REJECTED', 'HIDDEN'].includes(post.moderation);
-      if ((!visible && !rejected) || (visible && previous.body.status === 'PUBLISHED'))
-        return previous;
+      const status = visible ? 'PUBLISHED' : rejected ? 'REJECTED' : 'ACCEPTED';
+      if (status === previous.body.status) return previous;
       const receipt = await this.receipt(
         record.envelope as unknown as Envelope,
-        visible ? 'PUBLISHED' : 'REJECTED',
-        visible ? 'Published on Saathi.' : 'This field update did not pass moderation.',
+        status,
+        visible
+          ? 'Published on Saathi.'
+          : rejected
+            ? 'This field update did not pass moderation.'
+            : 'Received online; awaiting administrator review or its scheduled time.',
         previous.body.publicId,
         post.id,
       );
@@ -521,15 +529,22 @@ export class SyncService {
         throw new BadRequestException(
           'Media must belong to the original author, not have failed processing, and not already be attached.',
         );
+      // Re-review the whole update as one publication unit. Previously public
+      // derivatives must be withdrawn until the new attachment is approved too.
+      await this.media.publication(post.media, false);
       await tx.fieldUpdate.update({
         where: { id: post.id },
-        data: { media: { connect: assets.map((a) => ({ id: a.id })) } },
+        data: {
+          media: { connect: assets.map((a) => ({ id: a.id })) },
+          moderation: 'PENDING',
+          publishedAt: null,
+        },
       });
-      await this.requests.attachApproved(tx, newIds);
+      await this.requests.holdForReview(tx, [...post.media.map((asset) => asset.id), ...newIds]);
       const receipt = await this.receipt(
         record.envelope as unknown as Envelope,
-        previous.body.status,
-        'Media reached Saathi. It appears on the update once processing finishes.',
+        'ACCEPTED',
+        'Media reached Saathi and the update is queued for administrator review.',
         previous.body.publicId,
         post.id,
       );

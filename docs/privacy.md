@@ -3,7 +3,8 @@
 Ordinary Android participants can explicitly create signed public Help and
 unverified text/photo/video reports. These disclose the chosen public name,
 stable participant fingerprint, public landmark, narrative, creation time and
-sanitized media to recipients and website viewers (no approval step). The stable
+sanitized media to nearby recipients. When reports reach the server, they remain
+outside the public feed until an administrator approves them. The stable
 fingerprint makes posts linkable and supports personal blocking. Carriers retain
 the original author's statement; being a carrier does not make them its author.
 Participant publication does not disclose private chat or confer volunteer
@@ -27,9 +28,9 @@ Public responses include display names, organization names, designated receiving
 
 Donor email is optional and used only for requested transaction notifications. Public browsing requires no permanent account. A private tracking token is a capability, not an identity check. Staff delivery views omit donor email and tracking tokens. Audit snapshots for public requests contain public fields, not authentication secrets. Order IDs and delivery notes are operational private data; define a retention period and restricted staff access before deployment.
 
-EXIF/GPS/device metadata is removed from image derivatives. Video files are re-encoded with metadata and chapter removal. Originals remain private. Sanitized derivatives are copied to the public bucket as soon as processing finishes, without approval; hiding removes public objects. No static media can guarantee anonymity if people, documents, landmarks, or addresses are visible in its pixels. Volunteers must review the visual content. Automatic face blur remains an explicit future feature.
+EXIF/GPS/device metadata is removed from image derivatives. Video files are re-encoded with metadata and chapter removal. Originals and sanitized derivatives remain private until a coordinator or admin approves the attached field update. Approval publishes the sanitized derivative; rejection or hiding removes public objects. No static media can guarantee anonymity if people, documents, landmarks, or addresses are visible in its pixels. Contributors must review the visual content. Automatic face blur remains an explicit future feature.
 
-Verified volunteer posts remain attributed to approved volunteers; ordinary participant and guest reports are separately labeled unverified. Posts and their media publish without approval. Coordinators can hide their organization's posts and admins can hide any post, cancel requests, and suspend volunteers. Admins can deactivate organizations, review abuse reports and read the audit trail. Every moderation state change is audited. Hiding attempts to remove public files; prior downloads, screenshots and uncontrolled caches cannot be recalled. Production must use no-store or short caching and support cache invalidation.
+Verified volunteer posts remain attributed to approved volunteers; ordinary participant and guest reports are separately labeled unverified. Every field post begins pending and its media stays private until a coordinator or admin approves it. Coordinators can moderate their organization's posts; admins can moderate any post, cancel requests, and suspend volunteers. Admins can deactivate organizations, review abuse reports and read the audit trail. Every moderation state change is audited. Hiding attempts to remove public files; prior downloads, screenshots and uncontrolled caches cannot be recalled. Production must use no-store or short caching and support cache invalidation.
 
 The initial implementation records a public location string rather than harvesting device GPS. It has no advertising, third-party analytics, SMS or payment processing. Local/demo records are prominently identified. Prior to a live deployment, publish an operator-specific privacy notice with contact, jurisdiction, retention, access/deletion procedures and incident response. Historical relief/audit records require a defensible retention policy; do not silently erase their verification history.
 

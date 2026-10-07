@@ -197,12 +197,7 @@ struct ConversationView: View {
             }.padding(.leading, 4).background(Palette.background)
             Divider().overlay(Palette.outline)
             if let thread {
-                HStack(spacing: 8) {
-                    Button { self.thread = nil; replyTo = nil } label: { Image(systemName: "chevron.left").font(.headline) }.accessibilityLabel("Back to chat")
-                    let n = info.counts[thread] ?? 0
-                    Text("Thread · \(n) \(n == 1 ? "reply" : "replies")").font(Type.titleMedium).foregroundStyle(Palette.ink)
-                    Spacer()
-                }.padding(.horizontal, 16).padding(.vertical, 10).background(Palette.primaryContainer.opacity(0.5))
+                threadHeader(replyCount: info.counts[thread] ?? 0)
             }
             // Pinned messages: tap one to scroll to it and flash it, like a quote.
             if !pins.isEmpty {
@@ -222,7 +217,9 @@ struct ConversationView: View {
                         if messages.isEmpty {
                             EmptyState(title: channel ? "No posts yet" : "Say hello", text: "Messages are signed on this phone and delivered when you meet the other person or a member nearby.", icon: "text.bubble")
                         }
-                        ForEach(messages.indices, id: \.self) { i in bubble(messages[i], channel: channel, gone: gone, canPost: canPost, info: info, pinned: pinned).id(messages[i]["id"] as? String ?? "\(i)") }
+                        ForEach(messages.indices, id: \.self) { index in
+                            messageRow(messages[index], index: index, channel: channel, gone: gone, canPost: canPost, info: info, pinned: pinned)
+                        }
                     }.padding(16)
                 }
                 .onAppear { proxy.scrollTo(messages.last?["id"] as? String ?? "", anchor: .bottom) }
@@ -230,14 +227,7 @@ struct ConversationView: View {
                 // Tapping a quote scrolls to the quoted message (opening its thread when it lives in one) and flashes it.
                 .onChange(of: jumpTo) { target in
                     guard let target else { return }
-                    if !messages.contains(where: { $0["id"] as? String == target }) {
-                        if all.contains(where: { $0["id"] as? String == target }) { thread = info.roots[target]; Task { try? await Task.sleep(nanoseconds: 300_000_000); jumpTo = nil; jumpTo = target } }
-                        else { chat.notice = "The quoted message is not on this phone."; jumpTo = nil }
-                        return
-                    }
-                    withAnimation { proxy.scrollTo(target, anchor: .center) }
-                    highlight = target; jumpTo = nil
-                    Task { try? await Task.sleep(nanoseconds: 1_500_000_000); withAnimation { highlight = nil } }
+                    jumpToMessage(target, proxy: proxy, visibleMessages: messages, allMessages: all, roots: info.roots)
                 }
             }
             composer(conversation, canPost: canPost, channel: channel, threadRoot: info.announce ? thread : nil, info: info)
@@ -285,6 +275,56 @@ struct ConversationView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { _ in Text("A report requests review; it does not remove copies from other phones.") }
+    }
+
+    private func threadHeader(replyCount: Int) -> some View {
+        let replyLabel = replyCount == 1 ? "reply" : "replies"
+        return HStack(spacing: 8) {
+            Button { thread = nil; replyTo = nil } label: { Image(systemName: "chevron.left").font(.headline) }
+                .accessibilityLabel("Back to chat")
+            Text("Thread · \(replyCount) \(replyLabel)")
+                .font(Type.titleMedium)
+                .foregroundStyle(Palette.ink)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Palette.primaryContainer.opacity(0.5))
+    }
+
+    private func messageRow(_ message: JSON, index: Int, channel: Bool, gone: Set<String>, canPost: Bool, info: Threads, pinned: Set<String>) -> some View {
+        let messageID = message["id"] as? String ?? String(index)
+        return bubble(message, channel: channel, gone: gone, canPost: canPost, info: info, pinned: pinned)
+            .id(messageID)
+    }
+
+    private func jumpToMessage(_ target: String, proxy: ScrollViewProxy, visibleMessages: [JSON], allMessages: [JSON], roots: [String: String]) {
+        let isVisible = visibleMessages.contains { ($0["id"] as? String) == target }
+        guard isVisible else {
+            let isAvailable = allMessages.contains { ($0["id"] as? String) == target }
+            guard isAvailable else {
+                chat.notice = "The quoted message is not on this phone."
+                jumpTo = nil
+                return
+            }
+            thread = roots[target]
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                jumpTo = nil
+                jumpTo = target
+            }
+            return
+        }
+
+        withAnimation(.easeInOut(duration: 0.2)) {
+            proxy.scrollTo(target, anchor: .center)
+        }
+        highlight = target
+        jumpTo = nil
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            if highlight == target { highlight = nil }
+        }
     }
 
     /// The newest incoming voice message whose audio is on this phone.

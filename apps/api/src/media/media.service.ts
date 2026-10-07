@@ -416,8 +416,8 @@ export class MediaService {
     }
   }
   /**
-   * Media needs no approval: an asset attached to a live post becomes public as soon as it is
-   * sanitized. Row locks serialize this with attachment, so whichever finishes last publishes.
+   * Publish ready derivatives only after moderation approved the attached field update.
+   * Row locks serialize this with attachment and moderation.
    */
   async publishReady(tx: Prisma.TransactionClient, ids: string[]) {
     if (!ids.length) return;

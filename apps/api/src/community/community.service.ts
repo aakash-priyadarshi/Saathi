@@ -192,9 +192,8 @@ export class CommunityService {
             contentWarning: b.payload.contentWarning,
             createdAt: new Date(b.createdAt),
             receivedAt: new Date(now),
-            // Reports need no approval; media shows once it arrives and is sanitized.
-            moderation: 'APPROVED',
-            publishedAt: new Date(now),
+            // Reports are accepted into durable storage, but stay private until admin review.
+            moderation: 'PENDING',
             media: {
               create: {
                 id: m.id,
@@ -202,7 +201,7 @@ export class CommunityService {
                 originalKey: `original/${m.id}`,
                 size: m.size,
                 mimeType: m.mime,
-                moderation: 'APPROVED',
+                moderation: 'PENDING',
                 processingState: 'RECEIVING',
               },
             },
@@ -218,8 +217,7 @@ export class CommunityService {
             contentWarning: b.payload.contentWarning,
             createdAt: new Date(b.createdAt),
             receivedAt: new Date(now),
-            moderation: 'APPROVED',
-            publishedAt: new Date(now),
+            moderation: 'PENDING',
           },
         });
     } else if (b.type === 'WITHDRAW') {
@@ -263,7 +261,7 @@ export class CommunityService {
         envelope: json(e),
         envelopeHash: digest,
         hidden: b.type === 'WITHDRAW',
-        moderation: b.type === 'HELP' ? 'PENDING' : 'APPROVED',
+        moderation: b.type === 'HELP' || b.type === 'REPORT' ? 'PENDING' : 'APPROVED',
         receivedAt: new Date(now),
         expiresAt: new Date(b.expiresAt),
       },
