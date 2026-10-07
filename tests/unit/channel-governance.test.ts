@@ -167,7 +167,7 @@ describe('Signed channel capability boundaries', () => {
       policyHash: await hash(policy),
       admission: 'INVITE_PLUS_APPROVAL' as const,
       issuedAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+      expiresAt: new Date(Date.now() + 7 * 86400000 - 1000).toISOString(), // a second under the cap: issuedAt was read a moment earlier
     };
     const link = { body, signature: await sign(body, owner.signing.privateKey) };
     await expect(validChatAdmission(link, visitor.profile.body.id)).resolves.toEqual(link);

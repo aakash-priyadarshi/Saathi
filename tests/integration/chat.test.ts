@@ -216,7 +216,7 @@ describe('Real PostgreSQL operational chat boundary', () => {
       policyHash: await hash(channel.policy),
       admission: 'INVITE_PLUS_APPROVAL' as const,
       issuedAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+      expiresAt: new Date(Date.now() + 7 * 86400000 - 1000).toISOString(), // a second under the cap: issuedAt was read a moment earlier
     };
     const invitation = {
       body: descriptor,

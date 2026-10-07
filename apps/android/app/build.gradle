@@ -60,6 +60,7 @@ android {
             debuggable false
             signingConfig hasQaSigner ? signingConfigs.qa : signingConfigs.debug
             applicationIdSuffix '.qa'
+            versionNameSuffix '' // shows plain 1.0.0 (initWith debug would otherwise add '-dev')
             matchingFallbacks = ['debug']
             buildConfigField 'String', 'ENVIRONMENT', '"staging"'
             resValue 'string', 'app_name', brandName
