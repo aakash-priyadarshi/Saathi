@@ -287,7 +287,9 @@ import SwarmCore
 
     // MARK: nearby exchange
     func announce() async {
-        guard session.confirmed, hasProfile else { return }
+        guard session.confirmed, hasProfile else { NSLog("Swarm: announce skipped"); return }
+        NSLog("Swarm: announce peer=%@", peerID.map { String($0.prefix(8)) } ?? "none")
+        defer { NSLog("Swarm: announce done") }
         try? await session.send("CHAT_PROFILE", profile)
         let open = policies().filter { live($0) && body($0)["visibility"] as? String == "OPEN" }.prefix(16).map { p -> JSON in
             let b = body(p)
@@ -329,13 +331,18 @@ import SwarmCore
     func reset() { retryLoop?.cancel(); heldPeer = nil; discovery = []; changed() }
 
     func receive(_ frame: JSON, generation: Int) async {
-        guard generation == session.generation, session.confirmed else { return }
+        guard generation == session.generation, session.confirmed else {
+            NSLog("Swarm: chat frame ignored (generation %d/%d confirmed=%d)", generation, session.generation, session.confirmed ? 1 : 0); return
+        }
         do {
             let kind = try J.str(frame, "kind")
+            NSLog("Swarm: chat %@", kind)
             if kind == "CHAT_PROFILE" {
                 let first = peer == nil
-                _ = try verifyTransportPeer(try J.obj(frame, "value"))
-                if first { await announce() }
+                let id = try verifyTransportPeer(try J.obj(frame, "value"))
+                NSLog("Swarm: peer verified %@ first=%d peerVisible=%d", String(id.prefix(8)), first ? 1 : 0, peer == nil ? 0 : 1)
+                // Announce outside the ordered receive queue so a slow send never stalls incoming frames.
+                if first { Task { await self.announce() } }
                 return
             }
             guard let person = peerID, !blocked(person) else { return }

@@ -47,7 +47,8 @@ import SwarmCore
         let task = Task { @MainActor () -> Result<Void, Error> in
             await previous?.value
             guard sentGeneration == self.generation else { return .failure(ChatRuleError("Connection changed. Saved work is safe.")) }
-            do { try await self.nearby.send(frame); return .success(()) } catch { return .failure(error) }
+            do { try await self.nearby.send(frame); NSLog("Swarm: sent %@", kind); return .success(()) }
+            catch { NSLog("Swarm: send %@ failed: %@", kind, String(describing: error)); return .failure(error) }
         }
         tail = Task { _ = await task.value }
         try await task.value.get()
@@ -78,7 +79,7 @@ import SwarmCore
                 if let whole = try assembler.accept(try J.obj(frame, "value")) { await onChat(whole, at) }
             default:
                 // Community events, relief inventory, calls and public files are Android-only for now.
-                if confirmed && kind.hasPrefix("CHAT_") { await onChat(frame, at) }
+                if confirmed && kind.hasPrefix("CHAT_") { await onChat(frame, at) } else { NSLog("Swarm: not handled %@ confirmed=%d", kind, confirmed ? 1 : 0) }
             }
         } catch {
             NSLog("Swarm: frame rejected: %@", String(describing: error))

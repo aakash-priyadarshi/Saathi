@@ -216,6 +216,7 @@ struct ConversationView: View {
 struct NearbyView: View {
     @ObservedObject var chat: ChatEngine
     @ObservedObject var nearby: Nearby
+    @State private var openConversation: String?
     var body: some View {
         let _ = chat.revision
         NavigationStack {
@@ -240,8 +241,9 @@ struct NearbyView: View {
                     Section("Connected") {
                         if let peer = chat.peer {
                             let name = ((peer["body"] as? JSON)?["name"] as? String) ?? "Team member"
-                            NavigationLink("Message \(name)") {
-                                if let id = try? chat.direct(peer) { ConversationView(chat: chat, nearby: nearby, id: id) }
+                            // Creates the conversation only on tap; a NavigationLink destination is built on every render.
+                            Button("Message \(name)") {
+                                do { openConversation = try chat.direct(peer) } catch { chat.notice = error.localizedDescription }
                             }
                             Text("Identity verified · \(String(ChatRules.participant(peer).prefix(8)))").font(.caption).foregroundStyle(.secondary)
                         } else {
@@ -263,7 +265,11 @@ struct NearbyView: View {
                         }
                     }
                 }
-            }.navigationTitle("Nearby")
+            }
+            .navigationTitle("Nearby")
+            .navigationDestination(isPresented: Binding(get: { openConversation != nil }, set: { if !$0 { openConversation = nil } })) {
+                if let id = openConversation { ConversationView(chat: chat, nearby: nearby, id: id) }
+            }
         }
     }
 }
