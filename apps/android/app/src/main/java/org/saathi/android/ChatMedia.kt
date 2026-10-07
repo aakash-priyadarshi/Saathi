@@ -33,7 +33,7 @@ import android.graphics.BitmapFactory
         Button(onClick={vm.hangup()},colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error)){Text("End call")}
     }
 }
-private class VerifiedAudio(private val bytes:ByteArray):MediaDataSource(){
+internal class VerifiedAudio(private val bytes:ByteArray):MediaDataSource(){
     override fun getSize()=bytes.size.toLong()
     override fun readAt(position:Long,buffer:ByteArray,offset:Int,size:Int):Int {
         if(position<0||position>=bytes.size)return -1

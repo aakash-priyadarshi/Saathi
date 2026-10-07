@@ -31,6 +31,8 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -195,6 +197,10 @@ fun AppState.shownMessages(conversationId:String)=chatMessages.filter{it.body().
     }
     LaunchedEffect(id,visibleMessages){if(visibleMessages.isNotEmpty())onVisibleMessages(visibleMessages)}
     DisposableEffect(id){vm.enterConversation(id);onDispose{vm.cancelVoice();vm.leaveConversation(id)}}
+    // Hold-to-talk: a voice clip that arrives while this chat is open plays by itself, like a walkie-talkie.
+    val newestVoice=messages.lastOrNull{!it.optBoolean("owned")&&it.body().getString("format")=="VOICE"&&state.files.any{f->f.getString("id")==it.getJSONObject("payload").optJSONObject("attachment")?.optString("id")&&f.optBoolean("complete")}}?.getString("id")
+    var heardVoice by remember(id){mutableStateOf(newestVoice)}
+    LaunchedEffect(newestVoice){if(newestVoice!=null&&newestVoice!=heardVoice){heardVoice=newestVoice;if(!state.recording)vm.playVoice(newestVoice)}}
     Column(modifier){
         // Header as on iPhone: tap for group info (or the person's info), with what "delivered" means right now.
         Column(Modifier.fillMaxWidth().clickable(onClickLabel=if(channel)"Group info" else "Contact info"){info=true}.semantics{contentDescription=if(channel)"Group info" else "Contact info"}.padding(horizontal=16.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
@@ -256,15 +262,27 @@ fun AppState.shownMessages(conversationId:String)=chatMessages.filter{it.body().
         }
         if(transcript.firstVisibleItemIndex>0)TextButton(onClick={uiScope.launch{transcript.scrollToItem(0);followLatest=true}}){Text("Latest messages")}
         if(!channel && canPost)WalkieTalkieControl(vm,state,id,conversation.getString("title"),callReady)
-        if(state.recording)Surface(color=MaterialTheme.colorScheme.errorContainer){FlowRow(Modifier.fillMaxWidth().padding(12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){Text("Recording · Microphone on",Modifier.padding(12.dp));TextButton(onClick={vm.cancelVoice()}){Text("Discard")};Button(onClick={vm.sendVoice(id,null)},enabled=!state.busy){Text("Send voice note")}}}
-        else if(!canPost)Text(admissionState(conversation)?:if(conversation.optBoolean("pendingJoin"))"You can post after a group admin adds you." else if(channel && conversation.optBoolean("joined"))"Only group admins can post here." else "Sending is unavailable. Saved history remains here.",Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(16.dp),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        if(!canPost)Text(admissionState(conversation)?:if(conversation.optBoolean("pendingJoin"))"You can post after a group admin adds you." else if(channel && conversation.optBoolean("joined"))"Only group admins can post here." else "Sending is unavailable. Saved history remains here.",Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(16.dp),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         else Surface(color=MaterialTheme.colorScheme.surface){Column{
             HorizontalDivider()
+            if(state.recording)Text("Recording… release to send",Modifier.padding(start=16.dp,top=8.dp),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.error)
             replyTo?.let{r->Row(Modifier.fillMaxWidth().padding(start=16.dp,end=4.dp,top=8.dp),verticalAlignment=Alignment.CenterVertically){Box(Modifier.weight(1f)){ReplyQuote(r,false)};IconButton(onClick={replyTo=null}){Icon(Icons.Outlined.Close,"Cancel reply")}}}
             Row(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=10.dp),verticalAlignment=Alignment.Bottom,horizontalArrangement=Arrangement.spacedBy(10.dp)){
                 FilledTonalIconButton(onClick={picker.launch(arrayOf("image/jpeg","image/png","image/webp","audio/mp4","audio/mpeg","video/mp4","video/webm","text/plain"))},enabled=!state.busy&&(!channel||caps?.optBoolean("canAttachMedia")==true)){Icon(Icons.Outlined.Image,"Send a photo or video")}
                 OutlinedTextField(text,{text=it.take(4000);vm.saveChatComposer(id,text)},Modifier.weight(1f),placeholder={Text("Message")},maxLines=5,shape=RoundedCornerShape(20.dp))
-                if(text.isBlank())FilledTonalIconButton(onClick=record,enabled=!state.busy&&(!channel||caps?.optBoolean("canAttachMedia")==true)&&!state.calling&&state.walkieConversation==null){Icon(Icons.Outlined.Mic,"Record a voice note")}
+                // Hold to talk, release to send: a short tap is ignored; the first hold asks for the microphone.
+                if(text.isBlank()){
+                    val context=LocalContext.current;val talkable=(!channel||caps?.optBoolean("canAttachMedia")==true)&&!state.calling&&state.walkieConversation==null
+                    Box(Modifier.size(48.dp).background(if(state.recording)MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondaryContainer,CircleShape)
+                        .semantics{contentDescription="Hold to talk"}
+                        .pointerInput(talkable){detectTapGestures(onPress={
+                            if(!talkable)return@detectTapGestures
+                            if(androidx.core.content.ContextCompat.checkSelfPermission(context,android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED){record();return@detectTapGestures}
+                            val started=System.currentTimeMillis();vm.startVoice()
+                            val released=tryAwaitRelease()
+                            vm.releaseVoice(id,released&&System.currentTimeMillis()-started>=500)
+                        })},contentAlignment=Alignment.Center){Icon(Icons.Outlined.Mic,null,tint=if(state.recording)MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSecondaryContainer)}
+                }
                 else FilledIconButton(onClick={vm.chatSend(id,text.trim(),replyTo?.getString("id")){text="";replyTo=null;vm.saveChatComposer(id,"")}},enabled=!state.busy){Icon(Icons.Outlined.ArrowUpward,"Send")}
             }
         }}

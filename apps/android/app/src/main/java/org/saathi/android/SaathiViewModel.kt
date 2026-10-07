@@ -95,7 +95,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
             walkieDeadline = viewModelScope.launch { delay((deadline - System.nanoTime() / 1_000_000).coerceAtLeast(1)); walkie.expire() }
         }
     }
-    fun enterConversation(id: String) { if (visibleConversation != id) stopWalkie(); visibleConversation = id }
+    fun enterConversation(id: String) { if (visibleConversation != id) stopWalkie(); visibleConversation = id; SwarmAlerts.clear(getApplication(), id) }
     fun leaveConversation(id: String) { if (visibleConversation == id) { visibleConversation = null; stopWalkie() } }
     fun enableWalkie(id: String) = viewModelScope.launch {
         val generation = session.connectionGeneration
@@ -125,7 +125,15 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         if(chatNotice?.isActive==true)return
         chatNotice=viewModelScope.launch{delay(1200);val ids=synchronized(incomingChats){incomingChats.toList().also{incomingChats.clear()}};withContext(Dispatchers.IO){
             val fresh=ids.mapNotNull{repository.store.get("chat-messages",it)}.filter{m->val c=repository.store.get("chat-conversations",m.getJSONObject("envelope").getJSONObject("body").getString("conversationId"));c!=null&&!c.optBoolean("muted")&&!m.optBoolean("readLocally")&&!m.getJSONObject("payload").has("deletes")}
-            if(fresh.isNotEmpty())notice("${fresh.size} new message${if(fresh.size==1)"" else "s"} received${if(fresh.any{it.getJSONObject("payload").optJSONArray("mentions")?.strings()?.contains(ChatProtocol.participant(chat.profile()))==true})" · You were mentioned" else ""}.")
+            // Phone notifications for chats not on screen (including while Swarm is in the background).
+            fresh.groupBy{it.getJSONObject("envelope").getJSONObject("body").getString("conversationId")}.forEach{(conversationId,list)->
+                if(appInForeground && conversationId==visibleConversation)return@forEach
+                val c=repository.store.get("chat-conversations",conversationId)?:return@forEach;val last=list.last()
+                val author=last.getJSONObject("envelope").getJSONObject("body").getJSONObject("author").getJSONObject("body").getString("name")
+                val text=if(last.getJSONObject("envelope").getJSONObject("body").getString("format")=="VOICE")"Voice message" else chatPreview(last)
+                SwarmAlerts.message(getApplication(),conversationId,if(c.getString("type")=="CHANNEL")c.getString("title") else author,(if(c.getString("type")=="CHANNEL")"$author: " else "")+text+if(list.size>1)" (+${list.size-1} more)" else "")
+            }
+            if(fresh.isNotEmpty() && appInForeground)notice("${fresh.size} new message${if(fresh.size==1)"" else "s"} received${if(fresh.any{it.getJSONObject("payload").optJSONArray("mentions")?.strings()?.contains(ChatProtocol.participant(chat.profile()))==true})" · You were mentioned" else ""}.")
         }}
     }
     init {
@@ -211,6 +219,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         ble.onPeers = { peers -> mutable.update { it.copy(peers = peers) } }
         ble.onPair = { code -> mutable.update { it.copy(pairCode = code) } }
         ble.onFrame = { session.incoming(it) }; ble.onError = { notice(it) }
+        SwarmAlerts.channels(getApplication())
         refreshLocal(); if(startServices){refreshInBackground(); foregroundActive()}
     }
     fun notice(text: String?) { mutable.update { it.copy(notice = text) } }
@@ -235,6 +244,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     fun preference(key:String,value:Any){
         require(when(key){"appearance"->value in listOf("SYSTEM","LIGHT","DARK");"relay"->value in listOf("OFF","WIFI","ANY");"mediaRelay","nearbyVisible"->value is Boolean;"dailyLimitMB"->value is Int && value in 500..5000;"batteryMinimum"->value is Int && value in 10..80;else->false})
         val next=JSONObject(state.value.preferences.toString()).put(key,value);mutable.update{it.copy(preferences=next)}
+        if(key=="nearbyVisible"){if(value==true)startListening() else stopListening()}
         val version=synchronized(preferenceVersions){((preferenceVersions[key]?:0)+1).also{preferenceVersions[key]=it}}
         viewModelScope.launch(Dispatchers.IO){synchronized(preferenceVersions){if(preferenceVersions[key]==version)synchronized(repository.store){repository.store.put("preferences","local",preferences().put(key,value))}}}
         if(key=="nearbyVisible" && value==false){nearby.disconnect();session.reset();endMedia()}
@@ -359,11 +369,26 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         cancelVoice();val file=File(getApplication<Application>().cacheDir,"voice/note.m4a");voiceFile=file
         val recorder=if(Build.VERSION.SDK_INT>=31)MediaRecorder(getApplication()) else MediaRecorder()
         this.recorder=recorder
-        try { recorder.setAudioSource(MediaRecorder.AudioSource.MIC);recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);recorder.setAudioEncodingBitRate(64000);recorder.setAudioSamplingRate(16000);recorder.setMaxDuration(120000);recorder.setOutputFile(file.path);recorder.prepare();recorder.start();mutable.update {it.copy(recording=true)};voiceTimeout=viewModelScope.launch {delay(120000);cancelVoice();notice("Voice note reached its two-minute limit and was discarded. Record a shorter note.")} }catch(e:Exception){cancelVoice();throw e}
+        try { recorder.setAudioSource(MediaRecorder.AudioSource.MIC);recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);recorder.setAudioEncodingBitRate(24000);recorder.setAudioSamplingRate(16000);recorder.setMaxDuration(120000);recorder.setOutputFile(file.path);recorder.prepare();recorder.start();mutable.update {it.copy(recording=true)};voiceTimeout=viewModelScope.launch {delay(120000);cancelVoice();notice("Voice note reached its two-minute limit and was discarded. Record a shorter note.")} }catch(e:Exception){cancelVoice();throw e}
     }
     fun sendVoice(id:String,threadRootId:String?=null)=chatAction {
         val file=voiceFile?:error("Record a voice note first.");voiceTimeout?.cancel();recorder?.stop();recorder?.release();recorder=null;mutable.update {it.copy(recording=false)}
         try {chat.attach(id,Uri.fromFile(file),"audio/mp4","Voice note.m4a",threadRootId);runCatching {chat.sync()} }finally { file.delete();voiceFile=null }
+    }
+    /** Hold-to-talk release: send the clip (a tap under half a second is discarded), once recording has started. */
+    fun releaseVoice(id:String,send:Boolean)=viewModelScope.launch {
+        var waited=0; while(!state.value.recording && waited<1000){delay(50);waited+=50}
+        if(send && state.value.recording) sendVoice(id) else cancelVoice()
+    }
+    private var voicePlayer:android.media.MediaPlayer?=null
+    /** Plays a held voice message; used for clips that arrive while their chat is open. */
+    fun playVoice(messageId:String)=viewModelScope.launch {
+        runCatching {
+            val bytes=chat.attachmentBytes(messageId);voicePlayer?.release()
+            val player=android.media.MediaPlayer();player.setDataSource(VerifiedAudio(bytes))
+            withContext(Dispatchers.IO){player.prepare()};player.setOnCompletionListener{it.release();if(voicePlayer===it)voicePlayer=null}
+            voicePlayer=player;player.start()
+        }
     }
     fun cancelVoice() { voiceTimeout?.cancel();runCatching {recorder?.stop()};runCatching {recorder?.release()};recorder=null;voiceFile?.delete();voiceFile=null;mutable.update {it.copy(recording=false)} }
     suspend fun loadDashboard() { mutable.update { it.copy(dashboard = JSONObject(repository.api("/volunteer/dashboard", authenticated = true))) } }
@@ -411,8 +436,15 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     fun hangup() = action { session.send("CALL_END", obj()); endMedia() }
     private fun startRingTimeout() { ringTimeout?.cancel(); ringTimeout = viewModelScope.launch { delay(60000); runCatching { session.send("CALL_END", obj()) }; endMedia(); notice("Call was not answered. Nearby messages still work.") } }
     private fun endMedia() { ringTimeout?.cancel(); session.callInProgress = false; if (wifiDelegate.isInitialized()) wifi.stopMedia(); mutable.update { it.copy(calling = false, callActive = false, incomingCall = null, video = false, quality = "") } }
+    /** The background listening service runs while nearby visibility is on and permissions were granted. */
+    private var listening = false
+    private fun startListening() {
+        if (!BuildConfig.CHAT_ENABLED || listening || !preferences().optBoolean("nearbyVisible", true) || !nearbyPermitted()) return
+        listening = runCatching { ContextCompat.startForegroundService(getApplication(), android.content.Intent(getApplication(), ListeningService::class.java)) }.isSuccess
+    }
+    private fun stopListening() { listening = false; getApplication<Application>().stopService(android.content.Intent(getApplication(), ListeningService::class.java)) }
     fun foregroundActive() {
-        appInForeground = true
+        appInForeground = true; startListening()
         refreshLocal()
         scheduleNearbyDeliveryRetries()
         if (networkCallback == null && Build.VERSION.SDK_INT >= 24) {
@@ -438,7 +470,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     }
     /** Searches and stays visible while Swarm is open, once Nearby permissions were granted through the buttons. */
     private fun autoSearch() {
-        if (!BuildConfig.CHAT_ENABLED || !appInForeground || state.value.connected || state.value.busy || !nearby.available || nearby.active) return
+        if (!BuildConfig.CHAT_ENABLED || !(appInForeground || listening) || state.value.connected || state.value.busy || !nearby.available || nearby.active) return
         if (session.transport === ble && ble.connected) return
         if (!preferences().optBoolean("nearbyVisible", true) || !repository.featureEnabled("nearby") || !nearbyPermitted()) return
         viewModelScope.launch {
@@ -492,7 +524,8 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         attachmentSync?.cancel();healthCheck?.cancel();reconnectCheck?.cancel();deliveryRetry?.cancel()
         networkCallback?.let { callback -> runCatching { getApplication<Application>().getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(callback) } }
         networkCallback = null
-        nearby.stopScan();ble.stopScan();cancelVoice();stopWalkie(); if (state.value.calling) hangup()
+        // While the listening service runs, Nearby keeps its connection and search; Bluetooth fallback scans stop.
+        if (!listening) nearby.stopScan(); ble.stopScan();cancelVoice();stopWalkie(); if (state.value.calling) hangup()
     }
-    override fun onCleared() { swarmHotspot.stop(); disconnect(); if (wifiDelegate.isInitialized()) wifi.release(); repository.store.close() }
+    override fun onCleared() { stopListening(); swarmHotspot.stop(); disconnect(); if (wifiDelegate.isInitialized()) wifi.release(); repository.store.close() }
 }
