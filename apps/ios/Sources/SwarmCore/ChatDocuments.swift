@@ -87,11 +87,13 @@ public enum ChatDocuments {
         try J.req(key.count == 32); return key
     }
 
-    /// `cjpswarm://invite/<base64url(gzip(json))>` links from Android `encodeInvite`.
+    /// Shared invitations: the payload sits in the fragment, so it never reaches the server. Older `cjpswarm://invite/<payload>` links still work.
+    public static let joinLink = "https://swarm.cockroachjantaparty.org/join#"
+    /// `https://swarm.cockroachjantaparty.org/join#<base64url(gzip(json))>` or `cjpswarm://invite/<…>` links from either app.
     public static func decodeInvite(_ link: String) throws -> JSON {
         let trimmed = link.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.hasPrefix("cjpswarm://invite/"), trimmed.count <= 700_000 else { throw ChatRuleError("This is not a Swarm invitation.") }
-        let token = String(trimmed.dropFirst("cjpswarm://invite/".count))
+        guard let prefix = [joinLink, "cjpswarm://invite/"].first(where: trimmed.hasPrefix), trimmed.count <= 700_000 else { throw ChatRuleError("This is not a Swarm invitation.") }
+        let token = String(trimmed.dropFirst(prefix.count))
         try J.req(!token.isEmpty && !token.contains("/") && !token.contains("?") && !token.contains("#"), "Invitation is incomplete.")
         let json = try Gzip.inflate(try ChatCrypto.unbase64url(token), limit: 524_288)
         guard let invite = try JSONSerialization.jsonObject(with: json) as? JSON else { throw ChatRuleError("Invitation is incomplete.") }

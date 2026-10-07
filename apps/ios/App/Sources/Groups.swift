@@ -95,7 +95,7 @@ extension ChatEngine {
         let b = body(p)
         try J.req(b["deleted"] as? Bool != true, "This group was deleted.")
         try J.req(ChatRules.capabilities(p, selfID)["canInvite"] == true, "Your role cannot invite people to this group.")
-        if let saved = store.get("chat-join-links", id), time(saved["expiresAt"]) > now().addingTimeInterval(86400), let link = saved["link"] as? String { return link }
+        if let saved = store.get("chat-join-links", id), time(saved["expiresAt"]) > now().addingTimeInterval(86400), let link = saved["link"] as? String { return link.replacingOccurrences(of: "cjpswarm://invite/", with: ChatDocuments.joinLink, options: .anchored) }
         let invite = try ChatDocuments.admission(me, profile: profile, policy: p, recipient: "*", at: now()), link = try ChatDocuments.encodeInvite(invite)
         try save("chat-join-links", id, ["id": id, "link": link, "expiresAt": body(invite)["expiresAt"] ?? ""])
         return link

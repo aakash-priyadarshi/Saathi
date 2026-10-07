@@ -134,6 +134,15 @@ final class ChatRulesTests: XCTestCase {
         XCTAssertEqual(try Instant.parse("2026-10-07T07:04:57Z").timeIntervalSince1970, 1791356697)
         XCTAssertThrowsError(try Instant.parse("2026-10-07 07:04:57Z"))
     }
+    func testInviteLinksAcceptBothFormsOnlyForSwarm() throws {
+        let link = try ChatDocuments.encodeInvite(["body": ["name": "Gate 4"]])
+        XCTAssertTrue(link.hasPrefix("https://swarm.cockroachjantaparty.org/join#"))
+        let token = link.dropFirst(ChatDocuments.joinLink.count)
+        for good in [link, " cjpswarm://invite/\(token)\n"] { XCTAssertEqual((try ChatDocuments.decodeInvite(good)["body"] as? [String: Any])?["name"] as? String, "Gate 4") }
+        for wrong in ["https://evil.example/join#", "https://swarm.cockroachjantaparty.org.evil.example/join#", "https://swarm.cockroachjantaparty.org/other#", "http://swarm.cockroachjantaparty.org/join#"] {
+            XCTAssertThrowsError(try ChatDocuments.decodeInvite(wrong + token))
+        }
+    }
 }
 
 /// Writes iPhone-made documents for `scripts/ios-interop.mjs`, which checks them with @saathi/protocol.

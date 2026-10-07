@@ -64,9 +64,9 @@ extension ChatDocuments {
                             "name": try J.str(pb, "name"), "owner": try J.obj(pb, "owner"), "issuer": profile, "recipientId": recipient,
                             "policyHash": try hash(policy), "admission": admission, "issuedAt": Instant.string(now), "expiresAt": expires])
     }
-    /// `cjpswarm://invite/<base64url(gzip(json))>`, as Android `encodeInvite` writes it.
+    /// `https://swarm.cockroachjantaparty.org/join#<base64url(gzip(json))>`, as Android `encodeInvite` writes it.
     public static func encodeInvite(_ invite: JSON) throws -> String {
-        "cjpswarm://invite/" + ChatCrypto.base64url(try Gzip.deflate(try JSONSerialization.data(withJSONObject: invite)))
+        joinLink + ChatCrypto.base64url(try Gzip.deflate(try JSONSerialization.data(withJSONObject: invite)))
     }
 }
 

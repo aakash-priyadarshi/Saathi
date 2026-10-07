@@ -303,7 +303,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     }
     fun clearSafeMedia()=action{withContext(Dispatchers.IO){repository.store.all("attachments").filter{f->f.optBoolean("complete") && !f.optBoolean("chatOnly") && repository.store.all("community").none{r->r.getJSONObject("envelope").getJSONObject("body").getJSONObject("payload").optJSONObject("media")?.optString("id")==f.getString("id") && !r.optBoolean("mediaOnline")}}.forEach{session.removeFile(it.getString("id"))};getApplication<Application>().cacheDir.resolve("field-processing").listFiles()?.forEach{it.delete()}};notice("Reviewed public media caches cleared. Pending media and private chat files were kept.")}
     fun chatName(name:String)=chatAction { chat.rename(name) }
-    fun receiveInvite(link:String?){ if(BuildConfig.CHAT_ENABLED&&link?.startsWith("cjpswarm://invite/")==true && link.length<=44000)mutable.update{it.copy(incomingInvite=link)} }
+    fun receiveInvite(link:String?){ if(BuildConfig.CHAT_ENABLED&&link!=null && link.length<=44000 && InviteLink.token(link)!=null)mutable.update{it.copy(incomingInvite=link)} }
     fun dismissInvite(){mutable.update{it.copy(incomingInvite=null)}}
     fun needFromChat(message:JSONObject,open:(String)->Unit)=chatAction {
         require(repository.preparation!=null){"Prepare your verified relief account before creating an official need."}
