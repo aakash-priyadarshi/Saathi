@@ -181,6 +181,8 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
             refreshLocal()
         }
         nearby.onPeers = { peers -> mutable.update { it.copy(peers = peers) }; autoConnect(peers) }
+        nearby.trusted = { name -> name !in needsCode && runCatching { chat.contacts().any { it.getJSONObject("profile").getJSONObject("body").getString("name") == name } }.getOrDefault(false) }
+        chat.onUnknownPeer = { name -> needsCode.add(name); notice("$name is new to this phone. Compare the code to pair."); viewModelScope.launch { delay(2000); autoSearch() } }
         nearby.onPair = { code -> mutable.update { it.copy(pairCode = code) } }
         nearby.onFrame = { session.incoming(it) }; nearby.onError = { notice(it) }
         nearby.onConnectionLost = { advertise, automatic ->
@@ -452,6 +454,9 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     }
     fun stopHotspot() { swarmHotspot.stop(); mutable.update { it.copy(hotspot = null) } }
     private val autoAttempts = mutableMapOf<String, Long>()
+    /** Names that failed the known-person check: they compare a code until Swarm restarts. */
+    private val needsCode = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    private var autoRetry: Job? = null
     /** People already met reconnect without a tap (the code check still follows). A random delay avoids both phones dialling at once. */
     private fun autoConnect(peers: Map<String, String>) {
         if (!BuildConfig.CHAT_ENABLED || state.value.connected || state.value.pairCode != null) return
@@ -463,6 +468,8 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
             delay((2_000L..6_000L).random())
             if (!state.value.connected && state.value.pairCode == null && state.value.peers.containsKey(target.key)) runCatching { nearby.connect(target.key) }
         }
+        // Discovery reports a phone once; if that attempt fails, try again while it is still in range.
+        autoRetry?.cancel(); autoRetry = viewModelScope.launch { delay(35_000); if (!state.value.connected) autoConnect(state.value.peers) }
     }
     private fun checkRemoteFeatures() {
         if (reconnectCheck?.isActive == true) return

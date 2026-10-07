@@ -24,6 +24,8 @@ interface PeerTransport {
     val maximumFrameBytes: Int get() = 24000
     val supportsFiles: Boolean get() = true
     val capabilities: Set<TransportCapability> get() = TransportCapabilities.of(mediaAvailable, supportsFiles)
+    /** This link skipped the code comparison because the phone's name belongs to someone already met. */
+    val codeSkipped: Boolean get() = false
     suspend fun send(frame: JSONObject)
     fun disconnect()
 }
@@ -59,6 +61,9 @@ class NearbyTransport(context: Context, private val scope: CoroutineScope) : Pee
     var onFrame: (JSONObject) -> Unit = {}
     var onError: (String) -> Unit = {}
     var onConnectionLost: ((advertise: Boolean, automatic: Boolean) -> Unit)? = null
+    /** Names of people already met (contacts and fellow group members): only the first pairing compares a code. */
+    var trusted: (String) -> Boolean = { false }
+    override var codeSkipped = false; private set
     private val peers = linkedMapOf<String, String>()
     private val service = "org.saathi.nearby.v1.${BuildConfig.ENVIRONMENT}"
     /** Searching, pairing or connected: an automatic search must not replace any of these. */
@@ -90,7 +95,10 @@ class NearbyTransport(context: Context, private val scope: CoroutineScope) : Pee
             if (!isCurrent(token)) return
             if (pending != null || connected || lifecycle == Lifecycle.PAIRING) { log("connection-rejected-busy", "peer=${endpointTag(id)}"); return }
             pending = id; accepting = false; setLifecycle(Lifecycle.PAIRING, "peer=${endpointTag(id)}")
-            onPair(info.authenticationDigits); onState("Compare the code on both devices")
+            // A known person reconnects without the code; their signed identity is checked as soon as it arrives.
+            codeSkipped = trusted(info.endpointName)
+            if (codeSkipped) { onState("Reconnecting to ${info.endpointName.take(32)}…"); confirm(true) }
+            else { onPair(info.authenticationDigits); onState("Compare the code on both devices") }
             scope.launch { delay(60000); if (isCurrent(token) && pending == id && !accepting) confirm(false) }
         }
         override fun onConnectionResult(id: String, result: ConnectionResolution) {
@@ -188,6 +196,8 @@ class NearbyTransport(context: Context, private val scope: CoroutineScope) : Pee
         log("request-connection", "peer=${endpointTag(id)}")
         try {
             client.requestConnection(temporaryName, id, lifecycleCallback(token)).await()
+            // An unanswered request would block every later attempt; return to searching after 30 seconds.
+            scope.launch { delay(30000); if (isCurrent(token) && lifecycle == Lifecycle.CONNECTING && pending == null) setLifecycle(if (activeAdvertise || activeAutomatic) Lifecycle.ADVERTISING else Lifecycle.DISCOVERING, "reason=request-timeout") }
         } catch (error: Exception) {
             if (error is CancellationException) throw error
             log("request-connection-failed", "peer=${endpointTag(id)} status=${statusCode(error)}")
