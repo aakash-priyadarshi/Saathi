@@ -16,6 +16,14 @@ await check('dm decrypts for recipient', async () => {
 await check('conversation id', async () => {
   if ((await p.directConversationId(d.profile.body.id, d.peerProfile.body.id)) !== d.dm.body.conversationId) throw new Error('mismatch');
 });
+for (const [name, doc, format] of [['reply + forwarded', d.reply, 'TEXT'], ['delete for everyone', d.deletion, 'SYSTEM']])
+  await check(name, async () => {
+    p.validChatMessage(doc, null);
+    const b = doc.body;
+    const value = await p.decryptChatValue(b.content, d.peerEncryptionPrivateJwk, `dm:${b.conversationId}:${b.id}:${b.recipientId}`);
+    p.validChatPayload(value, format);
+    if ((value.replyTo ?? value.deletes) !== d.dm.body.id) throw new Error('wrong target');
+  });
 await check('receipt', () => p.validChatReceipt(d.receipt, d.dm, null));
 await check('join', () => p.validChatJoin(d.join));
 await check('channel policy (iPhone-owned, keys wrapped)', () => p.validChannelPolicy(d.policy));

@@ -55,6 +55,7 @@ struct GroupInfoView: View {
     let id: String
     @State private var inviting = false
     @State private var confirmLeave = false
+    @State private var confirmMember: (action: String, id: String, name: String)?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -131,6 +132,10 @@ struct GroupInfoView: View {
             Button(owner ? "Delete" : "Leave", role: .destructive) { Task { do { try await chat.leave(id); dismiss() } catch { chat.notice = error.localizedDescription } } }
             Button("Cancel", role: .cancel) {}
         } message: { Text("Copies already received stay on other people's phones. The change spreads as phones meet.") }
+        .alert(confirmMember.map { $0.action == "BAN" ? "Ban \($0.name)?" : "Remove \($0.name)?" } ?? "", isPresented: Binding(get: { confirmMember != nil }, set: { if !$0 { confirmMember = nil } })) {
+            Button(confirmMember?.action == "BAN" ? "Ban" : "Remove", role: .destructive) { if let m = confirmMember { act(m.action, m.id) }; confirmMember = nil }
+            Button("Cancel", role: .cancel) { confirmMember = nil }
+        } message: { Text(confirmMember?.action == "BAN" ? "They can't rejoin, even with an invitation, until an admin unbans them." : "They stop receiving new posts. Only an admin can add them back.") }
     }
 
     func name(of person: String) -> String {
@@ -158,8 +163,8 @@ struct GroupInfoView: View {
                     ForEach([("MODERATOR", "Make moderator"), ("MEMBER", "Make member"), ("READ_ONLY", "Make read-only")].filter { $0.0 != role && !($0.0 == "MEMBER" && role == "ADMIN") }, id: \.0) { next, label in
                         Button(label) { act("SET_ROLE", personID, role: next) }
                     }
-                    Button("Remove from group", role: .destructive) { act("REMOVE", personID) }
-                    Button("Ban", role: .destructive) { act("BAN", personID) }
+                    Button("Remove from group", role: .destructive) { confirmMember = ("REMOVE", personID, name) }
+                    Button("Ban", role: .destructive) { confirmMember = ("BAN", personID, name) }
                 } label: { Image(systemName: "ellipsis.circle").font(.title3).foregroundStyle(Palette.primary) }.accessibilityLabel("Manage \(name)")
             }
         }.padding(.vertical, 10)

@@ -235,7 +235,11 @@ public enum ChatRules {
     // MARK: messages
     @discardableResult public static func payload(_ p: JSON, format: String? = nil) throws -> JSON {
         try J.req(try Canonical.data(p).count <= 12000)
-        try J.req(p.keys.allSatisfy { ["text", "attachment", "reference", "mentions"].contains($0) })
+        try J.req(p.keys.allSatisfy { ["text", "attachment", "reference", "mentions", "replyTo", "forwarded", "deletes"].contains($0) })
+        // Delete for everyone: a SYSTEM message carrying only the id of the author's earlier message.
+        if p["deletes"] != nil { try J.req(p.count == 1 && (format == nil || format == "SYSTEM")); try uuid(try J.str(p, "deletes")); return p }
+        if p["replyTo"] != nil { try uuid(try J.str(p, "replyTo")) }
+        if p["forwarded"] != nil { try J.req(try J.bool(p, "forwarded")) }
         if p["text"] != nil { _ = try text(p, "text", 4000) }
         if p["mentions"] != nil { let ids = try J.strs(p, "mentions"); try J.req(ids.count <= 8 && Set(ids).count == ids.count); try ids.forEach(identity) }
         if p["reference"] != nil {

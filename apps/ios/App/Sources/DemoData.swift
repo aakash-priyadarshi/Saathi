@@ -29,26 +29,25 @@ import SwarmCore
                 try chat.store.put("chat-conversations", dmID, ["id": dmID, "type": "DIRECT", "peerId": peer.participantID, "title": "Asha", "muted": false, "joined": true, "lastRead": Instant.string(.distantPast)])
                 let photoID = UUID().uuidString.lowercased(), jpeg = try Photo.prepare(sampleImage())
                 try chat.media.savePlain(photoID, jpeg)
-                let lines: [(Bool, String?, Bool, Double)] = [
-                    (false, "Water point at Gate 2 is running low. Can you bring two crates?", false, -3000),
-                    (true, "On my way with two crates. 10 minutes.", false, -2900),
-                    (false, nil, true, -2500),
-                    (false, "Crowd is moving towards the east exit now.", false, -600),
-                    (true, "Seen. Telling the medics team.", false, -540)]
-                for (i, line) in lines.enumerated() {
-                    let (mine, text, photo, offset) = line
-                    let author = mine ? me : peer, authorProfile = mine ? myProfile : asha, recipient = mine ? asha : myProfile
-                    var payload: JSON = [:]
-                    if let text { payload["text"] = text }
-                    if photo { payload["attachment"] = ["id": photoID, "name": "photo.jpg", "mime": "image/jpeg", "size": jpeg.count, "hash": ChatCrypto.sha256Hex(jpeg), "cipherHash": String(repeating: "0", count: 64), "key": ChatCrypto.base64url(Data(count: 32))] }
-                    let envelope = try ChatDocuments.message(author, profile: authorProfile, conversationID: dmID, recipient: recipient, sequence: i + 1,
-                                                             payload: payload, format: photo ? "PHOTO" : "TEXT", at: now.addingTimeInterval(offset))
+                let photo: JSON = ["id": photoID, "name": "photo.jpg", "mime": "image/jpeg", "size": jpeg.count, "hash": ChatCrypto.sha256Hex(jpeg), "cipherHash": String(repeating: "0", count: 64), "key": ChatCrypto.base64url(Data(count: 32))]
+                var sequence = 0
+                func put(_ mine: Bool, _ payload: JSON, _ format: String = "TEXT", _ offset: Double) throws -> String {
+                    sequence += 1
+                    let envelope = try ChatDocuments.message(mine ? me : peer, profile: mine ? myProfile : asha, conversationID: dmID, recipient: mine ? asha : myProfile,
+                                                             sequence: sequence, payload: payload, format: format, at: now.addingTimeInterval(offset))
                     let id = (envelope["body"] as! JSON)["id"] as! String
                     var record: JSON = ["id": id, "envelope": envelope, "payload": payload, "owned": mine, "hops": 0, "receivedAt": Instant.string(now.addingTimeInterval(offset)), "serverSaved": false]
-                    if mine { record["sentNearby"] = Instant.string(now); record[i == 1 ? "readAt" : "deliveredAt"] = Instant.string(now) }
-                    else if i < 3 { record["readLocally"] = true }
+                    if mine { record["sentNearby"] = Instant.string(now); record[sequence == 2 ? "readAt" : "deliveredAt"] = Instant.string(now) } else { record["readLocally"] = offset < -1000 }
                     try chat.store.put("chat-messages", id, record)
+                    return id
                 }
+                let ask = try put(false, ["text": "Water point at Gate 2 is running low. Can you bring two crates?"], "TEXT", -3000)
+                _ = try put(true, ["text": "On my way with two crates. 10 minutes.", "replyTo": ask], "TEXT", -2900)
+                _ = try put(false, ["attachment": photo], "PHOTO", -2500)
+                let wrong = try put(true, ["text": "Wrong chat, sorry"], "TEXT", -2000)
+                _ = try put(true, ["deletes": wrong], "SYSTEM", -1990)
+                _ = try put(false, ["text": "Medical tent moved to the north lawn.", "forwarded": true], "TEXT", -600)
+                _ = try put(true, ["text": "Seen. Telling the medics team."], "TEXT", -540)
 
                 // An open channel owned by Asha, with Vikram posting.
                 channelID = UUID().uuidString.lowercased()

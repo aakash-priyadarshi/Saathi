@@ -15,6 +15,17 @@ final class ChatVectorsTests: XCTestCase {
         path.reduce(o as? [String: Any] ?? [:]) { ($0[$1] as? [String: Any]) ?? [:] }
     }
 
+    func testReplyForwardAndDeleteForEveryonePayloads() throws {
+        let id = "7d0b4c0e-3c8b-4c1e-9a43-0b0f6b1f2f11"
+        try ChatRules.payload(["text": "Yes", "replyTo": id, "forwarded": true], format: "TEXT")
+        try ChatRules.payload(["deletes": id], format: "SYSTEM")
+        XCTAssertThrowsError(try ChatRules.payload(["deletes": id], format: "TEXT"))
+        XCTAssertThrowsError(try ChatRules.payload(["deletes": id, "text": "x"], format: "SYSTEM"))
+        XCTAssertThrowsError(try ChatRules.payload(["text": "x", "replyTo": "not-a-uuid"]))
+        XCTAssertThrowsError(try ChatRules.payload(["text": "x", "forwarded": false]))
+        XCTAssertThrowsError(try ChatRules.payload(["text": "x", "forwarded": 1]))
+    }
+
     func testProfilesSignaturesAndIdentitiesMatchTheOtherClients() throws {
         let dm = obj(v, "dm"), body = obj(dm, "body"), author = obj(body, "author")
         let key = obj(author, "body", "publicKey")
@@ -152,7 +163,13 @@ final class InteropExportTests: XCTestCase {
         XCTAssertEqual(try ChatCrypto.sha256Hex(Canonical.data(ChatDocuments.decodeInvite(link))), try ChatCrypto.sha256Hex(Canonical.data(invite)))
         let admission = try ChatDocuments.admission(me, profile: profile, policy: try ChatDocuments.policy(me, profile: profile, previous: policy,
             name: "Core team", visibility: "INVITE", members: members, settings: ["mode": "DISCUSSION", "admission": "INVITE_PLUS_APPROVAL"]), recipient: peer.participantID)
-        let doc: JSON = ["profile": profile, "peerProfile": peerProfile, "dm": dm, "receipt": receipt, "join": join,
+        // Reply, forward and delete-for-everyone travel inside the encrypted DM payload.
+        let dmID = (dm["body"] as! JSON)["id"] as! String
+        let reply = try ChatDocuments.message(me, profile: profile, conversationID: conversation, recipient: peerProfile, sequence: 2,
+                                              payload: ["text": "On my way", "replyTo": dmID, "forwarded": true], format: "TEXT")
+        let deletion = try ChatDocuments.message(me, profile: profile, conversationID: conversation, recipient: peerProfile, sequence: 3,
+                                                 payload: ["deletes": dmID], format: "SYSTEM")
+        let doc: JSON = ["profile": profile, "peerProfile": peerProfile, "dm": dm, "reply": reply, "deletion": deletion, "receipt": receipt, "join": join,
                          "peerEncryptionPrivateJwk": peer.encryptionPrivateJWK, "policy": policy, "post": post, "action": action,
                          "invite": invite, "admission": admission, "channelKey": ChatCrypto.base64url(channelKey)]
         try JSONSerialization.data(withJSONObject: doc).write(to: URL(fileURLWithPath: out))

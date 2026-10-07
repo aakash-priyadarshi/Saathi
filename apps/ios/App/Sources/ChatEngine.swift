@@ -89,7 +89,7 @@ import SwarmCore
     func contacts() -> [JSON] { store.all("chat-contacts").filter { !blocked($0["id"] as? String ?? "") } }
     func current(_ id: String) -> JSON? { store.get("chat-policies", id)?["policy"] as? JSON }
     func policies() -> [JSON] { store.all("chat-policies").compactMap { $0["policy"] as? JSON } }
-    func unread(_ id: String) -> Int { messages(in: id).filter { $0["owned"] as? Bool != true && $0["readLocally"] as? Bool != true }.count }
+    func unread(_ id: String) -> Int { shown(in: id).filter { $0["owned"] as? Bool != true && $0["readLocally"] as? Bool != true }.count }
     func capabilities(_ id: String) -> [String: Bool]? { current(id).map { ChatRules.capabilities($0, selfID) } }
 
     // MARK: channels
@@ -305,6 +305,7 @@ import SwarmCore
         let record: JSON = ["id": id, "envelope": envelope, "payload": payload, "owned": false, "hops": hops, "receivedAt": Instant.string(now()), "serverSaved": false]
         try save("chat-messages", id, record)
         if let a = attachment(of: record), let aid = a["id"] as? String { revealPhoto(aid) }
+        applyDelete(payload, author: author)
         await sendReceipt(record, "DELIVERED")
         changed(); onIncoming(record)
     }

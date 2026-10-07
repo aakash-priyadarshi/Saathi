@@ -71,7 +71,7 @@ extension ChatEngine {
     }
 
     /// Sends a photo as an end-to-end encrypted V1 attachment (readable by every Android Swarm build).
-    func sendPhoto(_ conversationID: String, image: UIImage) async throws {
+    func sendPhoto(_ conversationID: String, image: UIImage, forwarded: Bool = false) async throws {
         let jpeg = try Photo.prepare(image)
         let id = UUID().uuidString.lowercased(), key = Data((0..<32).map { _ in UInt8.random(in: 0...255) })
         let cipher = try AttachmentCrypto.encryptV1(jpeg, key: key, id: id), cipherHash = ChatCrypto.sha256Hex(cipher)
@@ -79,7 +79,9 @@ extension ChatEngine {
         try store.put("attachments", id, ["id": id, "size": cipher.count, "hash": cipherHash, "direction": "OUT", "complete": true, "deliveredTo": [String]()])
         let attachment: JSON = ["id": id, "name": "photo.jpg", "mime": "image/jpeg", "size": jpeg.count, "hash": ChatCrypto.sha256Hex(jpeg),
                                 "cipherHash": cipherHash, "key": ChatCrypto.base64url(key)]
-        do { try await sendPayload(conversationID, payload: ["attachment": attachment], format: "PHOTO", cipher: (id, cipher.count, cipherHash)) }
+        var payload: JSON = ["attachment": attachment]
+        if forwarded { payload["forwarded"] = true }
+        do { try await sendPayload(conversationID, payload: payload, format: "PHOTO", cipher: (id, cipher.count, cipherHash)) }
         catch { media.remove(id); store.remove("attachments", id); throw error }
     }
 
