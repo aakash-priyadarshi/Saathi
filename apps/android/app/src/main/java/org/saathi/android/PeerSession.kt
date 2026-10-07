@@ -323,10 +323,15 @@ class PeerSession(private val context: Context, private val repository: Reposito
     fun readPart(id: String, index: Int) = readChunk(id, index)
     private fun writeChunk(id: String, index: Int, bytes: ByteArray) { val file = chunkFile(id, index); val temp = File(file.path + ".pending"); temp.writeBytes(repository.store.encrypt(bytes, "attachment/$id/$index")); check(temp.renameTo(file)) }
     private fun readChunk(id: String, index: Int) = repository.store.decrypt(chunkFile(id, index).readBytes(), "attachment/$id/$index")
-    suspend fun offerFile(uri: Uri) = withContext(Dispatchers.IO) {
+    suspend fun offerFile(source: Uri) = withContext(Dispatchers.IO) {
         require(confirmed && !callInProgress) { "Confirm the nearby person and end any call before sharing a file." }
-        val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"; require(mime in allowedMime) { "Choose a photo, text, audio or video file." }
-        val sizeAndName = context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE, OpenableColumns.DISPLAY_NAME), null, null, null)?.use { it.moveToFirst(); it.getLong(0) to it.getString(1) } ?: error("Cannot read this file.")
+        val sourceMime = context.contentResolver.getType(source) ?: "application/octet-stream"; require(sourceMime in allowedMime) { "Choose a photo, text, audio or video file." }
+        val original = context.contentResolver.query(source, arrayOf(OpenableColumns.SIZE, OpenableColumns.DISPLAY_NAME), null, null, null)?.use { it.moveToFirst(); it.getLong(0) to it.getString(1) } ?: error("Cannot read this file.")
+        // Videos go out compressed and metadata-free; the peer may carry them on to others.
+        val compressed = if (sourceMime.startsWith("video/")) FieldMedia.prepare(context, source, video = true) else null
+        val uri = compressed?.let { Uri.fromFile(it.file) } ?: source; val mime = if (compressed != null) "video/mp4" else sourceMime
+        val sizeAndName = compressed?.let { it.size to original.second.substringBeforeLast('.') + ".mp4" } ?: original
+        try {
         require(sizeAndName.first > 0); fileReady(sizeAndName.first)
         checkSpace(sizeAndName.first.toInt()); require(repository.store.all("attachments").size < 50)
         val id = UUID.randomUUID().toString(); val hash = MessageDigest.getInstance("SHA-256"); var size = 0; var index = 0
@@ -338,6 +343,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
             val file = obj("id" to id, "name" to sizeAndName.second.take(100), "mime" to mime, "size" to size, "hash" to hash.digest().joinToString("") { "%02x".format(it) }, "direction" to "OUT", "complete" to true)
             repository.store.put("attachments", id, file); withContext(Dispatchers.Main.immediate) { offerSaved(file); onChange() }
         } catch (e: Exception) { (0 until index).forEach { chunkFile(id, it).delete() }; throw e }
+        } finally { compressed?.file?.delete() }
     }
     suspend fun offerSaved(file: JSONObject) {
         if (transport?.supportsFiles != true) {

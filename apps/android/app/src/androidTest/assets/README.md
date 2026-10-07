@@ -10,3 +10,8 @@ embedded fictional location/comment metadata exercises the native remux privacy
 test. It contains no footage, voice, device data, or location from a participant.
 The test checks playable output, dimensions, duration, location removal, and
 byte-for-byte preservation of the input. No AI image or video editing is used.
+
+`field-1080p-qa.mp4` is a synthetic one-second 1080p noise test pattern at
+5 Mbit/s with a fictional location tag, from the same script. It checks that
+videos are compressed to 720p H.264 before any phone-to-phone transfer and that
+the location is removed.

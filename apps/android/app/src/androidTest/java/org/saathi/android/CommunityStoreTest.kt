@@ -57,4 +57,17 @@ class CommunityStoreTest {
             val after=MediaMetadataRetriever();try{after.setDataSource(output.path);assertNull(after.extractMetadata(MediaMetadataRetriever.METADATA_KEY_LOCATION));assertFalse("Output strips location box",safe.file.readBytes().toString(Charsets.ISO_8859_1).contains("loci"));assertFalse("Output strips private comment",safe.file.readBytes().toString(Charsets.ISO_8859_1).contains("SYNTHETIC PRIVATE"));assertEquals("2000",after.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION));assertNotNull(after.getFrameAtTime(0))}finally{after.release()}
         }finally{source.delete();output.delete()}
     }
+    @Test fun largeVideoIsCompressedTo720pWithoutLocation():Unit=runBlocking {
+        val instrumentation=InstrumentationRegistry.getInstrumentation();val context=instrumentation.targetContext
+        val source=File.createTempFile("synthetic-1080p-",".mp4",context.cacheDir)
+        try {
+            instrumentation.context.assets.open("field-1080p-qa.mp4").use{input->source.outputStream().use{input.copyTo(it)}}
+            val safe=FieldMedia.prepare(context,Uri.fromFile(source),true)
+            try {
+                assertEquals("video/mp4",safe.mime);assertEquals(1280,safe.width);assertEquals(720,safe.height)
+                assertTrue("compressed ${safe.size} < original ${source.length()}",safe.size<source.length())
+                val after=MediaMetadataRetriever();try{after.setDataSource(safe.file.path);assertNull(after.extractMetadata(MediaMetadataRetriever.METADATA_KEY_LOCATION));assertNotNull(after.getFrameAtTime(0))}finally{after.release()}
+            }finally{safe.file.delete()}
+        }finally{source.delete()}
+    }
 }

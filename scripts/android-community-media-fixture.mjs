@@ -25,4 +25,36 @@ execFileSync(
   ],
   { windowsHide: true, stdio: 'pipe' },
 );
-console.log('Generated a two-second synthetic video fixture; no user or camera material.');
+// A noisy 1080p clip above the 2 Mbps target, so the compression test can see it shrink.
+execFileSync(
+  ffmpeg,
+  [
+    '-nostdin',
+    '-y',
+    '-f',
+    'lavfi',
+    '-i',
+    'testsrc2=size=1920x1080:rate=30,noise=alls=40:allf=t',
+    '-t',
+    '1',
+    '-c:v',
+    'libx264',
+    '-pix_fmt',
+    'yuv420p',
+    '-b:v',
+    '5M',
+    '-minrate',
+    '5M',
+    '-maxrate',
+    '5M',
+    '-bufsize',
+    '1M',
+    '-x264-params',
+    'nal-hrd=cbr',
+    '-metadata',
+    'location=+19.12345+073.54321/',
+    'apps/android/app/src/androidTest/assets/field-1080p-qa.mp4',
+  ],
+  { windowsHide: true, stdio: 'pipe' },
+);
+console.log('Generated synthetic video fixtures; no user or camera material.');

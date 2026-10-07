@@ -11,8 +11,25 @@ import android.media.MediaMetadataRetriever
 import android.media.MediaMuxer
 import android.media.MediaCodec
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.effect.Presentation
+import androidx.media3.transformer.Composition
+import androidx.media3.transformer.DefaultEncoderFactory
+import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.Effects
+import androidx.media3.transformer.ExportException
+import androidx.media3.transformer.ExportResult
+import androidx.media3.transformer.Transformer
+import androidx.media3.transformer.VideoEncoderSettings
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.ByteBuffer
@@ -25,6 +42,9 @@ data class FieldDerivative(val file:File,val mime:String,val width:Int,val heigh
 object FieldMedia {
     /** Same limit as every other photo/video path (server, chat, nearby). */
     const val MAX_BYTES=250L*1024*1024
+    /** Every phone-to-phone hop carries the compressed copy: 720p H.264 at 2 Mbps is ~15 MB a minute. */
+    const val COMPRESSED_SHORT_SIDE=720
+    const val COMPRESSED_BITRATE=2_000_000
     suspend fun prepare(context:Context,uri:Uri,video:Boolean,audio:Boolean=false)=withContext(Dispatchers.IO){if(video)video(context,uri) else if(audio)audio(context,uri) else photo(context,uri)}
     private fun output(context:Context,suffix:String)=File.createTempFile("safe-",suffix,File(context.cacheDir,"field-processing").apply{mkdirs()})
     private fun jpeg(bitmap:Bitmap,quality:Int)=ByteArrayOutputStream().use{out->require(bitmap.compress(Bitmap.CompressFormat.JPEG,quality,out));out.toByteArray()}
@@ -40,7 +60,33 @@ object FieldMedia {
         val scale=minOf(1f,1600f/maxOf(oriented.width,oriented.height));val safe=Bitmap.createScaledBitmap(oriented,maxOf(1,(oriented.width*scale).toInt()),maxOf(1,(oriented.height*scale).toInt()),true);if(safe!==oriented)oriented.recycle()
         return try{val file=output(context,".jpg");file.writeBytes(jpeg(safe,88));FieldDerivative(file,"image/jpeg",safe.width,safe.height,0,thumb(safe))}finally{safe.recycle()}
     }
-    private fun video(context:Context,uri:Uri):FieldDerivative {
+    private suspend fun video(context:Context,uri:Uri):FieldDerivative {
+        context.contentResolver.openAssetFileDescriptor(uri,"r")?.use{require(it.length<0 || it.length<=MAX_BYTES){"Choose a video of 250 MB or less."}}
+        val shortSide=MediaMetadataRetriever().let{m->try{m.setDataSource(context,uri);minOf(m.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()?:0,m.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()?:0)}finally{m.release()}}
+        // A device that cannot transcode this video still shares the original (metadata removed below).
+        val compressed=try{compress(context,uri,shortSide)}catch(e:CancellationException){throw e}catch(_:Exception){null}
+        try{return remux(context,compressed?.let{Uri.fromFile(it)}?:uri)}finally{compressed?.delete()}
+    }
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private suspend fun compress(context:Context,uri:Uri,shortSide:Int):File {
+        val out=output(context,".mp4")
+        try{
+            withContext(Dispatchers.Main){suspendCancellableCoroutine<Unit>{done->
+                val effects=if(shortSide>COMPRESSED_SHORT_SIDE)Effects(listOf(),listOf(Presentation.createForShortSide(COMPRESSED_SHORT_SIDE)))else Effects.EMPTY
+                val transformer=Transformer.Builder(context).setVideoMimeType(MimeTypes.VIDEO_H264).setAudioMimeType(MimeTypes.AUDIO_AAC)
+                    .setEncoderFactory(DefaultEncoderFactory.Builder(context).setRequestedVideoEncoderSettings(VideoEncoderSettings.Builder().setBitrate(COMPRESSED_BITRATE).build()).build())
+                    .addListener(object:Transformer.Listener{
+                        override fun onCompleted(composition:Composition,result:ExportResult){done.resume(Unit)}
+                        override fun onError(composition:Composition,result:ExportResult,exception:ExportException){done.resumeWithException(exception)}
+                    }).build()
+                done.invokeOnCancellation{Handler(Looper.getMainLooper()).post{transformer.cancel()}}
+                transformer.start(EditedMediaItem.Builder(MediaItem.fromUri(uri)).setEffects(effects).build(),out.path)
+            }}
+            return out
+        }catch(e:Throwable){out.delete();throw e}
+    }
+    /** Copies H.264/HEVC and AAC samples into a fresh MP4, dropping location and every other metadata box. */
+    private fun remux(context:Context,uri:Uri):FieldDerivative {
         val descriptor=context.contentResolver.openAssetFileDescriptor(uri,"r")?:error("Cannot open this video.")
         descriptor.use{require(it.length<0 || it.length<=MAX_BYTES){"Choose a video of 250 MB or less."}}
         val metadata=MediaMetadataRetriever();metadata.setDataSource(context,uri)

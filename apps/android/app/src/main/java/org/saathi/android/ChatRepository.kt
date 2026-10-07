@@ -129,10 +129,14 @@ class ChatRepository(private val context: Context, private val repository: Repos
             }else{val p=current(b.getString("conversationId"));p!=null && live(p) && !pendingMembership(p) && ChatProtocol.member(p,person)}
         }
     }
-    suspend fun attach(conversationId:String,uri:Uri,mimeOverride:String?=null,nameOverride:String?=null,threadRootId:String?=null)=withContext(Dispatchers.IO){lock.withLock{
-        val mime=mimeOverride?:context.contentResolver.getType(uri)?:error("Choose a photo, audio, video or text file.")
-        require(mime in listOf("image/jpeg","image/png","image/webp","audio/mp4","audio/mpeg","video/mp4","video/webm","text/plain"))
-        val name=nameOverride?:context.contentResolver.query(uri,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)?.use { require(it.moveToFirst());it.getString(0) }?: "Attachment"
+    suspend fun attach(conversationId:String,source:Uri,mimeOverride:String?=null,nameOverride:String?=null,threadRootId:String?=null)=withContext(Dispatchers.IO){
+        val sourceMime=mimeOverride?:context.contentResolver.getType(source)?:error("Choose a photo, audio, video or text file.")
+        require(sourceMime in listOf("image/jpeg","image/png","image/webp","audio/mp4","audio/mpeg","video/mp4","video/webm","text/plain"))
+        val name=nameOverride?:context.contentResolver.query(source,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)?.use { require(it.moveToFirst());it.getString(0) }?: "Attachment"
+        // Videos travel compressed (and metadata-free) because every carrier phone stores and resends them.
+        val compressed=if(sourceMime.startsWith("video/"))FieldMedia.prepare(context,source,video=true) else null
+        val uri=compressed?.let{Uri.fromFile(it.file)}?:source;val mime=if(compressed!=null)"video/mp4" else sourceMime
+        try{lock.withLock{
         val id=UUID.randomUUID().toString();val key=ByteArray(32).also { SecureRandom().nextBytes(it) }
         // Streams through an encrypted temporary file so a 250 MB video never sits in memory.
         val temporary=java.io.File.createTempFile("chat-",".bin",java.io.File(context.cacheDir,"chat-processing").apply{mkdirs()})
@@ -142,7 +146,7 @@ class ChatRepository(private val context: Context, private val repository: Repos
         }finally{temporary.delete()}
         val file=store.get("attachments",id)!!
         file.put("contentMime",mime);store.put("attachments",id,file)
-        val attachment=obj("id" to id,"name" to name.take(100),"mime" to mime,"size" to plainSize,"hash" to plainHash,"cipherHash" to file.getString("hash"),"key" to Protocol.b64(key))
+        val attachment=obj("id" to id,"name" to (if(compressed!=null)name.substringBeforeLast('.')+".mp4" else name).take(100),"mime" to mime,"size" to plainSize,"hash" to plainHash,"cipherHash" to file.getString("hash"),"key" to Protocol.b64(key))
         val format=if(mime.startsWith("image/"))"PHOTO" else if(mime.startsWith("video/"))"VIDEO" else if(mime.startsWith("audio/"))"VOICE" else "FILE"
         try {
             val messageId=sendUnlocked(conversationId,obj("attachment" to attachment),format,threadRootId)
@@ -152,7 +156,7 @@ class ChatRepository(private val context: Context, private val repository: Repos
             if(fileAllowed(id,file.getString("hash")))runCatching {session.send("CHAT_ATTACHMENT_META",manifest);session.offerSaved(file)}
         }catch(e:Exception){session.removeFile(id);throw e}
         onChange()
-    }}
+    }}finally{compressed?.file?.delete()}}
     /** Decrypts and verifies a saved attachment into [output] without holding it in memory. */
     private suspend fun decryptTo(messageId:String,output:java.io.OutputStream)=withContext(Dispatchers.IO){
         val record=store.get("chat-messages",messageId)?:error("Message is unavailable.")
