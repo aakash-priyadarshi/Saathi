@@ -182,12 +182,14 @@ struct AddPeopleSheet: View {
     @Binding var showing: Bool
     @State private var link: String?
     @State private var invitedID: String?
+    @State private var joinLink = false
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if let link {
-                        Heading(title: "Invitation ready", text: "Only this person's Swarm identity can use it. It expires within six hours.")
+                        Heading(title: "Invitation ready", text: joinLink ? "Anyone with this link can ask to join; an admin approves them. It works once and expires within six hours."
+                                                                           : "Only this person's Swarm identity can use it. It expires within six hours.")
                         if let qr = QR.image(link) {
                             Image(uiImage: qr).interpolation(.none).resizable().scaledToFit().frame(maxWidth: 320).frame(maxWidth: .infinity)
                                 .padding(12).background(Color.white, in: RoundedRectangle(cornerRadius: 12)).accessibilityLabel("Invitation QR code")
@@ -203,10 +205,15 @@ struct AddPeopleSheet: View {
                         let members = Set(((chat.current(id)?["body"] as? JSON)?["members"] as? [JSON] ?? []).filter { J.isNull($0, "removedAt") }.map { ChatRules.participant($0["profile"] as? JSON ?? [:]) })
                         let people = chat.contacts().filter { !members.contains($0["id"] as? String ?? "") && $0["id"] as? String != chat.selfID }
                         if people.isEmpty { EmptyState(title: "No one to add yet", text: "Meet people in Nearby first. Everyone you connect with appears here.", icon: "person.2") }
+                        if (chat.current(id)?["body"] as? JSON)?["visibility"] as? String == "INVITE" {
+                            Button { do { link = try chat.createJoinLink(id); invitedID = nil; joinLink = true } catch { chat.notice = error.localizedDescription } } label: {
+                                Label("Create join link", systemImage: "link")
+                            }.buttonStyle(OutlineButtonStyle())
+                        }
                         ForEach(people.indices, id: \.self) { i in
                             let person = people[i]["profile"] as? JSON ?? [:], name = ((person["body"] as? JSON)?["name"] as? String) ?? "Person"
                             Button {
-                                Task { do { link = try await chat.invite(id, person: person); invitedID = ChatRules.participant(person) } catch { chat.notice = error.localizedDescription } }
+                                Task { do { link = try await chat.invite(id, person: person); invitedID = ChatRules.participant(person); joinLink = false } catch { chat.notice = error.localizedDescription } }
                             } label: {
                                 HStack(spacing: 12) { Avatar(name: name); Text(name).font(Type.titleMedium).foregroundStyle(Palette.ink); Spacer(); Image(systemName: "plus.circle").foregroundStyle(Palette.primary) }
                                     .padding(.vertical, 8).contentShape(Rectangle())

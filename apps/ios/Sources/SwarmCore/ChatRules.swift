@@ -202,7 +202,8 @@ public enum ChatRules {
         try J.req(["INVITE_PLUS_APPROVAL", "APPROVAL_ONLY"].contains(try J.str(b, "admission"))); try bounded(b, now)
         try profile(try J.obj(b, "owner"), now: now)
         let issuer = try profile((b["issuer"] as? JSON) ?? J.obj(b, "owner"), now: now)
-        try J.req(try J.str(b, "recipientId") == recipient, "This invitation is for a different participant.")
+        // "*" is a join link: anyone may ask, and a channel manager approves.
+        try J.req([recipient, "*"].contains(try J.str(b, "recipientId")), "This invitation is for a different participant.")
         try verify(b, v, key: try J.obj(try J.obj(issuer, "body"), "publicKey"))
         return v
     }

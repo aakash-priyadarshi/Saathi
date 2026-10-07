@@ -26,6 +26,11 @@ import SwarmCore
     /// Names of people this phone has already met; a found phone with one of them is connected automatically.
     var knownNames: () -> Set<String> = { [] }
     var displayName: () -> String = { "" }
+    /// Names that may reconnect without the code (people already met, minus any that failed the identity check).
+    var trusted: (String) -> Bool = { _ in false }
+    /// This link skipped the code because the phone's name was known; the signed identity must match a contact.
+    private(set) var codeSkipped = false
+    private var retry: Task<Void, Never>?
 
     private let manager = ConnectionManager(serviceID: Nearby.service, strategy: .pointToPoint)
     private lazy var advertiser = Advertiser(connectionManager: manager)
@@ -109,6 +114,7 @@ import SwarmCore
         guard connected == nil, pending == nil else { return }
         pending = id
         status = "Connecting to \(peers[id] ?? "phone")…"
+        expire(id)
         discoverer.requestConnection(to: id, using: Data(String(displayName().prefix(32)).utf8)) { [weak self] error in
             guard let error else { return }
             Task { @MainActor in
@@ -161,15 +167,45 @@ import SwarmCore
         guard connected == nil, peers.count < 20 else { return }
         let raw = String(decoding: info.prefix(40), as: UTF8.self), name = raw.isEmpty ? "Swarm phone" : raw
         peers[id] = name; names[id] = name; lastFound = Date()
-        // Someone already met (or the person just lost) reconnects without a tap; the code check still follows.
-        let known = name == lastPeerName || knownNames().contains(name)
-        if known && pending == nil && Date().timeIntervalSince(attempted[name] ?? .distantPast) > 30 {
+        autoConnect()
+    }
+    /// Someone already met (or the person just lost) reconnects without a tap or a code. Discovery reports a phone
+    /// once, so a failed attempt is retried every 35 seconds while it stays in range.
+    private func autoConnect() {
+        guard connected == nil, pending == nil else { return }
+        let known = knownNames()
+        if let (id, name) = peers.first(where: { ($0.value == lastPeerName || known.contains($0.value)) && Date().timeIntervalSince(attempted[$0.value] ?? .distantPast) > 30 }) {
             attempted[name] = Date(); connect(id)
+        }
+        retry?.cancel()
+        retry = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 35_000_000_000)
+            guard let self, !Task.isCancelled, self.connected == nil else { return }
+            self.autoConnect()
+        }
+    }
+    /// Another phone is dialling this one: note its name for the code decision, and do not dial it back.
+    func incoming(_ id: EndpointID, _ info: Data) {
+        guard connected == nil else { return }
+        let raw = String(decoding: info.prefix(40), as: UTF8.self)
+        names[id] = raw.isEmpty ? "Swarm phone" : raw
+        if pending == nil { pending = id; expire(id) }
+    }
+    /// An unanswered attempt would block every later one; give up after 30 seconds and keep searching.
+    private func expire(_ id: EndpointID) {
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+            guard let self, self.pending == id, self.connected == nil, self.pairCode == nil else { return }
+            self.pending = nil; self.status = "No answer from \(self.names[id] ?? "that phone"). Still searching."
+            self.autoConnect()
         }
     }
     func lost(_ id: EndpointID) { peers[id] = nil }
     func verify(_ code: String, _ id: EndpointID, _ handler: @escaping (Bool) -> Void) {
         guard connected == nil, pending == nil || pending == id else { handler(false); return }
+        let name = names[id] ?? ""
+        codeSkipped = !name.isEmpty && trusted(name)
+        if codeSkipped { pending = id; status = "Reconnecting to \(name)…"; handler(true); return }
         pending = id; pairCode = code; decide = handler; status = "Compare the code on both phones"
     }
     func changed(_ state: ConnectionState, _ id: EndpointID) {
@@ -204,8 +240,8 @@ final class NearbyBridge: ConnectionManagerDelegate, DiscovererDelegate, Adverti
     func discoverer(_ discoverer: Discoverer, didLose endpointID: EndpointID) { main { $0.lost(endpointID) } }
     func advertiser(_ advertiser: Advertiser, didReceiveConnectionRequestFrom endpointID: EndpointID, with context: Data,
                     connectionRequestHandler: @escaping (Bool) -> Void) {
-        connectionRequestHandler(true) // both people still compare the code before any data flows
-        main { $0.found(endpointID, context) }
+        connectionRequestHandler(true) // the code check (or the known-person check) follows before any data flows
+        main { $0.incoming(endpointID, context) }
     }
     func connectionManager(_ connectionManager: ConnectionManager, didReceive verificationCode: String, from endpointID: EndpointID,
                            verificationHandler: @escaping (Bool) -> Void) {

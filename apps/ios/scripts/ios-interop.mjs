@@ -24,6 +24,8 @@ for (const [name, doc, format] of [['reply + forwarded', d.reply, 'TEXT'], ['del
     p.validChatPayload(value, format);
     if ((value.replyTo ?? value.deletes) !== d.dm.body.id) throw new Error('wrong target');
   });
+await check('join link (any requester, approval)', () => p.validChatAdmission(d.joinLink, d.peerProfile.body.id));
+await check('join request through the link', () => p.validChatJoin(d.linkJoin));
 await check('receipt', () => p.validChatReceipt(d.receipt, d.dm, null));
 await check('join', () => p.validChatJoin(d.join));
 await check('channel policy (iPhone-owned, keys wrapped)', () => p.validChannelPolicy(d.policy));

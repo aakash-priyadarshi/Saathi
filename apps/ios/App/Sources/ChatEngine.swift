@@ -69,9 +69,16 @@ import SwarmCore
             c["title"] = title; try save("chat-conversations", c["id"] as! String, c)
         }
     }
+    /// Set by the app: whether this link skipped the code, and what to do when that phone is not someone already met.
+    var codeSkipped: () -> Bool = { false }
+    var onUnknownPeer: (String) -> Void = { _ in }
     func verifyTransportPeer(_ person: JSON) throws -> String {
         try ChatRules.profile(person, now: now())
         let id = ChatRules.participant(person)
+        if codeSkipped() && store.get("chat-contacts", id) == nil {
+            onUnknownPeer(body(person)["name"] as? String ?? "This person")
+            throw ChatRuleError("Compare the code to pair with this person.")
+        }
         if let previous = peer { try J.req(ChatRules.participant(previous) == id, "Nearby identity changed. Reconnect and compare the codes.") }
         try remember(person)
         heldPeer = person; peerGeneration = session.generation; changed()
@@ -476,6 +483,7 @@ import SwarmCore
             store.remove("chat-joins", j["id"] as? String ?? "")
             if var c = conversation(j["id"] as? String ?? ""), c["joined"] as? Bool != true { c["pendingJoin"] = false; c["joinStatus"] = "EXPIRED"; try? save("chat-conversations", c["id"] as! String, c) }
         }
+        for u in store.all("chat-link-uses") where time(u["expiresAt"]) <= t { store.remove("chat-link-uses", u["id"] as? String ?? "") }
         let ids = Set(store.all("chat-messages").compactMap { $0["id"] as? String })
         for r in store.all("chat-receipts") where !ids.contains(body(r["receipt"] as? JSON ?? [:])["messageId"] as? String ?? "") { store.remove("chat-receipts", r["id"] as? String ?? "") }
     }

@@ -33,6 +33,8 @@ struct SwarmApp: App {
     let session: Session
     @Published private(set) var chat: ChatEngine?
     @Published private(set) var failure: String?
+    /// Names that failed the known-person check: they compare a code until Swarm restarts.
+    private var needsCode = Set<String>()
 
     init() {
         session = Session(nearby: nearby)
@@ -48,6 +50,14 @@ struct SwarmApp: App {
             nearby.onError = { [weak chat] in chat?.notice = $0 }
             nearby.displayName = { [weak chat] in chat?.name ?? "" }
             nearby.knownNames = { [weak chat] in Set((chat?.contacts() ?? []).compactMap { (($0["profile"] as? JSON)?["body"] as? JSON)?["name"] as? String }) }
+            // Only the first pairing compares a code: people already met (and fellow group members) reconnect directly.
+            nearby.trusted = { [weak self, nearby] name in !(self?.needsCode.contains(name) ?? true) && nearby.knownNames().contains(name) }
+            chat.codeSkipped = { [nearby] in nearby.codeSkipped }
+            chat.onUnknownPeer = { [weak self, weak chat, nearby] name in
+                self?.needsCode.insert(name); nearby.disconnect()
+                chat?.notice = "\(name) is new to this phone. Compare the code to pair."
+                Task { try? await Task.sleep(nanoseconds: 2_000_000_000); nearby.resume() }
+            }
             session.onConfirmed = { [weak chat] in await chat?.announce() }
             session.onChat = { [weak chat] frame, generation in await chat?.receive(frame, generation: generation) }
             session.onFile = { [weak chat] frame, generation in await chat?.receiveFile(frame, generation: generation) }
@@ -160,7 +170,7 @@ struct JoinInviteSheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
-                Heading(title: "Join with invite", text: "Paste the cjpswarm:// link a channel admin made for your identity. Approval invitations wait for an admin nearby.")
+                Heading(title: "Join with invite", text: "Paste an invitation or join link from a group admin. Join requests wait for an admin's approval nearby.")
                 TextField("cjpswarm://invite/…", text: $link, axis: .vertical).lineLimit(3...6).font(Type.bodyMedium)
                     .autocorrectionDisabled().textInputAutocapitalization(.never)
                     .padding(14).background(Palette.surface, in: RoundedRectangle(cornerRadius: 10)).overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.outline))

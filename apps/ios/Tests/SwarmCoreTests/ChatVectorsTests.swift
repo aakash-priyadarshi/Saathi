@@ -169,7 +169,13 @@ final class InteropExportTests: XCTestCase {
                                               payload: ["text": "On my way", "replyTo": dmID, "forwarded": true], format: "TEXT")
         let deletion = try ChatDocuments.message(me, profile: profile, conversationID: conversation, recipient: peerProfile, sequence: 3,
                                                  payload: ["deletes": dmID], format: "SYSTEM")
-        let doc: JSON = ["profile": profile, "peerProfile": peerProfile, "dm": dm, "reply": reply, "deletion": deletion, "receipt": receipt, "join": join,
+        // A join link: any identity may ask, and the request still has to be signed by that identity.
+        let joinLink = try ChatDocuments.admission(me, profile: profile, policy: policy, recipient: "*")
+        XCTAssertEqual((joinLink["body"] as! JSON)["admission"] as? String, "INVITE_PLUS_APPROVAL")
+        try ChatRules.admission(joinLink, recipient: peer.participantID)
+        let linkJoin = try ChatDocuments.join(peer, profile: peerProfile, channelID: (policy["body"] as! JSON)["id"] as! String, action: "JOIN", invitation: joinLink)
+        try ChatRules.join(linkJoin)
+        let doc: JSON = ["joinLink": joinLink, "linkJoin": linkJoin, "profile": profile, "peerProfile": peerProfile, "dm": dm, "reply": reply, "deletion": deletion, "receipt": receipt, "join": join,
                          "peerEncryptionPrivateJwk": peer.encryptionPrivateJWK, "policy": policy, "post": post, "action": action,
                          "invite": invite, "admission": admission, "channelKey": ChatCrypto.base64url(channelKey)]
         try JSONSerialization.data(withJSONObject: doc).write(to: URL(fileURLWithPath: out))
