@@ -224,4 +224,8 @@ private val tabs = listOf(Triple("Updates", Icons.Outlined.Feed, "Public field u
 @Composable fun Notice(title: String, text: String, icon: ImageVector) { Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(8.dp)).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) { Icon(icon, null, tint = MaterialTheme.colorScheme.primary); Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { Text(title, style = MaterialTheme.typography.titleSmall); Text(text, style = MaterialTheme.typography.bodySmall) } } }
 @Composable fun Freshness(saved: String?) { Text(if (saved == null) "No saved snapshot yet" else "Saved ${timeLabel(saved)} · Check with Swarm for the latest status", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
 fun timeLabel(value: String) = runCatching { DateTimeFormatter.ofPattern("d MMM, h:mm a").withZone(ZoneId.systemDefault()).format(Instant.parse(value)) }.getOrDefault("at an unknown time")
-fun fileSize(bytes: Long) = if (bytes < 1048576) "${bytes / 1024} KB" else "%.1f MB".format(bytes / 1048576.0)
+fun fileSize(bytes: Long) = when {
+    bytes < 1024 -> "< 1 KB"
+    bytes < 1048576 -> "${bytes / 1024} KB"
+    else -> "%.1f MB".format(bytes / 1048576.0)
+}

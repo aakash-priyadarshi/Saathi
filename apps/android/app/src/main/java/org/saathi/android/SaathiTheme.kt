@@ -34,7 +34,19 @@ private val dark = darkColorScheme(primary = Color(0xffa0d7bd), onPrimary = Colo
             isAppearanceLightStatusBars=!darkTheme;isAppearanceLightNavigationBars=!darkTheme
         }}
     }
-    MaterialTheme(colorScheme = base.copy(secondary = base.primary, onSecondary = base.onPrimary, secondaryContainer = base.primaryContainer, onSecondaryContainer = base.onPrimaryContainer, outlineVariant = base.outline, surfaceTint = base.primary, surfaceContainer = base.surface, surfaceContainerHigh = base.surfaceVariant, surfaceContainerHighest = base.surfaceVariant, surfaceContainerLow = base.background, surfaceContainerLowest = base.surface),
+    MaterialTheme(colorScheme = base.copy(
+        secondary = if(darkTheme)Color(0xfff0ca81)else Color(0xff805619),
+        onSecondary = if(darkTheme)Color(0xff3f321f)else Color(0xfffffefa),
+        secondaryContainer = if(darkTheme)Color(0xff3f321f)else Color(0xfffcf0d9),
+        onSecondaryContainer = if(darkTheme)Color(0xfff0ca81)else Color(0xff805619),
+        outlineVariant = base.outline,
+        surfaceTint = base.primary,
+        surfaceContainer = base.surface,
+        surfaceContainerHigh = base.surfaceVariant,
+        surfaceContainerHighest = base.surfaceVariant,
+        surfaceContainerLow = base.background,
+        surfaceContainerLowest = base.surface
+    ),
         typography = Typography(
             displaySmall = defaults.displaySmall.copy(fontFamily = Lora, fontSize = 32.sp, lineHeight = 40.sp),
             headlineMedium = defaults.headlineMedium.copy(fontFamily = Lora, fontSize = 28.sp, lineHeight = 36.sp),

@@ -36,7 +36,13 @@ class ChatReadUiTest {
         InstrumentationRegistry.getInstrumentation().runOnMainSync{vm=SaathiViewModel(context.applicationContext as Application,storageScope,startServices=false);viewModels.put("fixture",vm)}
         val imageFile=File(context.cacheDir,"chat-simple-preview.png")
         try {
-            val preview=Bitmap.createBitmap(48,32,Bitmap.Config.ARGB_8888).apply{eraseColor(android.graphics.Color.rgb(35,87,67))}
+            val preview=Bitmap.createBitmap(144,96,Bitmap.Config.ARGB_8888).apply{
+                for(y in 0 until height)for(x in 0 until width)setPixel(x,y,when{
+                    x<width/3->android.graphics.Color.rgb(35,87,67)
+                    x<width*2/3->android.graphics.Color.rgb(226,166,76)
+                    else->android.graphics.Color.rgb(226,236,218)
+                })
+            }
             imageFile.outputStream().use{preview.compress(Bitmap.CompressFormat.PNG,100,it)};preview.recycle()
             val channel=runBlocking {
                 vm.chat.rename("Fictional channel owner")
@@ -47,17 +53,22 @@ class ChatReadUiTest {
             }
             vm.refreshLocal()
             ui.waitUntil(15000){vm.state.value.chatMessages.any{it.getJSONObject("envelope").getJSONObject("body").getString("conversationId")==channel&&it.getJSONObject("payload").has("attachment")}}
+            val attachmentMessageId=vm.state.value.chatMessages.first{it.getJSONObject("payload").has("attachment")}.getString("id")
             ui.setContent { if(shown.value){val state by vm.state.collectAsState();SaathiTheme{ConversationScreen(vm,state,channel,{_,_->},{},{},{},androidx.compose.ui.Modifier.fillMaxSize())}} }
             ui.onNodeWithText("Fictional coordination: meet at the public entrance.").assertIsDisplayed()
-            ui.onNodeWithText("Fictional field photo.png").assertIsDisplayed()
+            ui.waitUntil(15000){ui.onAllNodesWithTag("chat-photo-$attachmentMessageId").fetchSemanticsNodes().isNotEmpty()}
+            ui.onNodeWithTag("chat-photo-$attachmentMessageId").assertIsDisplayed()
+            ui.onNodeWithText("Fictional field photo.png").assertDoesNotExist()
             listOf("0 replies","Thanks","Lock thread","Hide","Report","Export verified attachment","Sync encrypted attachment","Create Help Request").forEach{ui.onNodeWithText(it).assertDoesNotExist()}
             ui.onRoot().captureToImage().asAndroidBitmap().let{capture->File(context.cacheDir,"chat-simple-message.png").outputStream().use{capture.compress(Bitmap.CompressFormat.PNG,100,it)}}
+            ui.onNodeWithTag("chat-photo-$attachmentMessageId").performClick()
+            ui.onNodeWithContentDescription("Close photo preview").assertIsDisplayed()
+            ui.onNodeWithContentDescription("Close photo preview").performClick()
             val textMessageId=vm.state.value.chatMessages.first{it.getJSONObject("payload").optString("text").contains("Fictional coordination")}.getString("id")
             ui.onNodeWithTag("message-actions-$textMessageId").performClick()
             listOf("Copy message","Reply in thread","Thank sender","Lock replies","Hide message").forEach{ui.onNodeWithText(it).assertIsDisplayed()}
             ui.onRoot().captureToImage().asAndroidBitmap().let{capture->File(context.cacheDir,"chat-simple-actions.png").outputStream().use{capture.compress(Bitmap.CompressFormat.PNG,100,it)}}
             ui.onNodeWithText("Copy message").performClick()
-            val attachmentMessageId=vm.state.value.chatMessages.first{it.getJSONObject("payload").has("attachment")}.getString("id")
             ui.onNodeWithTag("message-actions-$attachmentMessageId").performClick()
             listOf("Save attachment","Check for updates").forEach{ui.onNodeWithText(it).assertIsDisplayed()}
         } finally {
@@ -87,6 +98,38 @@ class ChatReadUiTest {
             assertNull(vm.state.value.notice)
         } finally {
             ui.runOnIdle{shown.value=false;viewModels.clear()}
+            SecureStore(context,storageScope).use{it.clearPrivate()};context.deleteDatabase("saathi-$storageScope.db")
+        }
+    }
+
+    @Test fun sentAndReceivedMessagesUseDistinctTonalBubbles() {
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        val context=instrumentation.targetContext
+        val storageScope="test-chat-bubbles-${UUID.randomUUID()}"
+        lateinit var vm:SaathiViewModel
+        val viewModels=ViewModelStore()
+        instrumentation.runOnMainSync{vm=SaathiViewModel(context.applicationContext as Application,storageScope,startServices=false);viewModels.put("fixture",vm)}
+        val other=Repository(context,"$storageScope-other")
+        val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main)
+        val counterpart=ChatRepository(context,other,PeerSession(context,other,scope))
+        val shown=mutableStateOf(true)
+        try{
+            val direct=runBlocking{vm.chat.rename("Fictional recipient");counterpart.rename("Fictional sender");vm.chat.direct(counterpart.profile())}
+            val reverse=runBlocking{counterpart.direct(vm.chat.profile())}
+            val sentId=runBlocking{vm.chat.send(direct,obj("text" to "Fictional: heading to the public gate."))}
+            val incomingId=runBlocking{counterpart.send(reverse,obj("text" to "Fictional: I’m at the public gate."))}
+            val incoming=other.store.get("chat-messages",incomingId)!!
+            ChatProtocol.message(incoming.getJSONObject("envelope"),null);incoming.put("owned",false)
+            vm.repository.store.put("chat-messages",incomingId,incoming);vm.refreshLocal()
+            ui.setContent{if(shown.value){val state by vm.state.collectAsState();SaathiTheme{ConversationScreen(vm,state,direct,{_,_->},{},{},{},Modifier.fillMaxSize())}}}
+            ui.onNodeWithText("Fictional: heading to the public gate.").assertIsDisplayed()
+            ui.onNodeWithText("Fictional: I’m at the public gate.").assertIsDisplayed()
+            val sent=ui.onNodeWithTag("chat-bubble-sent-$sentId").assertIsDisplayed().captureToImage().asAndroidBitmap()
+            val received=ui.onNodeWithTag("chat-bubble-received-$incomingId").assertIsDisplayed().captureToImage().asAndroidBitmap()
+            assertNotEquals("Sent and received bubbles should use different Material tones",sent.getPixel(sent.width/2,2),received.getPixel(received.width/2,2))
+            ui.onRoot().captureToImage().asAndroidBitmap().let{image->File(context.cacheDir,"chat-bubble-directions.png").outputStream().use{image.compress(Bitmap.CompressFormat.PNG,100,it)}}
+        }finally{
+            ui.runOnIdle{shown.value=false;viewModels.clear()};scope.cancel();other.store.close()
             SecureStore(context,storageScope).use{it.clearPrivate()};context.deleteDatabase("saathi-$storageScope.db")
         }
     }

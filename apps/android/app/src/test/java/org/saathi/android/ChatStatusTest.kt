@@ -11,4 +11,13 @@ class ChatStatusTest {
         assertEquals("Delivered", chatStatus(JSONObject("""{"sentNearby":"now","deliveredAt":"now"}""")))
         assertEquals("Read", chatStatus(JSONObject("""{"deliveredAt":"now","readAt":"now"}""")))
     }
+
+    @Test fun conversationPreviewUsesMediaTypeInsteadOfPrivateFilename() {
+        val photo=JSONObject("""{"payload":{"attachment":{"name":"private-location.jpg"}},"envelope":{"body":{"format":"PHOTO"}}}""")
+        assertEquals("Photo",chatPreview(photo))
+    }
+
+    @Test fun tinyAttachmentsNeverLookLikeZeroKilobytes() {
+        assertEquals("< 1 KB",fileSize(320))
+    }
 }

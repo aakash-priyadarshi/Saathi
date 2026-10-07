@@ -42,7 +42,16 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 fun chatPreview(message:JSONObject?):String {
     if(message==null)return "Start a conversation"
     val payload=message.getJSONObject("payload")
-    return payload.optString("text").ifBlank { payload.optJSONObject("reference")?.optString("title") ?: payload.optJSONObject("attachment")?.optString("name") ?: "Message" }
+    val format=message.optJSONObject("envelope")?.optJSONObject("body")?.optString("format")
+    return payload.optString("text").ifBlank {
+        payload.optJSONObject("reference")?.optString("title") ?: when(format) {
+            "PHOTO" -> "Photo"
+            "VIDEO" -> "Video"
+            "VOICE" -> "Voice note"
+            "FILE" -> "Attachment"
+            else -> "Message"
+        }
+    }
 }
 
 private fun admissionState(conversation:JSONObject):String?=when(conversation.optString("joinStatus")){
@@ -212,20 +221,30 @@ private fun AppState.channelReports(id:String)=chatReportInbox.filter{report->re
                 val thanksCount=reactionsByPerson.values.count{it.last().getJSONObject("envelope").getJSONObject("body").getString("action")=="REACT"}
                 val thankedByMe=state.chatProfile?.let{profile->reactionsByPerson[ChatProtocol.participant(profile)]?.last()?.getJSONObject("envelope")?.getJSONObject("body")?.getString("action")=="REACT"}==true
                 Row(Modifier.fillMaxWidth().animateItem(fadeInSpec=tween(140),placementSpec=null,fadeOutSpec=null),horizontalArrangement=if(owned)Arrangement.End else Arrangement.Start){
-                    Surface(Modifier.widthIn(max=520.dp).fillMaxWidth(.88f),shape=RoundedCornerShape(14.dp),color=if(owned)MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant){
+                    val bubbleColor=if(owned)MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer
+                    val bubbleContentColor=if(owned)MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
+                    val bubbleShape=RoundedCornerShape(topStart=18.dp,topEnd=18.dp,bottomStart=if(owned)18.dp else 4.dp,bottomEnd=if(owned)4.dp else 18.dp)
+                    Surface(Modifier.widthIn(max=520.dp).testTag(if(owned)"chat-bubble-sent-$messageId" else "chat-bubble-received-$messageId"),shape=bubbleShape,color=bubbleColor,contentColor=bubbleContentColor){
                         Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
-                            if(channel)Text(body.getJSONObject("author").getJSONObject("body").getString("name"),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
+                            if(channel)Text(body.getJSONObject("author").getJSONObject("body").getString("name"),style=MaterialTheme.typography.labelLarge,color=bubbleContentColor,fontWeight=FontWeight.SemiBold)
                             if(hidden)Text("Hidden by a channel moderator",style=MaterialTheme.typography.bodyMedium)
                             else if(payload.has("text"))Text(payload.getString("text"),style=MaterialTheme.typography.bodyLarge)
-                            if(!hidden)payload.optJSONObject("reference")?.let {r->Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Outlined.VolunteerActivism,null);TextButton(onClick={if(r.getString("type")=="NEED")openNeed(r.getString("id")) else vm.notice("Find this public update in Updates and check its latest status.")}){Text(r.getString("title"))}}}
+                            if(!hidden)payload.optJSONObject("reference")?.let {r->Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Outlined.VolunteerActivism,null);TextButton(onClick={if(r.getString("type")=="NEED")openNeed(r.getString("id")) else vm.notice("Find this public update in Updates and check its latest status.")},colors=ButtonDefaults.textButtonColors(contentColor=bubbleContentColor)){Text(r.getString("title"))}}}
                             attachment?.let {a->
-                                Row(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalAlignment=Alignment.CenterVertically){Icon(when(body.getString("format")){"PHOTO"->Icons.Outlined.Image;"VIDEO"->Icons.Outlined.Movie;"VOICE"->Icons.Outlined.Mic;else->Icons.Outlined.AttachFile},null);Column(Modifier.weight(1f)){Text(a.getString("name"));Text(fileSize(a.getLong("size"))+if(attachmentComplete)" · On this device" else " · Waiting for a connection",style=MaterialTheme.typography.bodySmall)}}
-                                if(attachmentComplete&&body.getString("format")=="PHOTO")PrivatePhoto(vm,messageId)
-                                if(attachmentComplete&&body.getString("format")=="VOICE")VoicePlayback(vm,messageId)
-                                if(!attachmentComplete)Text("Download when nearby or back online.",style=MaterialTheme.typography.bodySmall)
+                                when(body.getString("format")){
+                                    "PHOTO"->{
+                                        PrivatePhoto(vm,messageId,attachmentComplete)
+                                        Text(fileSize(a.getLong("size"))+if(attachmentComplete)" · On this device" else " · Waiting for a connection",style=MaterialTheme.typography.labelSmall,color=bubbleContentColor.copy(alpha=.78f))
+                                    }
+                                    else->{
+                                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalAlignment=Alignment.CenterVertically){Icon(when(body.getString("format")){"VIDEO"->Icons.Outlined.Movie;"VOICE"->Icons.Outlined.Mic;else->Icons.Outlined.AttachFile},null);Column(Modifier.weight(1f)){Text(a.getString("name"));Text(fileSize(a.getLong("size"))+if(attachmentComplete)" · On this device" else " · Waiting for a connection",style=MaterialTheme.typography.bodySmall)}}
+                                        if(attachmentComplete&&body.getString("format")=="VOICE")VoicePlayback(vm,messageId)
+                                        if(!attachmentComplete)Text("Download when nearby or back online.",style=MaterialTheme.typography.bodySmall)
+                                    }
+                                }
                             }
                             Row(verticalAlignment=Alignment.CenterVertically){
-                                Text(timeLabel(body.getString("createdAt"))+if(owned)" · "+chatStatus(message) else "",Modifier.weight(1f),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(timeLabel(body.getString("createdAt"))+if(owned)" · "+chatStatus(message) else "",style=MaterialTheme.typography.labelSmall,color=bubbleContentColor.copy(alpha=.78f))
                                 Box {
                                     IconButton(onClick={messageActionsId=messageId},modifier=Modifier.testTag("message-actions-$messageId")){Icon(Icons.Outlined.MoreVert,"More message actions")}
                                     DropdownMenu(expanded=messageActionsId==messageId,onDismissRequest={messageActionsId=null}) {
@@ -248,7 +267,7 @@ private fun AppState.channelReports(id:String)=chatReportInbox.filter{report->re
                                 }
                             }
                             if(replies.isNotEmpty())TextButton(onClick={thread=messageId;search="";followLatest=true}){Text("${replies.size} replies")}
-                            if(thanksCount>0)Text("Thanks · $thanksCount",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                            if(thanksCount>0)Text("Thanks · $thanksCount",style=MaterialTheme.typography.labelSmall,color=bubbleContentColor.copy(alpha=.82f))
                         }
                     }
                 }

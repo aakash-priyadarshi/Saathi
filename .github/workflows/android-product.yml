@@ -116,4 +116,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" "$public_apk" "$public_apk.sha256" \
             --title "CJP Swarm Android QA $GITHUB_REF_NAME" \
             --prerelease \
-            --notes "Public staging build for testers. Package: org.saathi.android.qa. Uses the staging service and test data; not for production. This version keeps the conversation focused on messages, moves secondary actions into one message menu and adds expiring private-channel join links that require channel-manager approval. Verify the APK with the attached SHA-256 file."
+            --notes "Public staging build for testers. Package: org.saathi.android.qa. Uses the staging service and test data; not for production. This version adds inline photo thumbnails with an enlargement preview, compact direction-colored message bubbles, the simplified message-actions menu and approval-gated private-channel join links. Verify the APK with the attached SHA-256 file."
