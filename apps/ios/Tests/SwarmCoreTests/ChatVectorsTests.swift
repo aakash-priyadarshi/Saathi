@@ -169,10 +169,16 @@ final class InteropExportTests: XCTestCase {
                                               payload: ["text": "On my way", "replyTo": dmID, "forwarded": true], format: "TEXT")
         let deletion = try ChatDocuments.message(me, profile: profile, conversationID: conversation, recipient: peerProfile, sequence: 3,
                                                  payload: ["deletes": dmID], format: "SYSTEM")
-        // A join link: any identity may ask, and the request still has to be signed by that identity.
+        // A join link: reusable by any identity for 7 days, and the request still has to be signed by that identity.
         let joinLink = try ChatDocuments.admission(me, profile: profile, policy: policy, recipient: "*")
-        XCTAssertEqual((joinLink["body"] as! JSON)["admission"] as? String, "INVITE_PLUS_APPROVAL")
+        let lb = joinLink["body"] as! JSON
+        XCTAssertEqual(lb["admission"] as? String, "INVITE_PLUS_APPROVAL")
+        XCTAssertEqual(try Instant.parse(lb["expiresAt"] as! String).timeIntervalSince(try Instant.parse(lb["issuedAt"] as! String)), 7 * 86400)
         try ChatRules.admission(joinLink, recipient: peer.participantID)
+        try ChatRules.admission(joinLink, recipient: me.participantID, now: Date().addingTimeInterval(6 * 86400))
+        XCTAssertThrowsError(try ChatRules.admission(joinLink, recipient: peer.participantID, now: Date().addingTimeInterval(8 * 86400)))
+        var personal = lb; personal["recipientId"] = peer.participantID
+        XCTAssertThrowsError(try ChatRules.admission(try me.sign(personal), recipient: peer.participantID), "only '*' links may last longer than six hours")
         let linkJoin = try ChatDocuments.join(peer, profile: peerProfile, channelID: (policy["body"] as! JSON)["id"] as! String, action: "JOIN", invitation: joinLink)
         try ChatRules.join(linkJoin)
         let doc: JSON = ["joinLink": joinLink, "linkJoin": linkJoin, "profile": profile, "peerProfile": peerProfile, "dm": dm, "reply": reply, "deletion": deletion, "receipt": receipt, "join": join,

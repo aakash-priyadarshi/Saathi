@@ -188,9 +188,11 @@ public enum ChatRules {
         try J.req(try J.str(b, "visibility") == "OPEN" ? keys.isEmpty : keys.map { $0["participantId"] as? String ?? "" }.sorted() == readers)
         return p
     }
-    static func bounded(_ b: JSON, _ now: Date) throws {
+    /// A reusable join link ("*" admission) may last 7 days; every other invitation or action at most six hours.
+    public static let joinLinkSeconds: TimeInterval = 7 * 86400
+    static func bounded(_ b: JSON, _ now: Date, max: TimeInterval = 21600) throws {
         let issued = try Instant.parse(try J.str(b, "issuedAt")), expires = try Instant.parse(try J.str(b, "expiresAt"))
-        try J.req(issued <= now.addingTimeInterval(300) && expires > now && expires > issued && expires <= issued.addingTimeInterval(21600),
+        try J.req(issued <= now.addingTimeInterval(300) && expires > now && expires > issued && expires <= issued.addingTimeInterval(max),
                   "This invitation or action has expired. Ask for a new one.")
         try uuid(try J.str(b, "id"))
     }
@@ -199,10 +201,10 @@ public enum ChatRules {
         try J.exact(b, required: ["v", "kind", "id", "channelId", "name", "owner", "recipientId", "policyHash", "admission", "issuedAt", "expiresAt"], optional: ["issuer"])
         let name = try J.str(b, "name"); try J.req(name == name.trimmingCharacters(in: .whitespacesAndNewlines) && (1...48).contains(name.utf16.count)); try plainName(name)
         try J.req(try J.int(b, "v") == 1 && J.str(b, "kind") == "CHAT_ADMISSION" && matches(J.str(b, "channelId"), uuidPattern) && matches(J.str(b, "policyHash"), "^[a-f0-9]{64}$"))
-        try J.req(["INVITE_PLUS_APPROVAL", "APPROVAL_ONLY"].contains(try J.str(b, "admission"))); try bounded(b, now)
+        try J.req(["INVITE_PLUS_APPROVAL", "APPROVAL_ONLY"].contains(try J.str(b, "admission"))); try bounded(b, now, max: b["recipientId"] as? String == "*" ? joinLinkSeconds : 21600)
         try profile(try J.obj(b, "owner"), now: now)
         let issuer = try profile((b["issuer"] as? JSON) ?? J.obj(b, "owner"), now: now)
-        // "*" is a join link: anyone may ask, and a channel manager approves.
+        // "*" is a reusable join link: anyone may ask; the group's approval setting decides on the managers' phones.
         try J.req([recipient, "*"].contains(try J.str(b, "recipientId")), "This invitation is for a different participant.")
         try verify(b, v, key: try J.obj(try J.obj(issuer, "body"), "publicKey"))
         return v

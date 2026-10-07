@@ -109,7 +109,7 @@ class ChatReadUiTest {
             ui.onNodeWithContentDescription("Group info").performClick()
             ui.onNodeWithText("Group info").assertIsDisplayed()
             ui.onNodeWithText("Add people").performClick()
-            ui.onNodeWithText("Create join link").assertIsDisplayed()
+            ui.onNodeWithText("Share join link").assertIsDisplayed()
             ui.onNodeWithText("Done").performClick()
             ui.onNodeWithContentDescription("Back").performClick()
             ui.onNodeWithText("Group info").assertDoesNotExist()
@@ -184,7 +184,9 @@ class ChatReadUiTest {
             assertEquals("CHAT_ADMISSION",request.getJSONObject("invitation").getJSONObject("body").getString("kind"))
             assertFalse(visitor.chat.conversations().first{it.getString("id")==channel}.optBoolean("joined"))
             assertNull(visitor.chat.current(channel))
-            assertThrows(IllegalArgumentException::class.java){runBlocking{visitor.chat.acceptInvite(link)}}
+            // The group's link is reusable: the owner shares the same one again, and opening it again re-sends the request.
+            assertEquals(link,runBlocking{owner.chat.createJoinLink(channel)})
+            assertEquals(channel,runBlocking{visitor.chat.acceptInvite(link)})
         } finally {
             InstrumentationRegistry.getInstrumentation().runOnMainSync{ownerStore.clear();visitorStore.clear()}
             listOf(ownerScope,visitorScope).forEach{scope->SecureStore(context,scope).use{it.clearPrivate()};context.deleteDatabase("saathi-$scope.db")}

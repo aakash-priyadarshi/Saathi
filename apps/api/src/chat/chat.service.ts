@@ -572,30 +572,18 @@ export class ChatService {
               const invite = j.invitation?.body;
               if (
                 !invite ||
-                invite.policyHash !== (await hash(policy)) ||
+                // A join link is reusable for 7 days across policy versions while its issuer may still invite;
+                // it is held for the managers' phones, which approve it or (approval off) admit it at once.
+                (invite.recipientId !== '*' &&
+                  (invite.policyHash !== (await hash(policy)) ||
+                    invite.admission !== policy.body.settings?.admission)) ||
                 invite.owner.body.id !== c.ownerId ||
-                !channelCapabilities(policy, (invite.issuer ?? invite.owner).body.id).canInvite ||
-                // A join link always waits for a manager's approval, whatever the channel's invitation mode.
-                (invite.recipientId !== '*' && invite.admission !== policy.body.settings?.admission)
+                !channelCapabilities(policy, (invite.issuer ?? invite.owner).body.id).canInvite
               )
                 throw new ForbiddenException(
                   'This channel requires a current authenticated invitation.',
                 );
             }
-            // A join link admits one person: the first participant whose request carries it reserves it.
-            const link = j.invitation?.body;
-            if (
-              link?.recipientId === '*' &&
-              (await tx.chatJoinRequest.findFirst({
-                where: {
-                  conversationId: j.channelId,
-                  participantId: { not: j.participant.body.id },
-                  profile: { path: ['body', 'invitation', 'body', 'id'], equals: link.id },
-                },
-                select: { id: true },
-              }))
-            )
-              throw new ForbiddenException('This join link has already been used.');
           }
           if (j.action === 'LEAVE' && c.ownerId === j.participant.body.id) continue;
           await this.profile(tx, j.participant);
