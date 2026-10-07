@@ -25,7 +25,8 @@ import SwarmCore
         confirmed = true
         // Same fields Android sends; this transport carries files, not calls.
         try? await send("HELLO", ["protocol": 1, "maxFrame": Nearby.maximumFrameBytes, "media": false, "files": true])
-        try? await send("NATIVE_CAPS", ["largeFiles": true, "chatChunks": true, "walkieTalkie": false])
+        // "platform" lets Android search Nearby (not its Android-only Bluetooth fallback) after an iPhone drops.
+        try? await send("NATIVE_CAPS", ["largeFiles": true, "chatChunks": true, "walkieTalkie": false, "platform": "ios"])
         await onConfirmed()
     }
     func reset() {
