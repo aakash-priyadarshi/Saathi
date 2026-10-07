@@ -29,7 +29,9 @@ Implemented and interoperating with Android:
 
 Build: `cd apps/ios/App && xcodegen generate`, then build the `Swarm` scheme with your own Apple team (`DEVELOPMENT_TEAM=...`). Tests: `swift test --package-path apps/ios` (SwarmCore, protocol vectors, service config) and the TypeScript interop check `SWARM_INTEROP_OUT=/tmp/x.json swift test --package-path apps/ios --filter InteropExportTests && node apps/ios/scripts/ios-interop.mjs /tmp/x.json`. Simulator review: launch with `-SwarmDemo 1 [-SwarmTab chats|nearby|more] [-SwarmOpen dm|channel|owned|info]` (DEBUG only; the simulator cannot run Nearby because it has no Bluetooth).
 
-Still open: TestFlight distribution, the Hotspot Configuration and Wi-Fi Aware entitlements (all need a paid Apple Developer team), live walkie-talkie and calls (Android-only), server push.
+TestFlight (paid team): `ASC_KEY_ID=... ASC_ISSUER_ID=... APPLE_TEAM_ID=... apps/ios/scripts/testflight.sh` archives with the Hotspot Configuration entitlement (`App/Release.entitlements`) under the bundle ID `org.cockroachjantaparty.swarm` (`org.cjp.swarm.staging` stays with free-team installs) and uploads it, signed through an App Store Connect Team API key at `~/.appstoreconnect/private_keys/AuthKey_<id>.p8`. The first run registers the bundle ID; if the upload then fails because there is no app record, create the app in App Store Connect with that bundle ID and run `testflight.sh upload`. Wi-Fi Aware is left out: in Nearby it is only a bandwidth-upgrade medium after connecting, needs a system pairing prompt per device, and does not help an Android phone discover an iPhone.
+
+Still open: live walkie-talkie and calls (Android-only), server push.
 
 Measured with an iPhone 17 Pro Max (iOS 27.2) and a Pixel 8 (Android 17 beta, Swarm QA 0.1.1):
 
