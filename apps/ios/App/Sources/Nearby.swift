@@ -1,3 +1,4 @@
+import CoreBluetooth
 import Foundation
 import Network
 import NearbyConnections
@@ -46,6 +47,7 @@ import SwarmCore
     private var wifiName: String?
 
     init() {
+        CBCentralManager.silenceConnectionAlerts()
         manager.delegate = bridge; advertiser.delegate = bridge; discoverer.delegate = bridge
         path.pathUpdateHandler = { [weak self] update in
             let wifi = update.status == .satisfied && update.usesInterfaceType(.wifi)
@@ -220,5 +222,22 @@ final class NearbyBridge: ConnectionManagerDelegate, DiscovererDelegate, Adverti
                            forPayload payloadID: PayloadID) {}
     func connectionManager(_ connectionManager: ConnectionManager, didChangeTo state: ConnectionState, for endpointID: EndpointID) {
         main { $0.changed(state, endpointID) }
+    }
+}
+
+/// Nearby's BLE sockets connect with iOS's notify-on-connection/disconnection/notification options, so a suspended
+/// Swarm shows "The “Android-…” accessory would like to open CJP Swarm" on every link event. Strip them.
+extension CBCentralManager {
+    static func silenceConnectionAlerts() { _ = swizzled }
+    private static let swizzled: Void = {
+        guard let original = class_getInstanceMethod(CBCentralManager.self, #selector(connect(_:options:))),
+              let quiet = class_getInstanceMethod(CBCentralManager.self, #selector(swarmQuietConnect(_:options:))) else { return }
+        method_exchangeImplementations(original, quiet)
+    }()
+    @objc private func swarmQuietConnect(_ peripheral: CBPeripheral, options: [String: Any]?) {
+        var options = options ?? [:]
+        for key in [CBConnectPeripheralOptionNotifyOnConnectionKey, CBConnectPeripheralOptionNotifyOnDisconnectionKey,
+                    CBConnectPeripheralOptionNotifyOnNotificationKey] { options.removeValue(forKey: key) }
+        swarmQuietConnect(peripheral, options: options) // exchanged: calls CoreBluetooth's connect
     }
 }
