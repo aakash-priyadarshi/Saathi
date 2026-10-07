@@ -40,6 +40,8 @@ import {
   DonationsController,
   VolunteerController,
   ManagementController,
+  UploadsController,
+  GuestController,
 } from './http/controllers';
 @Catch()
 class Errors implements ExceptionFilter {
@@ -81,6 +83,8 @@ class Errors implements ExceptionFilter {
     DonationsController,
     VolunteerController,
     ManagementController,
+    UploadsController,
+    GuestController,
   ],
   providers: [
     { provide: ChatService, useFactory: (db: Database) => new ChatService(db), inject: [Database] },
@@ -105,8 +109,9 @@ class Errors implements ExceptionFilter {
     { provide: AuthService, useFactory: (db: Database) => new AuthService(db), inject: [Database] },
     {
       provide: RequestsService,
-      useFactory: (db: Database, auth: AuthService) => new RequestsService(db, auth),
-      inject: [Database, AuthService],
+      useFactory: (db: Database, auth: AuthService, media: MediaService) =>
+        new RequestsService(db, auth, media),
+      inject: [Database, AuthService, MediaService],
     },
     {
       provide: DonationsService,
@@ -142,22 +147,27 @@ export async function createApp(plane: typeof env.API_PLANE = env.API_PLANE) {
       bodyParser: false,
     },
   );
+  const jsonAt = (paths: string[]) => (req: { url?: string; headers: Record<string, unknown> }) =>
+    paths.includes(req.url?.split('?')[0] ?? '') &&
+    String(req.headers['content-type'] ?? '').split(';')[0] === 'application/json';
   // Only signed chat sync needs the larger roster budget; other routes retain 100 KiB.
+  app.useBodyParser('json', { limit: 900000, type: jsonAt(['/api/v1/chat/sync']) });
+  // Signed media requests carry up to 1 MiB of parts; Zod still bounds every field.
   app.useBodyParser('json', {
-    limit: 900000,
-    type: (req) =>
-      req.url?.split('?')[0] === '/api/v1/chat/sync' &&
-      req.headers['content-type']?.split(';')[0] === 'application/json',
+    limit: '2mb',
+    type: jsonAt(['/api/v1/chat/attachment', '/api/v1/community/attachment']),
   });
   app.useBodyParser('json', { limit: '100kb' });
   app.useBodyParser('urlencoded', { limit: '100kb', extended: true });
   app.enableShutdownHooks();
+  // One trusted hop (Caddy or the web proxy) supplies the client IP that rate limits key on.
+  app.set('trust proxy', 1);
   app.use(cookieParser());
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
   app.enableCors({
     origin: env.WEB_ORIGIN,
     credentials: true,
-    allowedHeaders: ['Content-Type', 'Idempotency-Key', 'X-CSRF-Token'],
+    allowedHeaders: ['Content-Type', 'Idempotency-Key', 'X-CSRF-Token', 'X-Upload-Token'],
   });
   app.use((req: Request, res: Response, next: NextFunction) => {
     const requestId = randomUUID(),
@@ -198,17 +208,12 @@ export async function createApp(plane: typeof env.API_PLANE = env.API_PLANE) {
   if (env.STORAGE_PROVIDER === 'local' && plane !== 'public') {
     express.get('/api/v1/public/media/:folder/:key', async (req: Request, res: Response) => {
       try {
-        const key = `${req.params.folder}/${req.params.key}`;
-        const bytes = await app.get(S3Storage).readPublic(key);
-        res
-          .type(
-            key.endsWith('.m4a')
-              ? 'audio/mp4'
-              : key.endsWith('.mp4')
-                ? 'video/mp4'
-                : 'image/jpeg',
-          )
-          .send(bytes);
+        // sendFile streams and honours Range requests, so large videos can seek.
+        const path = app.get(S3Storage).publicPath(`${req.params.folder}/${req.params.key}`);
+        // Keys are pattern-checked by publicPath; dotfiles must be allowed for `.data/media`.
+        res.sendFile(path, { dotfiles: 'allow' }, (error) => {
+          if (error && !res.headersSent) res.sendStatus(404);
+        });
       } catch {
         res.sendStatus(404);
       }

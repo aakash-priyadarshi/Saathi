@@ -6,6 +6,12 @@ export const MAX_CHANNEL_MEMBERS = 200;
 export const MAX_CHANNEL_POLICY_BYTES = 384 * 1024;
 export const MAX_CHAT_SYNC_BYTES = 900000;
 
+/** One limit for every photo/video/file path: uploads, reports, chat and nearby transfer. */
+export const MAX_MEDIA_BYTES = 250 * 1024 * 1024;
+/** Largest 8 KiB part index; 256 MiB leaves room for encryption overhead. */
+export const MAX_MEDIA_PART = 32767;
+/** Parts per signed HTTP request (1 MiB) keep a 250 MB upload to ~250 requests. */
+export const MAX_MEDIA_PARTS_PER_REQUEST = 128;
 export const participantIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const signature = z.string().regex(/^[A-Za-z0-9_-]{86}$/);
 const instant = z.string().datetime();
@@ -176,7 +182,8 @@ export const chatAdmissionSchema = z
         name: displayName(48),
         owner: chatProfileSchema,
         issuer: chatProfileSchema.optional(),
-        recipientId: participantIdSchema,
+        /** A participant, or '*' for a join link: anyone may ask, and a channel manager must approve. */
+        recipientId: participantIdSchema.or(z.literal('*')),
         policyHash: participantIdSchema,
         admission: z.enum(['INVITE_PLUS_APPROVAL', 'APPROVAL_ONLY']),
         issuedAt: instant,
@@ -194,7 +201,7 @@ export async function validChatAdmission(input: unknown, recipient: string, now 
   await validChatProfile(b.owner, now);
   if (b.issuer) await validChatProfile(b.issuer, now);
   if (
-    b.recipientId !== recipient ||
+    (b.recipientId !== recipient && b.recipientId !== '*') ||
     !(await verify(b, invite.signature, (b.issuer ?? b.owner).body.publicKey))
   )
     throw new Error('Invitation is not authorized for this participant.');
@@ -337,6 +344,10 @@ export const chatPayloadSchema = z
       })
       .strict()
       .optional(),
+    replyTo: z.string().uuid().optional(),
+    forwarded: z.literal(true).optional(),
+    /** Delete for everyone: a SYSTEM message carrying only the id of the author's earlier message. */
+    deletes: z.string().uuid().optional(),
     attachment: z
       .object({
         id: z.string().uuid(),
@@ -351,7 +362,7 @@ export const chatPayloadSchema = z
           'video/webm',
           'text/plain',
         ]),
-        size: z.number().int().min(1).max(16777188),
+        size: z.number().int().min(1).max(MAX_MEDIA_BYTES),
         hash: participantIdSchema,
         cipherHash: participantIdSchema,
         key: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
@@ -360,9 +371,15 @@ export const chatPayloadSchema = z
       .optional(),
   })
   .strict()
-  .refine((p) => !!(p.text || p.reference || p.attachment));
+  .refine((p) =>
+    p.deletes ? Object.keys(p).length === 1 : !!(p.text || p.reference || p.attachment),
+  );
 export function validChatPayload(value: unknown, format: ChatMessage['body']['format']) {
   const payload = chatPayloadSchema.parse(value);
+  if (payload.deletes) {
+    if (format !== 'SYSTEM') throw new Error('Invalid chat payload.');
+    return payload;
+  }
   if (
     bytes(payload).length > 12000 ||
     (['TEXT', 'SYSTEM'].includes(format) && !payload.text) ||

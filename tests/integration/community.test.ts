@@ -206,7 +206,7 @@ describe('Participant help and report publication on PostgreSQL', () => {
     expect((await sync(author, [reopen])).rejected).toHaveLength(1);
     expect(await db.reliefRequest.count({ where: { creatorId: author.profile.body.id } })).toBe(0);
   });
-  it('deduplicates competing carriers, preserves report author/time, gates public feed and authenticates receipts', async () => {
+  it('deduplicates competing carriers, preserves report author/time, publishes without approval and authenticates receipts', async () => {
     const author = await chatPerson('Original reporter'),
       b = await chatPerson('Carrier B'),
       d = await chatPerson('Carrier D');
@@ -231,10 +231,7 @@ describe('Participant help and report publication on PostgreSQL', () => {
     expect(post.participantName).toBe('Original reporter');
     expect(post.createdAt.toISOString()).toBe(createdAt);
     expect(post.receivedAt.getTime()).toBeGreaterThan(Date.parse(createdAt));
-    expect((await new PublicReadService(db).feed()).some((p) => p.id === report.body.id)).toBe(
-      false,
-    );
-    await app.get(ManagementService).moderate(admin, report.body.id, 'APPROVED');
+    expect(post.moderation).toBe('APPROVED');
     const published = (await new PublicReadService(db).feed()).find(
       (p) => p.id === report.body.id,
     )!;
@@ -310,7 +307,6 @@ describe('Participant help and report publication on PostgreSQL', () => {
     expect(asset.processingState).toBe('READY');
     const sanitized = await app.get(S3Storage).readPrivate(asset.publicKey!);
     expect((await sharp(sanitized).metadata()).exif).toBeUndefined();
-    await app.get(ManagementService).moderate(admin, report.body.id, 'APPROVED');
     expect(
       (await new PublicReadService(db).feed()).find((p) => p.id === report.body.id)!.media,
     ).toHaveLength(1);

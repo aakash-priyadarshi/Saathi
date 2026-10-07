@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Put,
   Body,
   Param,
   Query,
@@ -14,7 +15,13 @@ import {
   UploadedFile,
   Sse,
   MessageEvent,
+  UnauthorizedException,
+  PayloadTooLargeException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
+import { createHash } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { MAX_MEDIA_BYTES, communityText } from '@saathi/protocol';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiHeader, ApiBody } from '@nestjs/swagger';
 import { Observable, interval, map, concatMap, startWith, distinctUntilChanged } from 'rxjs';
@@ -35,9 +42,94 @@ import { AuthService } from '../auth/auth.service';
 import { RequestsService } from '../requests/requests.service';
 import { DonationsService } from '../donations/donations.service';
 import { ManagementService } from '../management/management.service';
-import { MediaService, UploadFile } from '../media/media.service';
+import { MediaService, UploadFile, UPLOAD_PART_BYTES } from '../media/media.service';
 import { platformFeatures } from '../public/platform-features';
 const uuid = z.string().uuid();
+async function readBody(req: Request, limit: number) {
+  const parts: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > limit) throw new PayloadTooLargeException('Upload part is too large.');
+    parts.push(chunk as Buffer);
+  }
+  return Buffer.concat(parts);
+}
+/** Guests prove ownership of their uploads with a random token only their browser holds. */
+function guestOwner(req: Request) {
+  const token = req.headers['x-upload-token'];
+  if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token))
+    throw new UnauthorizedException('Upload token is missing.');
+  return `guest:${createHash('sha256').update(token).digest('hex')}`;
+}
+@ApiTags('Media uploads')
+@Controller('api/v1/uploads')
+export class UploadsController {
+  constructor(
+    @Inject(AuthService) private readonly auth: AuthService,
+    @Inject(MediaService) private readonly media: MediaService,
+  ) {}
+  /** Team uploads name their organization; uploads without one are guest uploads. */
+  private async owner(req: Request, organizationId: string | null) {
+    if (!organizationId) return guestOwner(req);
+    const actor = await this.auth.actor(req, true);
+    this.auth.requireOrg(actor, organizationId);
+    return actor.id;
+  }
+  @Post()
+  @Throttle({ default: { limit: 30, ttl: 3600000 } })
+  @ApiOperation({ summary: 'Start a resumable photo/video upload of up to 250 MB' })
+  async begin(@Req() req: Request, @Body() body: unknown) {
+    const b = z
+      .object({
+        size: z.number().int().min(1).max(MAX_MEDIA_BYTES),
+        organizationId: uuid.optional(),
+      })
+      .strict()
+      .parse(body);
+    const org = b.organizationId ?? null;
+    return this.media.beginUpload(await this.owner(req, org), org, b.size);
+  }
+  @Put(':id/parts/:index') async part(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Param('index') index: string,
+  ) {
+    const uploadId = uuid.parse(id),
+      owner = await this.owner(req, await this.media.uploadOrganization(uploadId));
+    return this.media.putPart(
+      uploadId,
+      owner,
+      z.coerce.number().int().min(0).parse(index),
+      await readBody(req, UPLOAD_PART_BYTES),
+    );
+  }
+  @Post(':id/complete') async complete(@Req() req: Request, @Param('id') id: string) {
+    const uploadId = uuid.parse(id),
+      owner = await this.owner(req, await this.media.uploadOrganization(uploadId));
+    return this.media.completeUpload(uploadId, owner);
+  }
+}
+@ApiTags('Guest sharing')
+@Controller('api/v1/guest')
+export class GuestController {
+  constructor(@Inject(RequestsService) private readonly requests: RequestsService) {}
+  @Post('posts')
+  @Throttle({ default: { limit: 10, ttl: 3600000 } })
+  @ApiOperation({ summary: 'Share photos or videos without an account (unverified, no approval)' })
+  publish(@Req() req: Request, @Body() body: unknown) {
+    const b = z
+      .object({
+        caption: communityText(2000),
+        area: communityText(80),
+        contentWarning: z.boolean().default(false),
+        mediaIds: z.array(uuid).min(1).max(6),
+      })
+      .strict()
+      .parse(body);
+    return this.requests.publishGuest(guestOwner(req), b);
+  }
+}
 @ApiTags('Public relief')
 @Controller('api/v1/public')
 export class PublicController {
@@ -236,7 +328,11 @@ export class VolunteerController {
   }
   @Post('media')
   @UseInterceptors(
-    FileInterceptor('file', { limits: { fileSize: 25 * 1024 * 1024, files: 1, fields: 1 } }),
+    // Disk storage: a 250 MB file must not be buffered in API memory.
+    FileInterceptor('file', {
+      dest: tmpdir(),
+      limits: { fileSize: MAX_MEDIA_BYTES, files: 1, fields: 1 },
+    }),
   )
   async upload(
     @Req() req: Request,

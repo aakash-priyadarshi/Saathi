@@ -56,7 +56,7 @@ async function pair(a: Page, b: Page) {
   await a.getByRole('button', { name: 'The codes match' }).click();
   await b.getByRole('button', { name: 'The codes match' }).click();
   await Promise.all(
-    [a, b].map((p) => expect(p.getByLabel('Offer a small image or text file')).toBeEnabled()),
+    [a, b].map((p) => expect(p.getByLabel('Offer a photo, video or text file')).toBeEnabled()),
   );
 }
 
@@ -234,7 +234,7 @@ test('nearby messages, consented attachment and synthetic video work with websit
     await expect(a.getByText('Reached another phone', { exact: true })).toBeVisible();
     const bytes = Buffer.alloc(1048576, 7);
     await a
-      .getByLabel('Offer a small image or text file')
+      .getByLabel('Offer a photo, video or text file')
       .setInputFiles({ name: 'relief-transfer.txt', mimeType: 'text/plain', buffer: bytes });
     await expect(b.getByText('relief-transfer.txt · 1024 KB', { exact: true })).toBeVisible();
     expect((await records<Attachment>(b, 'attachments')).length).toBe(0);
@@ -252,8 +252,18 @@ test('nearby messages, consented attachment and synthetic video work with websit
         r.onsuccess = () => resolve(r.result);
       });
       const file = files[0]!,
-        raw = new Uint8Array(file.size);
-      Object.entries(file.chunks).forEach(([i, chunk]) => raw.set(chunk, Number(i) * 8192));
+        raw = new Uint8Array(file.size),
+        range = IDBKeyRange.bound(`${file.id}/`, `${file.id}/~`);
+      const read = <T>(request: (store: IDBObjectStore) => IDBRequest<T>) =>
+        new Promise<T>((resolve) => {
+          const r = request(open.transaction('parts').objectStore('parts'));
+          r.onsuccess = () => resolve(r.result);
+        });
+      const keys = await read((store) => store.getAllKeys(range)),
+        parts = await read((store) => store.getAll(range));
+      keys.forEach((key, i) =>
+        raw.set(parts[i] as Uint8Array, Number(String(key).split('/')[1]) * 8192),
+      );
       open.close();
       return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', raw)))
         .map((b) => b.toString(16).padStart(2, '0'))
@@ -341,7 +351,7 @@ test('an interrupted attachment resumes from persisted parts after receiver relo
       cb.route('**/api/**', (route) => route.abort()),
     ]);
     await pair(a, b);
-    await a.getByLabel('Offer a small image or text file').setInputFiles({
+    await a.getByLabel('Offer a photo, video or text file').setInputFiles({
       name: 'resume-relief.txt',
       mimeType: 'text/plain',
       buffer: Buffer.alloc(1048576, 4),
@@ -349,16 +359,12 @@ test('an interrupted attachment resumes from persisted parts after receiver relo
     await b.getByRole('button', { name: 'Receive or resume attachment' }).click();
     await expect(a.getByRole('heading', { name: 'Nearby connection lost' })).toBeVisible();
     await expect
-      .poll(() =>
-        records<Attachment>(b, 'attachments').then((f) => Object.keys(f[0]?.chunks ?? {}).length),
-      )
+      .poll(() => records<Attachment>(b, 'attachments').then((f) => f[0]?.received ?? 0))
       .toBeGreaterThan(0);
-    const savedParts = Object.keys((await records<Attachment>(b, 'attachments'))[0]!.chunks).length;
+    const savedParts = (await records<Attachment>(b, 'attachments'))[0]!.received ?? 0;
     expect(savedParts).toBeLessThan(128);
     await b.reload();
-    expect(Object.keys((await records<Attachment>(b, 'attachments'))[0]!.chunks).length).toBe(
-      savedParts,
-    );
+    expect((await records<Attachment>(b, 'attachments'))[0]!.received).toBe(savedParts);
     await pair(a, b);
     await a.getByRole('button', { name: 'Offer saved attachment to this person' }).click();
     await b.getByRole('button', { name: 'Receive or resume attachment' }).click();
@@ -366,13 +372,40 @@ test('an interrupted attachment resumes from persisted parts after receiver relo
       b.getByText('resume-relief.txt · Checked and saved on this phone', { exact: true }),
     ).toBeVisible();
     const complete = (await records<Attachment>(b, 'attachments'))[0]!;
-    expect(Object.keys(complete.chunks)).toHaveLength(128);
+    expect(complete.received).toBe(128);
     expect(complete.hash).toBe(createHash('sha256').update(Buffer.alloc(1048576, 4)).digest('hex'));
   } finally {
     await cb.close();
   }
 });
 
+test('a video larger than one 2,048-part round arrives in rounds and verifies', async ({
+  page: a,
+  browser,
+}) => {
+  // 20 MiB = 2,560 parts: the receiver must ask for a second round after the first FILE_DONE.
+  test.setTimeout(240000);
+  const cb = await browser.newContext({ baseURL: 'http://localhost:3000' }),
+    b = await cb.newPage(),
+    bytes = Buffer.alloc(20 * 1024 * 1024, 7);
+  try {
+    await Promise.all([prepareApp(a), prepareApp(b)]);
+    await Promise.all([a.goto('/nearby'), b.goto('/nearby')]);
+    await pair(a, b);
+    await a
+      .getByLabel('Offer a photo, video or text file')
+      .setInputFiles({ name: 'long-field.mp4', mimeType: 'video/mp4', buffer: bytes });
+    await b.getByRole('button', { name: 'Receive or resume attachment' }).click();
+    await expect(
+      b.getByText('long-field.mp4 · Checked and saved on this phone', { exact: true }),
+    ).toBeVisible({ timeout: 200000 });
+    const complete = (await records<Attachment>(b, 'attachments'))[0]!;
+    expect(complete.received).toBe(2560);
+    expect(complete.hash).toBe(createHash('sha256').update(bytes).digest('hex'));
+  } finally {
+    await cb.close();
+  }
+});
 test('two-hop relay publishes once while the author is absent and carries a signed receipt back', async ({
   page: a,
   context: ca,

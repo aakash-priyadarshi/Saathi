@@ -196,6 +196,68 @@ describe('Real PostgreSQL operational chat boundary', () => {
     const demoted = await channelAction(mod, next.policy, 'UNLOCK_THREAD', root.body.id);
     expect((await sync(mod, { actions: [demoted] })).rejectedActions).toHaveLength(1);
   });
+  it('accepts a join-link request into review without failing the sync or sharing the channel', async () => {
+    const owner = await chatPerson('Link owner'),
+      visitor = await chatPerson('Link visitor');
+    const channel = await chatPolicy(owner, [owner], 'INVITE');
+    channel.policy.body.settings = { mode: 'DISCUSSION', admission: 'INVITE_AUTO' };
+    channel.policy.signature = await sign(channel.policy.body, owner.signing.privateKey);
+    await sync(owner, { policies: [channel.policy] });
+    // Android join links always require approval, even when invitations normally admit at once.
+    const descriptor = {
+      v: 1 as const,
+      kind: 'CHAT_ADMISSION' as const,
+      id: randomUUID(),
+      channelId: channel.policy.body.id,
+      name: channel.policy.body.name,
+      owner: owner.profile,
+      issuer: owner.profile,
+      recipientId: '*',
+      policyHash: await hash(channel.policy),
+      admission: 'INVITE_PLUS_APPROVAL' as const,
+      issuedAt: new Date().toISOString(),
+      expiresAt: channel.policy.body.expiresAt,
+    };
+    const invitation = {
+      body: descriptor,
+      signature: await sign(descriptor, owner.signing.privateKey),
+    };
+    const joinBody = {
+      v: 1 as const,
+      kind: 'CHAT_JOIN' as const,
+      id: randomUUID(),
+      channelId: channel.policy.body.id,
+      participant: visitor.profile,
+      action: 'JOIN' as const,
+      invitation,
+      issuedAt: new Date().toISOString(),
+      expiresAt: channel.policy.body.expiresAt,
+    };
+    const join = { body: joinBody, signature: await sign(joinBody, visitor.signing.privateKey) };
+    visitor.channels.add(channel.policy.body.id);
+    const pending = await sync(visitor, { joins: [join] });
+    expect(pending.policies).toEqual([]);
+    expect(pending.messages).toEqual([]);
+    expect((await sync(owner)).joins).toHaveLength(1);
+    // A join link is single use: a second person carrying it is refused, the first may re-send.
+    const late = await chatPerson('Late link visitor');
+    const lateBody = { ...joinBody, id: randomUUID(), participant: late.profile };
+    const refused = await request(app.getHttpServer())
+      .post('/api/v1/chat/sync')
+      .set('Origin', origin)
+      .send(
+        await chatBatch(late, {
+          joins: [{ body: lateBody, signature: await sign(lateBody, late.signing.privateKey) }],
+        }),
+      );
+    expect(refused.status).toBe(403);
+    expect(refused.body.message).toBe('This join link has already been used.');
+    const againBody = { ...joinBody, id: randomUUID(), issuedAt: new Date().toISOString() };
+    await sync(visitor, {
+      joins: [{ body: againBody, signature: await sign(againBody, visitor.signing.privateKey) }],
+    });
+    expect((await sync(owner)).joins).toHaveLength(1);
+  });
   it('gates private admission, delegated approval and bans, pauses old epochs, and keeps rename-bound bans', async () => {
     const owner = await chatPerson('Private owner'),
       admin = await chatPerson('Private admin'),

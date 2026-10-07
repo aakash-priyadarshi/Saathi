@@ -11,6 +11,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
@@ -112,7 +115,18 @@ import java.util.UUID
     val points = vm.repository.preparation?.getJSONArray("points")?.objects() ?: emptyList()
     var pointId by rememberSaveable(id) { mutableStateOf(initial?.optString("pointId") ?: points.firstOrNull()?.getString("id") ?: "") }
     var saved by remember { mutableStateOf(false) }
-    fun draft() = obj("id" to id, "draftType" to if (field) "field" else "request", "title" to title, "description" to description, "quantity" to quantity, "unit" to unit, "category" to category, "priority" to priority, "hours" to hours, "pointId" to pointId).apply { if (editing != null) put("editing", editing); if(initial?.optBoolean("fromChat")==true)put("fromChat",true) }
+    // Originals stay on this phone until the signed text is accepted, then upload directly (never carried).
+    var media by rememberSaveable(id) { mutableStateOf(initial?.optJSONArray("mediaUris")?.strings()?.joinToString("\n") ?: "") }
+    val context = LocalContext.current
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        val chosen = uris.take(4).filter { uri ->
+            val size = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { it.moveToFirst(); it.getLong(0) } ?: 0
+            (size in 1..FieldMedia.MAX_BYTES).also { ok -> if (!ok) vm.notice("Each photo or video must be 250 MB or less.") }
+        }
+        chosen.forEach { runCatching { context.contentResolver.takePersistableUriPermission(it, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) } }
+        media = chosen.joinToString("\n"); saved = false
+    }
+    fun draft() = obj("id" to id, "draftType" to if (field) "field" else "request", "title" to title, "description" to description, "quantity" to quantity, "unit" to unit, "category" to category, "priority" to priority, "hours" to hours, "pointId" to pointId).apply { if (field && media.isNotBlank()) put("mediaUris", JSONArray(media.split("\n"))); if (editing != null) put("editing", editing); if(initial?.optBoolean("fromChat")==true)put("fromChat",true) }
     fun save() { vm.action { vm.repository.store.put("drafts", id, draft()); saved = true; vm.notice("Draft saved on this phone.") } }
     val valid = if (field) description.trim().length in 5..4000 else title.trim().length in 3..100 && description.trim().length in 5..2000 && (quantity.toIntOrNull() ?: 0) in 1..1000000 && unit.trim().length in 1..30 && (hours.toIntOrNull() ?: 0) in 1..720
     LazyColumn(modifier, contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -120,6 +134,10 @@ import java.util.UUID
         if(initial?.optBoolean("fromChat")==true)item {Notice("Review before making this public","This draft copies a private message. Remove personal details, verify the need and choose its quantity and relief point before signing. Chat membership gives no relief publishing permission.",Icons.Outlined.VerifiedUser)}
         if (!field) item { OutlinedTextField(title, { title = it.take(100); saved = false }, label = { Text("What is needed?") }, modifier = Modifier.fillMaxWidth()) }
         item { OutlinedTextField(description, { description = it.take(if (field) 4000 else 2000); saved = false }, label = { Text(if (field) "Field update" else "Description and delivery context") }, modifier = Modifier.fillMaxWidth(), minLines = 4) }
+        if (field) item {
+            OutlinedButton(onClick = { picker.launch(arrayOf("image/*", "video/*")) }, modifier = Modifier.fillMaxWidth()) { Text(if (media.isBlank()) "Add photos or videos" else "${media.split("\n").size} selected · Change") }
+            Text("Up to 4 files, 250 MB each, any video length. They upload after Swarm accepts the text and publish without approval. Check faces before sharing.", Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         if (!field) {
             item { OutlinedTextField(quantity, { quantity = it.filter(Char::isDigit).take(7); saved = false }, label = { Text("Total quantity needed") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth(), singleLine = true) }
             if (editing == null) {

@@ -15,7 +15,14 @@ import {
 import { Loading, ErrorNotice, Verified } from '@saathi/ui';
 import { categories } from '@saathi/types';
 import type { CurrentUser, PublicRequest } from '@saathi/types';
-import { api, useMutation, useResource, count, formatDate } from '../lib/api';
+import {
+  useMutation,
+  useResource,
+  count,
+  formatDate,
+  uploadMedia,
+  MAX_MEDIA_BYTES,
+} from '../lib/api';
 import { clearPrivate, db, events, setting } from '../lib/offline/store';
 type Point = { id: string; name: string; publicLocation: string; organizationId: string };
 type Incoming = {
@@ -531,6 +538,7 @@ export function PostPage() {
   const [files, setFiles] = useState<File[]>([]),
     [linked, setLinked] = useState(false),
     [uploading, setUploading] = useState(false),
+    [progress, setProgress] = useState(0),
     [uploadError, setUploadError] = useState('');
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -539,17 +547,14 @@ export function PostPage() {
     const point = data.points.find((p) => p.id === f.get('reliefPointId'));
     if (!point) return;
     setUploading(true);
+    setProgress(0);
     setUploadError('');
     try {
       const mediaIds: string[] = [];
-      for (const file of files) {
-        const form = new FormData();
-        form.set('file', file);
-        form.set('organizationId', point.organizationId);
-        const result = await api<{ id: string }>('/volunteer/media', {
-          method: 'POST',
-          body: form,
-        });
+      for (const [index, file] of files.entries()) {
+        const result = await uploadMedia(file, { organizationId: point.organizationId }, (f) =>
+          setProgress((index + f) / files.length),
+        );
         mediaIds.push(result.id);
       }
       const publishAt = String(f.get('publishAt'));
@@ -604,13 +609,18 @@ export function PostPage() {
                 type="file"
                 accept="image/jpeg,image/png,image/webp,video/mp4,video/webm"
                 multiple
-                onChange={(e) => setFiles(Array.from(e.target.files ?? []).slice(0, 6))}
+                onChange={(e) => {
+                  const chosen = Array.from(e.target.files ?? []).slice(0, 6);
+                  const large = chosen.find((f) => f.size > MAX_MEDIA_BYTES);
+                  setUploadError(large ? `${large.name} is larger than 250 MB.` : '');
+                  setFiles(large ? [] : chosen);
+                }}
               />
             </label>
             <p className="form-hint">
-              Up to 6 files, 25 MB each. Metadata is removed. Media posts require coordinator
-              approval. Check visible faces and personal details before uploading; automatic face
-              blur is not available.
+              Up to 6 files, 250 MB each, any video length. Metadata is removed. Updates publish
+              immediately; videos appear once processed. Check visible faces and personal details
+              before uploading; automatic face blur is not available.
             </p>
             <label>
               Publish after <span className="optional">leave blank to publish now</span>
@@ -639,12 +649,10 @@ export function PostPage() {
             )}
             <button className="button" disabled={mutation.busy || uploading || !data.points.length}>
               {uploading
-                ? 'Uploading and preparing media…'
+                ? `Uploading media… ${Math.round(progress * 100)}%`
                 : mutation.busy
                   ? 'Publishing…'
-                  : files.length
-                    ? 'Submit update for approval'
-                    : 'Publish update'}
+                  : 'Publish update'}
             </button>
           </form>
         )

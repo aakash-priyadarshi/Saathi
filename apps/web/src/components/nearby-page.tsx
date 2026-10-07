@@ -5,14 +5,14 @@ import QRCode from 'qrcode';
 import { BrowserQRCodeReader, type IScannerControls } from '@zxing/browser';
 import { Radio, Send, Phone, Video, PhoneOff, Upload, Download, ScanLine } from 'lucide-react';
 import { ErrorNotice } from '@saathi/ui';
-import { NearbySession, attachmentBytes } from '../lib/nearby/session';
+import { NearbySession, attachmentBlob } from '../lib/nearby/session';
 import { db, messages, type Message, type Attachment } from '../lib/offline/store';
 import { type PeerState } from '../lib/nearby/peer';
 import { useConnection } from './connectivity-provider';
 type FileOffer = {
   id: string;
   name: string;
-  mime: 'image/jpeg' | 'image/png' | 'image/webp' | 'text/plain';
+  mime: 'image/jpeg' | 'image/png' | 'image/webp' | 'video/mp4' | 'video/webm' | 'text/plain';
   size: number;
   hash: string;
 };
@@ -523,10 +523,10 @@ export function NearbyPage() {
                 aria-disabled={!confirmed || !peerFiles || busy || paused}
               >
                 <Upload size={16} />
-                Offer a small image or text file
+                Offer a photo, video or text file
                 <input
                   type="file"
-                  accept="image/jpeg,image/png,image/webp,text/plain"
+                  accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,text/plain"
                   disabled={!confirmed || !peerFiles || busy || paused}
                   onChange={(e) => {
                     const file = e.target.files?.[0];
@@ -593,16 +593,13 @@ export function NearbyPage() {
                       {file.name} ·{' '}
                       {file.complete
                         ? 'Checked and saved on this phone'
-                        : `${Object.keys(file.chunks).length} parts saved; waiting for the rest`}
+                        : `${Math.min(99, Math.floor((100 * 8192 * (file.received ?? Object.keys(file.chunks ?? {}).length)) / file.size))}% saved; waiting for the rest`}
                     </p>
                     {file.complete && (
                       <button
                         className="text-link"
-                        onClick={() => {
-                          const raw = attachmentBytes(file),
-                            url = URL.createObjectURL(
-                              new Blob([raw as Uint8Array<ArrayBuffer>], { type: file.mime }),
-                            ),
+                        onClick={async () => {
+                          const url = URL.createObjectURL(await attachmentBlob(file)),
                             link = document.createElement('a');
                           link.href = url;
                           link.download = file.name;

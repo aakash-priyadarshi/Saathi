@@ -1,5 +1,7 @@
 import { z } from 'zod';
-import { base64, unbase64 } from '@saathi/protocol';
+import { sha256 } from '@noble/hashes/sha2';
+import { bytesToHex } from '@noble/hashes/utils';
+import { base64, unbase64, MAX_MEDIA_BYTES, MAX_MEDIA_PART } from '@saathi/protocol';
 import { LocalPeer, type Frame } from './peer';
 import {
   db,
@@ -8,6 +10,9 @@ import {
   events,
   saveEvent,
   changed,
+  savePart,
+  part,
+  savedParts,
   type Attachment,
 } from '../offline/store';
 import { receiveEvent, acceptReceipt } from '../offline/sync';
@@ -18,11 +23,20 @@ const fileOffer = z
   .object({
     id: z.string().uuid(),
     name: z.string().max(100),
-    mime: z.enum(['image/jpeg', 'image/png', 'image/webp', 'text/plain']),
-    size: z.number().int().positive().max(1048576),
+    mime: z.enum([
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'video/mp4',
+      'video/webm',
+      'text/plain',
+    ]),
+    size: z.number().int().positive().max(MAX_MEDIA_BYTES),
     hash: z.string().regex(/^[a-f0-9]{64}$/),
   })
   .strict();
+/** Missing-part indices per FILE_ACCEPT; 2,048 fit one 24 KB frame (native peers enforce it). */
+const ACCEPT_BATCH = 2048;
 export class NearbySession {
   readonly peer = new LocalPeer();
   confirmed = false;
@@ -32,6 +46,7 @@ export class NearbySession {
   private requested = new Set<string>();
   private offered = new Set<string>();
   private accepted = new Set<string>();
+  private requestedMissing = new Map<string, number>();
   reset() {
     this.remoteMedia = false;
     this.remoteFiles = false;
@@ -80,7 +95,7 @@ export class NearbySession {
     }
     if (frame.kind === 'NATIVE_CAPS') {
       z.object({ largeFiles: z.boolean() }).strict().parse(frame.value);
-      return; // Browsers retain their 1 MiB policy regardless of a native peer's larger limit.
+      return; // Browsers already accept 250 MB; nothing to adjust.
     }
     if (!this.confirmed) return;
     if (frame.kind === 'MESSAGE') {
@@ -201,7 +216,7 @@ export class NearbySession {
       const { id, missing } = z
         .object({
           id: z.string().uuid(),
-          missing: z.array(z.number().int().min(0).max(127)).max(128),
+          missing: z.array(z.number().int().min(0).max(MAX_MEDIA_PART)).max(MAX_MEDIA_PART + 1),
         })
         .strict()
         .parse(frame.value);
@@ -212,7 +227,7 @@ export class NearbySession {
       const { id, index, data } = z
         .object({
           id: z.string().uuid(),
-          index: z.number().int().min(0).max(127),
+          index: z.number().int().min(0).max(MAX_MEDIA_PART),
           data: z.string().max(11000),
         })
         .strict()
@@ -230,7 +245,9 @@ export class NearbySession {
       const chunk = unbase64(data),
         expected = Math.min(8192, file.size - index * 8192);
       if (chunk.length !== expected) throw new Error('This attachment has an invalid part.');
-      file.chunks[index] = chunk;
+      const isNew = !(await part(file, index));
+      await savePart(id, index, chunk);
+      if (isNew) file.received = (file.received ?? 0) + 1;
       await database.put('attachments', file, id);
       changed();
     } else if (frame.kind === 'FILE_DONE') {
@@ -238,8 +255,17 @@ export class NearbySession {
       const database = await db(),
         file = await database.get('attachments', id);
       if (!file || file.direction !== 'IN' || !this.accepted.has(id)) return;
-      const raw = attachmentBytes(file);
-      if (raw.length === file.size && (await byteHash(raw)) === file.hash) {
+      // Large files arrive in rounds; each accept lists at most ACCEPT_BATCH parts to fit one frame.
+      const missing = await this.missing(file);
+      if (missing.length) {
+        if (missing.length >= (this.requestedMissing.get(id) ?? Infinity))
+          throw new Error('The attachment is incomplete. Accept it again to resume missing parts.');
+        this.requestedMissing.set(id, missing.length);
+        await this.peer.send('FILE_ACCEPT', { id, missing: missing.slice(0, ACCEPT_BATCH) });
+        return;
+      }
+      this.requestedMissing.delete(id);
+      if ((await attachmentHash(file)) === file.hash) {
         file.complete = true;
         await database.put('attachments', file, id);
         await this.peer.send('ACK', { id });
@@ -259,7 +285,7 @@ export class NearbySession {
         throw new Error(
           'The nearby connection is weaker. Attachment parts stay saved; resume when the connection improves.',
         );
-      const data = file.chunks[index];
+      const data = await part(file, index);
       if (data) await this.peer.send('FILE_CHUNK', { id: file.id, index, data: base64(data) });
       // Give constrained receivers time to persist encrypted parts, and yield
       // the connection to messages/events instead of flooding their bounded queue.
@@ -316,25 +342,28 @@ export class NearbySession {
       );
     if (!this.confirmed || !this.remoteFiles)
       throw new Error('Compare the pairing codes and connect before sharing attachments.');
-    const raw = new Uint8Array(await file.arrayBuffer()),
-      id = crypto.randomUUID(),
-      digest = await byteHash(raw);
+    if (file.size > MAX_MEDIA_BYTES) throw new Error('Choose a file of 250 MB or less.');
+    const database = await db();
+    if ((await database.count('attachments')) >= 20)
+      throw new Error('Attachment storage is full. Clear old attachments first.');
+    // Read and hash 8 KiB at a time so a 250 MB video never sits in memory at once.
+    const id = crypto.randomUUID(),
+      digest = sha256.create();
+    for (let offset = 0, index = 0; offset < file.size; offset += 8192, index++) {
+      const chunk = new Uint8Array(await file.slice(offset, offset + 8192).arrayBuffer());
+      digest.update(chunk);
+      await savePart(id, index, chunk);
+    }
     const offer = fileOffer.parse({
       id,
       name: file.name.slice(0, 100),
       mime: file.type || 'text/plain',
       size: file.size,
-      hash: digest,
+      hash: bytesToHex(digest.digest()),
     });
-    const database = await db();
-    if ((await database.count('attachments')) >= 20)
-      throw new Error('Attachment storage is full. Clear old attachments first.');
-    const chunks: Record<string, Uint8Array> = {};
-    for (let offset = 0; offset < raw.length; offset += 8192)
-      chunks[offset / 8192] = raw.slice(offset, offset + 8192);
     await database.put(
       'attachments',
-      { ...offer, chunks, complete: true, direction: 'OUT', savedAt: new Date().toISOString() },
+      { ...offer, complete: true, direction: 'OUT', savedAt: new Date().toISOString() },
       id,
     );
     this.offered.add(id);
@@ -367,7 +396,7 @@ export class NearbySession {
         throw new Error('Attachment storage is full.');
       file = {
         ...offer,
-        chunks: {},
+        received: 0,
         complete: false,
         direction: 'IN',
         savedAt: new Date().toISOString(),
@@ -376,28 +405,40 @@ export class NearbySession {
     }
     this.transferCancelled.delete(offer.id);
     this.accepted.add(offer.id);
-    const missing = Array.from({ length: Math.ceil(offer.size / 8192) }, (_, i) => i).filter(
-      (i) => !file.chunks[i],
+    this.requestedMissing.delete(offer.id);
+    const missing = await this.missing(file);
+    await this.peer.send('FILE_ACCEPT', { id: offer.id, missing: missing.slice(0, ACCEPT_BATCH) });
+  }
+  private async missing(file: Attachment) {
+    const saved = await savedParts(file);
+    return Array.from({ length: Math.ceil(file.size / 8192) }, (_, i) => i).filter(
+      (i) => !saved.has(i),
     );
-    await this.peer.send('FILE_ACCEPT', { id: offer.id, missing });
   }
   async cancelFile(id: string) {
     this.transferCancelled.add(id);
     await this.peer.send('FILE_CANCEL', { id });
   }
 }
-export function attachmentBytes(file: Attachment) {
-  const raw = new Uint8Array(file.size);
+/** The saved file as a Blob; the browser keeps large parts out of JS memory. */
+export async function attachmentBlob(file: Attachment) {
+  const parts: Uint8Array<ArrayBuffer>[] = [];
   for (let i = 0; i < Math.ceil(file.size / 8192); i++) {
-    const chunk = file.chunks[i];
-    if (!chunk) return new Uint8Array();
-    raw.set(chunk, i * 8192);
+    const chunk = await part(file, i);
+    if (!chunk) throw new Error('This attachment is incomplete.');
+    parts.push(chunk as Uint8Array<ArrayBuffer>);
   }
-  return raw;
+  return new Blob(parts, { type: file.mime });
 }
-export async function byteHash(raw: Uint8Array) {
-  return Array.from(
-    new Uint8Array(await crypto.subtle.digest('SHA-256', raw as Uint8Array<ArrayBuffer>)),
-    (x) => x.toString(16).padStart(2, '0'),
-  ).join('');
+/** SHA-256 over saved parts in order, or '' if any part is missing. */
+async function attachmentHash(file: Attachment) {
+  const digest = sha256.create();
+  let size = 0;
+  for (let i = 0; i < Math.ceil(file.size / 8192); i++) {
+    const chunk = await part(file, i);
+    if (!chunk) return '';
+    digest.update(chunk);
+    size += chunk.length;
+  }
+  return size === file.size ? bytesToHex(digest.digest()) : '';
 }

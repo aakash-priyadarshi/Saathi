@@ -28,8 +28,8 @@ export default function Page() {
       <h2>Privacy comes first.</h2>
       <p>
         Public pages do not show donor emails, private volunteer contact details, or home addresses.
-        Uploaded media has metadata removed and passes through approval before publication. Exact
-        coordinates are not public by default.
+        Uploaded media has metadata removed before publication; photos and videos publish without an
+        approval step. Exact coordinates are not public by default.
       </p>
       <h2>For volunteer teams</h2>
       <p>

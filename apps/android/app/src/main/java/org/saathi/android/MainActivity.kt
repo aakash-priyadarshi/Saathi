@@ -88,6 +88,9 @@ private val tabs = listOf(Triple("Updates", Icons.Outlined.Feed, "Public field u
         if (granted.values.all { it }) pendingPermission?.invoke() else vm.notice("Permission was not granted. Saved work remains available. You can allow access in Android settings when ready.")
         pendingPermission = null
     }
+    // Ask once for message notifications (Android 13+).
+    val notifyContext = LocalContext.current
+    LaunchedEffect(Unit) { if (Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(notifyContext, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) { pendingPermission = {}; permissions.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS)) } }
     val askNearby: (Boolean) -> Unit = { advertise ->
         pendingPermission = { vm.scan(advertise,page=="Nearby"&&!advertise) }
         val needed = buildList { if (Build.VERSION.SDK_INT >= 31) addAll(listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE)); if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.NEARBY_WIFI_DEVICES) else addAll(listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)) }
@@ -100,7 +103,7 @@ private val tabs = listOf(Triple("Updates", Icons.Outlined.Feed, "Public field u
         permissions.launch(needed.toTypedArray())
     }
     val askCall: (Boolean, Boolean) -> Unit = { video, incoming -> pendingPermission = { vm.call(video, incoming) }; permissions.launch((if (video) arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA) else arrayOf(Manifest.permission.RECORD_AUDIO))) }
-    val askRecord:()->Unit={pendingPermission={vm.startVoice()};permissions.launch(arrayOf(Manifest.permission.RECORD_AUDIO))}
+    val askRecord:()->Unit={pendingPermission={vm.notice("Microphone allowed. Hold the mic to talk.")};permissions.launch(arrayOf(Manifest.permission.RECORD_AUDIO))}
     val navigateBack: () -> Unit = { if (form != null) form = null else if (detail != null) detail = null else if(conversation!=null)conversation=null else page = "Chats" }
     BackHandler(page != "Chats" || detail != null || form != null || conversation!=null, onBack = navigateBack)
     val context=LocalContext.current

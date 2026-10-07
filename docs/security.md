@@ -3,8 +3,8 @@
 The [community extension](swarm-community-architecture.md) accepts only bounded
 original-author participant signatures for public Help/reports, lifecycle
 dependencies and bound media chunks. These operational routes grant no relief
-RBAC or verification. Ordinary reports remain pending existing moderation before
-public publication. Signed actor/policy-bound channel actions enforce role
+RBAC or verification. Ordinary reports publish without approval, labelled
+unverified; admins can hide them afterwards. Signed actor/policy-bound channel actions enforce role
 ceilings, thread locks, bans and fresh epochs on raw protocol input. Release
 private chat remains gated at 16 policy entries pending independent review and
 the [MLS qualification decision](adr/0010-group-crypto-and-announcement-scale.md).
@@ -21,7 +21,7 @@ Strict Zod object schemas reject unexpected role/organization fields. Prisma par
 
 Guest tracking links are bearer capabilities. Anyone possessing one may view its order reference and manage an unplaced reservation. Do not put them in analytics, shared screenshots, referrer logs or public URLs. Responses use `no-store`, pages use `no-referrer` and no-index metadata, and HTTP logs use route templates rather than token-bearing paths. Idempotency response records contain the original tracking token to support retries; restrict and encrypt database backups and define short retention for expired response records.
 
-Verified-volunteer media uploads require authentication and organization authorization and are bounded to 25 MB. The separate participant path requires a signed report/media binding, quotas and pending review, with a 16 MiB limit. Both paths verify image decoding or video container signatures, are scanned through ClamAV in production, and are re-encoded. Original filenames are discarded. Image decode limits prevent oversized pixel bombs. FFmpeg strips metadata, removes extra streams, caps output at two minutes, limits CPU threads and enforces a processing timeout. The user interface does not advertise automatic face blur. Coordinator access to originals uses 60-second signed links.
+Team media uploads require authentication and organization authorization. Guest uploads need no account; a random token binds parts to their post, guest creation is rate limited per client IP (one trusted proxy hop), and guest storage has a global daily cap. The participant path requires a signed report/media binding and quotas. Every path is bounded to 250 MB per file and publishes without approval. Both paths verify image decoding or video container signatures, are scanned through ClamAV in production, and are re-encoded. Original filenames are discarded. Image decode limits prevent oversized pixel bombs. FFmpeg strips metadata, removes extra streams, does not cut video length, limits CPU threads, bounds output size and enforces a four-hour processing timeout. ClamAV's `StreamMaxLength` must be at least 250M, or large uploads are rejected. The user interface does not advertise automatic face blur. Coordinator access to originals uses 60-second signed links.
 
 Offline events preserve the original author's registered public key and immutable signed payload. Ingestion verifies the signature/hash, original author/device approval, active verified organization, expiry and domain version inside the canonical transaction. Device registration is authenticated/CSRF-checked and bounded; suspension and device revocation block waiting events. Server-signed receipts cannot be forged by a carrier. Pin the receipt public key from the secure origin, protect/back up its stable private key, and plan offline trust migration before production rotation. See [protocol v1](offline-protocol.md).
 

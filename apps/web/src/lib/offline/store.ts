@@ -30,7 +30,9 @@ export type Attachment = {
   mime: string;
   size: number;
   hash: string;
-  chunks: Record<string, Uint8Array>;
+  /** Parts saved in the `parts` store; only small legacy records keep `chunks` inline. */
+  received?: number;
+  chunks?: Record<string, Uint8Array>;
   complete: boolean;
   direction: 'IN' | 'OUT';
   savedAt: string;
@@ -41,6 +43,8 @@ interface SaathiDB extends DBSchema {
   events: { key: string; value: SavedEvent };
   messages: { key: string; value: Message };
   attachments: { key: string; value: Attachment };
+  /** 8 KiB attachment parts keyed `${id}/${index}`; a 250 MB file is never one record. */
+  parts: { key: string; value: Uint8Array };
   drafts: {
     key: string;
     value: {
@@ -56,19 +60,38 @@ export const changed = () => {
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('saathi-local-change'));
 };
 export const db = () =>
-  openDB<SaathiDB>('saathi-offline-v1', 1, {
-    upgrade(db) {
-      for (const name of [
-        'settings',
-        'snapshots',
-        'events',
-        'messages',
-        'attachments',
-        'drafts',
-      ] as const)
-        db.createObjectStore(name);
+  openDB<SaathiDB>('saathi-offline-v1', 2, {
+    upgrade(db, oldVersion) {
+      if (oldVersion < 1)
+        for (const name of [
+          'settings',
+          'snapshots',
+          'events',
+          'messages',
+          'attachments',
+          'drafts',
+        ] as const)
+          db.createObjectStore(name);
+      if (oldVersion < 2) db.createObjectStore('parts');
     },
   });
+const partKey = (id: string, index: number) => `${id}/${index}`;
+export async function savePart(id: string, index: number, bytes: Uint8Array) {
+  await (await db()).put('parts', bytes, partKey(id, index));
+}
+export async function part(file: Attachment, index: number) {
+  return file.chunks?.[index] ?? (await (await db()).get('parts', partKey(file.id, index)));
+}
+/** Indices already saved for an attachment, for resuming only what is missing. */
+export async function savedParts(file: Attachment) {
+  const keys = await (
+    await db()
+  ).getAllKeys('parts', IDBKeyRange.bound(`${file.id}/`, `${file.id}/~`));
+  return new Set([
+    ...Object.keys(file.chunks ?? {}).map(Number),
+    ...keys.map((key) => Number(key.slice(file.id.length + 1))),
+  ]);
+}
 export async function setting<T>(key: string): Promise<T | undefined> {
   return (await db()).get('settings', key) as Promise<T | undefined>;
 }
@@ -129,10 +152,10 @@ export async function exportWork() {
 export async function clearPrivate() {
   const database = await db();
   const tx = database.transaction(
-    ['settings', 'events', 'messages', 'attachments', 'drafts'],
+    ['settings', 'events', 'messages', 'attachments', 'parts', 'drafts'],
     'readwrite',
   );
-  for (const name of ['events', 'messages', 'attachments', 'drafts'] as const)
+  for (const name of ['events', 'messages', 'attachments', 'parts', 'drafts'] as const)
     await tx.objectStore(name).clear();
   for (const key of ['preparation', 'signing-keys', 'signing-device'])
     await tx.objectStore('settings').delete(key);

@@ -364,6 +364,9 @@ export function LivePage() {
           Reports from the field. Volunteer updates and unverified participant reports are labeled
           separately.
         </p>
+        <Link className="button" href="/share">
+          Share a photo or video
+        </Link>
       </div>
       <div className="feed-status">
         <span className="live-dot" />

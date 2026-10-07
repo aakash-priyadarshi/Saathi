@@ -9,6 +9,7 @@ import {
   validChatMessage,
   validChatAction,
   validChatAdmission,
+  validChatJoin,
   type ChatAction,
 } from '../../packages/protocol/src';
 
@@ -149,6 +150,49 @@ describe('Signed channel capability boundaries', () => {
     ).rejects.toThrow();
     await expect(
       validChatAdmission(invite, member.profile.body.id, Date.now() + 8 * 3600000),
+    ).rejects.toThrow();
+  });
+  it('join links admit any signed requester for approval, never an unsigned or forged one', async () => {
+    const owner = await chatPerson('Owner'),
+      visitor = await chatPerson('Visitor'),
+      { policy } = await chatPolicy(owner, [owner], 'INVITE');
+    const body = {
+      v: 1 as const,
+      kind: 'CHAT_ADMISSION' as const,
+      id: randomUUID(),
+      channelId: policy.body.id,
+      name: policy.body.name,
+      owner: owner.profile,
+      recipientId: '*',
+      policyHash: await hash(policy),
+      admission: 'INVITE_PLUS_APPROVAL' as const,
+      issuedAt: new Date().toISOString(),
+      expiresAt: policy.body.expiresAt,
+    };
+    const link = { body, signature: await sign(body, owner.signing.privateKey) };
+    await expect(validChatAdmission(link, visitor.profile.body.id)).resolves.toEqual(link);
+    await expect(
+      validChatAdmission(
+        { ...link, signature: await sign(body, visitor.signing.privateKey) },
+        visitor.profile.body.id,
+      ),
+    ).rejects.toThrow();
+    const now = new Date();
+    const joinBody = {
+      v: 1 as const,
+      kind: 'CHAT_JOIN' as const,
+      id: randomUUID(),
+      channelId: policy.body.id,
+      participant: visitor.profile,
+      action: 'JOIN' as const,
+      invitation: link,
+      issuedAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + 3600000).toISOString(),
+    };
+    const join = { body: joinBody, signature: await sign(joinBody, visitor.signing.privateKey) };
+    await expect(validChatJoin(join)).resolves.toEqual(join);
+    await expect(
+      validChatJoin({ ...join, signature: await sign(joinBody, owner.signing.privateKey) }),
     ).rejects.toThrow();
   });
 });

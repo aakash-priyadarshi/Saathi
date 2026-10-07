@@ -202,7 +202,7 @@ export class ChatService {
       b = request.body,
       now = Date.now(),
       id = b.profile.body.id;
-    if (bytes(request).length > 90000 || Math.abs(Date.parse(b.issuedAt) - now) > 300000)
+    if (bytes(request).length > 1500000 || Math.abs(Date.parse(b.issuedAt) - now) > 300000)
       throw new BadRequestException('Private attachment request bounds exceeded.');
     try {
       await validChatProfile(b.profile, now);
@@ -292,8 +292,9 @@ export class ChatService {
             const total = await tx.chatAttachment.aggregate({ _sum: { size: true } });
             if (
               own._count >= 50 ||
-              (own._sum.size ?? 0) + manifest.body.size > 64 * 1048576 ||
-              (total._sum.size ?? 0) + manifest.body.size > 512 * 1048576
+              // ponytail: ciphertext lives in PostgreSQL; move to object storage past these quotas.
+              (own._sum.size ?? 0) + manifest.body.size > 1024 * 1048576 ||
+              (total._sum.size ?? 0) + manifest.body.size > 8192 * 1048576
             )
               throw new BadRequestException('Private attachment storage quota reached.');
             if (await tx.chatAttachment.findUnique({ where: { id: manifest.body.id } }))
@@ -574,12 +575,27 @@ export class ChatService {
                 invite.policyHash !== (await hash(policy)) ||
                 invite.owner.body.id !== c.ownerId ||
                 !channelCapabilities(policy, (invite.issuer ?? invite.owner).body.id).canInvite ||
-                invite.admission !== policy.body.settings?.admission
+                // A join link always waits for a manager's approval, whatever the channel's invitation mode.
+                (invite.recipientId !== '*' && invite.admission !== policy.body.settings?.admission)
               )
                 throw new ForbiddenException(
                   'This channel requires a current authenticated invitation.',
                 );
             }
+            // A join link admits one person: the first participant whose request carries it reserves it.
+            const link = j.invitation?.body;
+            if (
+              link?.recipientId === '*' &&
+              (await tx.chatJoinRequest.findFirst({
+                where: {
+                  conversationId: j.channelId,
+                  participantId: { not: j.participant.body.id },
+                  profile: { path: ['body', 'invitation', 'body', 'id'], equals: link.id },
+                },
+                select: { id: true },
+              }))
+            )
+              throw new ForbiddenException('This join link has already been used.');
           }
           if (j.action === 'LEAVE' && c.ownerId === j.participant.body.id) continue;
           await this.profile(tx, j.participant);

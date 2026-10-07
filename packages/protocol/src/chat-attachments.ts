@@ -1,5 +1,13 @@
 import { z } from 'zod';
-import { chatProfileSchema, participantIdSchema, validChatProfile, type ChatMessage } from './chat';
+import {
+  chatProfileSchema,
+  participantIdSchema,
+  validChatProfile,
+  MAX_MEDIA_BYTES,
+  MAX_MEDIA_PART,
+  MAX_MEDIA_PARTS_PER_REQUEST,
+  type ChatMessage,
+} from './chat';
 import { bytes, hash, verify } from './crypto';
 const signature = z.string().regex(/^[A-Za-z0-9_-]{86}$/);
 export const chatAttachmentManifestSchema = z
@@ -12,7 +20,11 @@ export const chatAttachmentManifestSchema = z
         messageId: z.string().uuid(),
         messageHash: participantIdSchema,
         author: chatProfileSchema,
-        size: z.number().int().min(29).max(16777216),
+        size: z
+          .number()
+          .int()
+          .min(29)
+          .max(MAX_MEDIA_BYTES + 1048576),
         cipherHash: participantIdSchema,
         expiresAt: z.string().datetime(),
       })
@@ -30,12 +42,14 @@ export const chatAttachmentRequestSchema = z
         issuedAt: z.string().datetime(),
         messageId: z.string().uuid(),
         manifest: chatAttachmentManifestSchema.nullable(),
-        parts: z.array(z.number().int().min(0).max(2047)).max(6),
+        parts: z
+          .array(z.number().int().min(0).max(MAX_MEDIA_PART))
+          .max(MAX_MEDIA_PARTS_PER_REQUEST),
         chunks: z
           .array(
             z
               .object({
-                part: z.number().int().min(0).max(2047),
+                part: z.number().int().min(0).max(MAX_MEDIA_PART),
                 data: z
                   .string()
                   .regex(/^[A-Za-z0-9_-]+$/)
@@ -43,7 +57,7 @@ export const chatAttachmentRequestSchema = z
               })
               .strict(),
           )
-          .max(6),
+          .max(MAX_MEDIA_PARTS_PER_REQUEST),
       })
       .strict(),
     signature,

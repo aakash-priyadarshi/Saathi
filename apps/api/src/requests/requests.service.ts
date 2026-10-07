@@ -12,6 +12,7 @@ import { requestSchema, editSchema, fieldSchema } from '@saathi/validation';
 import { Prisma } from '@saathi/database';
 import { Database, audit, json } from '../database';
 import { AuthService, Actor } from '../auth/auth.service';
+import type { MediaService } from '../media/media.service';
 import { closed, deriveStatus } from '../domain/request';
 import { platformFeatures } from '../public/platform-features';
 export { requestInclude, publicRequest, type ExpandedRequest } from '../public/public-read.service';
@@ -21,6 +22,7 @@ export class RequestsService {
   constructor(
     private readonly db: Database,
     private readonly auth: AuthService,
+    private readonly media: MediaService,
   ) {
     this.publicRead = new PublicReadService(db);
   }
@@ -149,6 +151,53 @@ export class RequestsService {
       return { ok: true };
     });
   }
+  /** Marks attached media approved and publishes whatever has finished processing. */
+  async attachApproved(tx: Prisma.TransactionClient, ids: string[]) {
+    await tx.mediaAsset.updateMany({
+      where: { id: { in: ids } },
+      data: { moderation: 'APPROVED' },
+    });
+    await this.media.publishReady(tx, ids);
+  }
+  /** Anyone can share photos/videos; posts are labelled unverified and need no approval. */
+  async publishGuest(
+    ownerId: string,
+    input: { caption: string; area: string; contentWarning: boolean; mediaIds: string[] },
+  ) {
+    return this.db.atomic(async (tx) => {
+      const assets = await tx.mediaAsset.findMany({
+        where: {
+          id: { in: input.mediaIds },
+          ownerId,
+          organizationId: null,
+          fieldUpdateId: null,
+          processingState: { in: ['PENDING', 'PROCESSING', 'READY'] },
+        },
+      });
+      if (assets.length !== input.mediaIds.length)
+        throw new BadRequestException('Upload your photos or videos again, then share.');
+      const post = await tx.fieldUpdate.create({
+        data: {
+          caption: input.caption,
+          participantName: 'Guest',
+          publicArea: input.area,
+          contentWarning: input.contentWarning,
+          moderation: 'APPROVED',
+          publishedAt: new Date(),
+          media: { connect: assets.map((a) => ({ id: a.id })) },
+        },
+      });
+      await this.attachApproved(
+        tx,
+        assets.map((a) => a.id),
+      );
+      await audit(tx, 'GUEST_POST_CREATED', 'FieldUpdate', post.id, undefined, undefined, {
+        caption: post.caption,
+        media: assets.length,
+      });
+      return { id: post.id };
+    });
+  }
   async publish(actor: Actor, input: z.infer<typeof fieldSchema>) {
     return this.db.atomic((tx) => this.publishIn(tx, actor, input));
   }
@@ -173,13 +222,13 @@ export class RequestsService {
         ownerId: actor.id,
         organizationId: point.organizationId,
         fieldUpdateId: null,
-        processingState: 'READY',
+        processingState: { in: ['PENDING', 'PROCESSING', 'READY'] },
         moderation: { notIn: ['REJECTED', 'HIDDEN'] },
       },
     });
     if (assets.length !== input.mediaIds.length)
       throw new BadRequestException(
-        'Media must be processed, belong to you, and not already be attached.',
+        'Media must belong to you, not have failed processing, and not already be attached.',
       );
     const post = await tx.fieldUpdate.create({
       data: {
@@ -189,10 +238,15 @@ export class RequestsService {
         reliefPointId: point.id,
         requestId,
         publishAt: input.publishAt ? new Date(input.publishAt) : new Date(),
-        moderation: assets.length ? 'PENDING' : 'APPROVED',
+        // No approval step: posts and their media are public once media is sanitized.
+        moderation: 'APPROVED',
         media: { connect: assets.map((a) => ({ id: a.id })) },
       },
     });
+    await this.attachApproved(
+      tx,
+      assets.map((a) => a.id),
+    );
     await audit(tx, 'FIELD_POST_CREATED', 'FieldUpdate', post.id, actor.id, undefined, {
       caption: post.caption,
       moderation: post.moderation,

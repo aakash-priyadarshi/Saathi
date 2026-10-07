@@ -144,11 +144,15 @@ object ChatProtocol {
     }
     fun payload(payload: JSONObject,format:String?=null): JSONObject {
         require(Protocol.canonical(payload).size<=12000)
-        require(payload.keys().asSequence().all { it in listOf("text","attachment","reference","mentions") })
+        require(payload.keys().asSequence().all { it in listOf("text","attachment","reference","mentions","replyTo","forwarded","deletes") })
+        // Delete for everyone: a SYSTEM message carrying only the id of the author's earlier message.
+        if(payload.has("deletes")){require(payload.length()==1 && (format==null || format=="SYSTEM"));uuid(payload.getString("deletes"));return payload}
+        if(payload.has("replyTo"))uuid(payload.getString("replyTo"))
+        if(payload.has("forwarded"))require(payload.get("forwarded")==true)
         if(payload.has("text")) text(payload,"text",4000)
         if(payload.has("mentions")) { val ids=payload.getJSONArray("mentions").strings(); require(ids.size<=8 && ids.distinct().size==ids.size); ids.forEach { id(it) } }
         if(payload.has("reference")) { val r=payload.getJSONObject("reference"); r.exact("type","id","title"); require(r.getString("type") in listOf("NEED","UPDATE")); text(r,"id",80); text(r,"title",120) }
-        if(payload.has("attachment")) { val a=payload.getJSONObject("attachment"); a.exact("id","name","mime","size","hash","cipherHash","key"); uuid(a.getString("id")); text(a,"name",100); require(a.getString("mime") in listOf("image/jpeg","image/png","image/webp","text/plain","audio/mp4","audio/mpeg","video/mp4","video/webm")); require(a.get("size") is Number && a.getLong("size") in 1..16777188 && a.getDouble("size")==a.getLong("size").toDouble()); id(a.getString("hash")); id(a.getString("cipherHash")); require(Protocol.decode(a.getString("key")).size==32) }
+        if(payload.has("attachment")) { val a=payload.getJSONObject("attachment"); a.exact("id","name","mime","size","hash","cipherHash","key"); uuid(a.getString("id")); text(a,"name",100); require(a.getString("mime") in listOf("image/jpeg","image/png","image/webp","text/plain","audio/mp4","audio/mpeg","video/mp4","video/webm")); require(a.get("size") is Number && a.getLong("size") in 1..FieldMedia.MAX_BYTES && a.getDouble("size")==a.getLong("size").toDouble()); id(a.getString("hash")); id(a.getString("cipherHash")); require(Protocol.decode(a.getString("key")).size==32) }
         require(payload.has("text") || payload.has("attachment") || payload.has("reference"))
         if(format!=null){
             require(when(format){"TEXT","SYSTEM"->payload.has("text");"RELIEF"->payload.has("reference");"PHOTO","VIDEO","VOICE","FILE"->payload.has("attachment");else->false})

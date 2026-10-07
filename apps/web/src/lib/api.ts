@@ -11,7 +11,7 @@ export class ApiError extends Error {
 }
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
-  if (options.body && !(options.body instanceof FormData))
+  if (typeof options.body === 'string' && !headers.has('Content-Type'))
     headers.set('Content-Type', 'application/json');
   if (options.method && options.method !== 'GET') {
     const csrf = document.cookie
@@ -48,6 +48,59 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     .catch(() => ({ message: 'The service is unavailable. Please try again.' }));
   if (!res.ok) throw new ApiError(body.message ?? 'Unable to complete this action.', res.status);
   return body as T;
+}
+/** Matches the server: any single photo or video may be up to 250 MB. */
+export const MAX_MEDIA_BYTES = 250 * 1024 * 1024;
+/** A random secret that proves a guest owns the files they upload. */
+export function guestToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+/** Uploads in parts with retries, so a 250 MB video survives slow or flaky connections. */
+export async function uploadMedia(
+  file: File,
+  owner: { organizationId: string } | { guestToken: string },
+  onProgress?: (fraction: number) => void,
+) {
+  if (file.size > MAX_MEDIA_BYTES) throw new Error(`${file.name} is larger than 250 MB.`);
+  const headers: Record<string, string> =
+    'guestToken' in owner ? { 'X-Upload-Token': owner.guestToken } : {};
+  const minutes = (n: number) => AbortSignal.timeout(n * 60000);
+  const start = await api<{ uploadId: string; partSize: number; parts: number }>('/uploads', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      size: file.size,
+      ...('organizationId' in owner ? { organizationId: owner.organizationId } : {}),
+    }),
+  });
+  for (let index = 0; index < start.parts; index++) {
+    const body = file.slice(index * start.partSize, (index + 1) * start.partSize);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await api(`/uploads/${start.uploadId}/parts/${index}`, {
+          method: 'PUT',
+          headers: { ...headers, 'Content-Type': 'application/octet-stream' },
+          body,
+          signal: minutes(10),
+        });
+        break;
+      } catch (error) {
+        const permanent = error instanceof ApiError && error.status < 500 && error.status !== 429;
+        if (permanent || attempt >= 4) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 2000 * 2 ** attempt));
+      }
+    }
+    onProgress?.((index + 1) / start.parts);
+  }
+  return api<{ id: string; processingState: string }>(`/uploads/${start.uploadId}/complete`, {
+    method: 'POST',
+    headers,
+    signal: minutes(10),
+  });
 }
 export function write<T>(path: string, body: unknown = {}, key?: string, method = 'POST') {
   return api<T>(path, {

@@ -1,6 +1,13 @@
 import { z } from 'zod';
 import { bytes, hash, verify } from './crypto';
-import { chatProfileSchema, participantIdSchema, validChatProfile } from './chat';
+import {
+  chatProfileSchema,
+  participantIdSchema,
+  validChatProfile,
+  MAX_MEDIA_BYTES,
+  MAX_MEDIA_PART,
+  MAX_MEDIA_PARTS_PER_REQUEST,
+} from './chat';
 
 // Bound asynchronous field relay depth while allowing events to cross several
 // disconnected encounter chains before reaching an internet gateway.
@@ -49,11 +56,11 @@ export const reportMediaSchema = z
   .object({
     id: z.string().uuid(),
     mime: z.enum(['image/jpeg', 'video/mp4', 'audio/mp4']),
-    size: z.number().int().min(1).max(16777216),
+    size: z.number().int().min(1).max(MAX_MEDIA_BYTES),
     hash: z.string().regex(/^[a-f0-9]{64}$/),
-    width: z.number().int().min(1).max(1920),
-    height: z.number().int().min(1).max(1920),
-    durationSeconds: z.number().int().min(0).max(60),
+    width: z.number().int().min(1).max(8192),
+    height: z.number().int().min(1).max(8192),
+    durationSeconds: z.number().int().min(0),
   })
   .strict()
   .refine((m) =>
@@ -189,7 +196,7 @@ export const communityMediaRequestSchema = z
           .array(
             z
               .object({
-                index: z.number().int().min(0).max(2047),
+                index: z.number().int().min(0).max(MAX_MEDIA_PART),
                 data: z
                   .string()
                   .regex(/^[A-Za-z0-9_-]+$/)
@@ -197,7 +204,7 @@ export const communityMediaRequestSchema = z
               })
               .strict(),
           )
-          .max(6),
+          .max(MAX_MEDIA_PARTS_PER_REQUEST),
       })
       .strict(),
     signature: z.string().regex(/^[A-Za-z0-9_-]{86}$/),

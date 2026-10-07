@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { Logger } from '@nestjs/common';
 import { Database } from '../database';
-import { MediaService } from './media.service';
+import { MediaService, MEDIA_PROCESSING_MS } from './media.service';
+/** A run is stale only after the longest allowed sanitizing time plus a margin. */
+const STALE_MS = MEDIA_PROCESSING_MS + 10 * 60 * 1000;
 import { S3Storage } from './storage';
 
 /** PostgreSQL is the durable queue. Replicas claim one bounded job, outside HTTP processes. */
@@ -17,7 +19,7 @@ export class MediaWorker {
       const rows = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM "MediaAsset"
         WHERE "processingAttempts" < 3 AND
-          ("processingState"='PENDING' OR ("processingState"='PROCESSING' AND "processingStartedAt" < (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - INTERVAL '10 minutes'))
+          ("processingState"='PENDING' OR ("processingState"='PROCESSING' AND "processingStartedAt" < (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - ${STALE_MS}::int * INTERVAL '1 millisecond'))
         ORDER BY "createdAt" FOR UPDATE SKIP LOCKED LIMIT 1`;
       if (!rows[0]) return null;
       return tx.mediaAsset.update({
@@ -65,7 +67,7 @@ export class MediaWorker {
       where: {
         processingState: 'PROCESSING',
         processingAttempts: { gte: 3 },
-        processingStartedAt: { lt: new Date(Date.now() - 10 * 60 * 1000) },
+        processingStartedAt: { lt: new Date(Date.now() - STALE_MS) },
       },
       data: { processingState: 'FAILED', processingLease: null, processingStartedAt: null },
     });

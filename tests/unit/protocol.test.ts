@@ -9,6 +9,8 @@ import {
   hash,
   validReceipt,
   choosePath,
+  reportMediaSchema,
+  MAX_MEDIA_BYTES,
   type Receipt,
 } from '../../packages/protocol/src';
 function input() {
@@ -99,5 +101,24 @@ describe('Transport-independent signed relief events', () => {
     expect(choosePath('VOICE', offline)).toBe('NEARBY');
     expect(choosePath('FILE', offline)).toBe('LOCAL');
     expect(choosePath('VOICE', { ...offline, internet: true, nearby: false })).toBe('UNAVAILABLE');
+  });
+});
+describe('media limits', () => {
+  const media = {
+    id: '6d1f3c2a-5b4e-4c3d-8a9b-0c1d2e3f4a5b',
+    mime: 'video/mp4' as const,
+    hash: 'a'.repeat(64),
+    width: 3840,
+    height: 2160,
+  };
+  it('accepts a 250 MB video of any length and rejects anything larger', () => {
+    expect(
+      reportMediaSchema.safeParse({ ...media, size: MAX_MEDIA_BYTES, durationSeconds: 3 * 3600 })
+        .success,
+    ).toBe(true);
+    expect(
+      reportMediaSchema.safeParse({ ...media, size: MAX_MEDIA_BYTES + 1, durationSeconds: 60 })
+        .success,
+    ).toBe(false);
   });
 });

@@ -14,6 +14,7 @@ import {
   decryptChatValue,
   bytes,
   MAX_CHANNEL_POLICY_BYTES,
+  validChatPayload,
 } from '../../packages/protocol/src';
 describe('Swarm chat identities, policies and established encryption', () => {
   it('supports 200 signed private members, rejects member 201, and excludes removed members from fresh keys', async () => {
@@ -191,5 +192,18 @@ describe('Swarm chat identities, policies and established encryption', () => {
     await expect(
       validChatReceipt({ body: other, signature: await sign(other, b.signing.privateKey) }, m),
     ).rejects.toThrow();
+  });
+});
+describe('Swarm chat reply, forward and delete-for-everyone payloads', () => {
+  it('accepts replyTo/forwarded on content and a lone deletes marker only as SYSTEM', () => {
+    const id = randomUUID();
+    expect(validChatPayload({ text: 'Yes', replyTo: id, forwarded: true }, 'TEXT').replyTo).toBe(
+      id,
+    );
+    expect(validChatPayload({ deletes: id }, 'SYSTEM').deletes).toBe(id);
+    expect(() => validChatPayload({ deletes: id }, 'TEXT')).toThrow();
+    expect(() => validChatPayload({ deletes: id, text: 'x' }, 'SYSTEM')).toThrow();
+    expect(() => validChatPayload({ text: 'x', replyTo: 'not-a-uuid' }, 'TEXT')).toThrow();
+    expect(() => validChatPayload({ text: 'x', forwarded: false }, 'TEXT')).toThrow();
   });
 });
