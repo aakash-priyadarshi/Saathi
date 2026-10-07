@@ -79,13 +79,13 @@ class ChatReadUiTest {
             ui.onNodeWithContentDescription("Close photo preview").performClick()
             val textMessageId=vm.state.value.chatMessages.first{it.getJSONObject("payload").optString("text").contains("Fictional coordination")}.getString("id")
             ui.onNodeWithTag("chat-transcript").performScrollToIndex(0)
-            ui.onNodeWithTag("message-actions-$textMessageId").performClick()
+            ui.onNodeWithTag("message-actions-$textMessageId").performScrollTo().assertIsDisplayed().performClick()
             ui.waitUntil(5_000){runCatching{ui.onNodeWithText("Message actions").assertIsDisplayed();true}.getOrDefault(false)}
             listOf("Copy message","Reply in thread","Thank sender","Lock replies","Hide message").forEach{ui.onNodeWithText(it).performScrollTo().assertIsDisplayed()}
             ui.onRoot().captureToImage().asAndroidBitmap().let{saveReviewCapture(context,"chat-simple-actions.png",it)}
             ui.onNodeWithText("Copy message").performClick()
             ui.onNodeWithTag("chat-transcript").performScrollToIndex(1)
-            ui.onNodeWithTag("message-actions-$attachmentMessageId").performClick()
+            ui.onNodeWithTag("message-actions-$attachmentMessageId").performScrollTo().assertIsDisplayed().performClick()
             ui.waitUntil(5_000){runCatching{ui.onNodeWithText("Message actions").assertIsDisplayed();true}.getOrDefault(false)}
             listOf("Save attachment","Check for updates").forEach{ui.onNodeWithText(it).performScrollTo().assertIsDisplayed()}
         } finally {
