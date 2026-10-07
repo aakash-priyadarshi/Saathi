@@ -182,7 +182,7 @@ export const chatAdmissionSchema = z
         name: displayName(48),
         owner: chatProfileSchema,
         issuer: chatProfileSchema.optional(),
-        /** A participant, or '*' for a join link: anyone may ask, and a channel manager must approve. */
+        /** A participant, or '*' for a reusable join link (valid up to 7 days): anyone may ask; the group's approval setting decides. */
         recipientId: participantIdSchema.or(z.literal('*')),
         policyHash: participantIdSchema,
         admission: z.enum(['INVITE_PLUS_APPROVAL', 'APPROVAL_ONLY']),
@@ -197,7 +197,7 @@ export type ChatAdmission = z.infer<typeof chatAdmissionSchema>;
 export async function validChatAdmission(input: unknown, recipient: string, now = Date.now()) {
   const invite = chatAdmissionSchema.parse(input),
     b = invite.body;
-  boundedTime(b.issuedAt, b.expiresAt, 6 * 3600000, now);
+  boundedTime(b.issuedAt, b.expiresAt, b.recipientId === '*' ? 7 * 86400000 : 6 * 3600000, now);
   await validChatProfile(b.owner, now);
   if (b.issuer) await validChatProfile(b.issuer, now);
   if (

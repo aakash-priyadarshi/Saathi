@@ -20,7 +20,7 @@ struct NewGroupSheet: View {
                         .padding(14).background(Palette.surface, in: RoundedRectangle(cornerRadius: 10)).overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.outline))
                     choice("Invite only", "Encrypted. Only people you or your admins invite can read it.", inviteOnly) { inviteOnly = true }
                     choice("Open nearby", "Readable by members; people nearby can see it and ask to join.", !inviteOnly) { inviteOnly = false }
-                    Toggle(isOn: $approval) { label("Admins approve new members", inviteOnly ? "Invitations wait for an admin's approval." : "Join requests wait for an admin.") }.tint(Palette.primary)
+                    Toggle(isOn: $approval) { label("Approve new members", ApprovalNote.text(open: !inviteOnly)) }.tint(Palette.primary)
                     Text("Who can post").font(Type.titleMedium).foregroundStyle(Palette.ink).padding(.top, 4)
                     ForEach(GroupType.allCases) { t in choice(t.title, t.detail, type == t) { type = t } }
                     Button("Create group") {
@@ -119,8 +119,14 @@ struct GroupInfoView: View {
                         ForEach(GroupType.allCases) { Text($0.title).tag($0) }
                     }.pickerStyle(.menu).font(Type.bodyLarge).tint(Palette.primary)
                     Text(type.detail).font(Type.bodySmall).foregroundStyle(Palette.muted)
-                    Toggle("Admins approve new members", isOn: Binding(get: { approval }, set: { v in Task { do { try await chat.configure(id, type: type, approval: v) } catch { chat.notice = error.localizedDescription } } }))
-                        .font(Type.bodyLarge).tint(Palette.primary)
+                    Toggle(isOn: Binding(get: { approval }, set: { v in Task { do { try await chat.configure(id, type: type, approval: v) } catch { chat.notice = error.localizedDescription } } })) {
+                        ApprovalNote(open: pb["visibility"] as? String == "OPEN")
+                    }.tint(Palette.primary)
+                } else if caps["canManageMembers"] == true {
+                    // Admins see the creator's choice; only the creator's phone signs settings.
+                    Toggle(isOn: .constant(["APPROVAL_ONLY", "INVITE_PLUS_APPROVAL"].contains(settings["admission"] as? String ?? ""))) {
+                        ApprovalNote(open: pb["visibility"] as? String == "OPEN", readOnly: true)
+                    }.tint(Palette.primary).disabled(true)
                 }
                 if caps["canModerate"] == true { moderation(policy: policy, members: members) }
                 Text("Removed people can't rejoin on their own; only an admin can add them back. Changes reach other phones as people meet.")
@@ -219,6 +225,23 @@ struct GroupInfoView: View {
 }
 
 /// Choose a known person, then share their personal invitation as QR, link or nearby.
+/// "Approve new members" (Android `ApprovalSwitch`): on, join requests (including join links) wait for an admin; off, the
+/// first admin's phone to receive a join-link request admits it. Removed or banned people always need an admin.
+struct ApprovalNote: View {
+    var open: Bool
+    var readOnly = false
+    static func text(open: Bool, readOnly: Bool = false) -> String {
+        (open ? "On: join requests wait for an admin." : "Applies to join links. On: an admin approves each person. Off: people with the link join automatically.")
+            + " Removed or banned people always need an admin." + (readOnly ? " Only the group creator can change this." : "")
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Approve new members").font(Type.titleMedium).foregroundStyle(Palette.ink)
+            Text(Self.text(open: open, readOnly: readOnly)).font(Type.bodySmall).foregroundStyle(Palette.muted)
+        }
+    }
+}
+
 struct AddPeopleSheet: View {
     @ObservedObject var chat: ChatEngine
     @ObservedObject var nearby: Nearby
@@ -232,7 +255,7 @@ struct AddPeopleSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if let link {
-                        Heading(title: "Invitation ready", text: joinLink ? "Anyone with this link can ask to join; an admin approves them. It works once and expires within six hours."
+                        Heading(title: "Invitation ready", text: joinLink ? "This is the group's join link. Many people can use it until it expires in up to 7 days. " + (((chat.current(id)?["body"] as? JSON)?["settings"] as? JSON)?["admission"] as? String == "INVITE_AUTO" ? "People join automatically when an admin's phone receives their request." : "An admin approves each person.")
                                                                            : "Only this person's Swarm identity can use it. It expires within six hours.")
                         if let qr = QR.image(link) {
                             Image(uiImage: qr).interpolation(.none).resizable().scaledToFit().frame(maxWidth: 320).frame(maxWidth: .infinity)
@@ -251,7 +274,7 @@ struct AddPeopleSheet: View {
                         if people.isEmpty { EmptyState(title: "No one to add yet", text: "Meet people in Nearby first. Everyone you connect with appears here.", icon: "person.2") }
                         if (chat.current(id)?["body"] as? JSON)?["visibility"] as? String == "INVITE" {
                             Button { do { link = try chat.createJoinLink(id); invitedID = nil; joinLink = true } catch { chat.notice = error.localizedDescription } } label: {
-                                Label("Create join link", systemImage: "link")
+                                Label("Share join link", systemImage: "link")
                             }.buttonStyle(OutlineButtonStyle())
                         }
                         ForEach(people.indices, id: \.self) { i in

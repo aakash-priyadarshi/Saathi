@@ -283,7 +283,8 @@ class ChatRepository(private val context: Context, private val repository: Repos
         }
         require(conversation!=null || consent) { "Join this channel before accepting its history." }
         archive(policy); save("chat-policies",id,obj("id" to id,"policy" to policy))
-        b.getJSONArray("members").objects().forEach { remember(it.getJSONObject("profile")) }
+        // Every member becomes a contact; one bad profile must not stop the rest (iPhone uses try? per member).
+        b.getJSONArray("members").objects().forEach { runCatching{remember(it.getJSONObject("profile"))} }
         val joined=ChatProtocol.member(policy,self()) && (consent || conversation?.optBoolean("joined")==true || conversation?.optBoolean("pendingJoin")==true)
         if(joined || store.get("chat-joins",id)?.getJSONObject("request")?.getJSONObject("body")?.getString("action")=="LEAVE"&&!ChatProtocol.member(policy,self()))store.remove("chat-joins",id)
         val next=conversation?:obj("id" to id,"type" to "CHANNEL","muted" to false,"lastRead" to Instant.EPOCH.toString())
@@ -334,11 +335,15 @@ class ChatRepository(private val context: Context, private val repository: Repos
                 if(pb.getString("visibility")=="INVITE") {
                     val invite=invitation?:return;val ib=invite.getJSONObject("body")
                     ChatProtocol.invite(invite,personId,now())
-                    require(ib.getString("policyHash")==Protocol.hash(p) && ChatProtocol.participant(ib.getJSONObject("owner"))==ChatProtocol.participant(pb.getJSONObject("owner")) && ChannelGovernance.capabilities(p,ChatProtocol.participant(ib.optJSONObject("issuer")?:ib.getJSONObject("owner"))).getBoolean("canInvite")) {"Ask for a current invitation."}
-                    if(ib.getString("recipientId")=="*") {
-                        val linkId=ib.getString("id");val ownerId=ChatProtocol.participant(pb.getJSONObject("owner"));val prior=store.get("chat-link-uses",linkId)
-                        if(prior!=null && prior.getString("participantId")!=personId)return
-                        if(prior==null && ownerId==self())save("chat-link-uses",linkId,obj("id" to linkId,"participantId" to personId,"requestId" to b.getString("id"),"expiresAt" to ib.getString("expiresAt")))
+                    // A join link is reusable across policy versions for 7 days, while its issuer may still invite.
+                    val link=ib.getString("recipientId")=="*"
+                    require((link || ib.getString("policyHash")==Protocol.hash(p)) && ChatProtocol.participant(ib.getJSONObject("owner"))==ChatProtocol.participant(pb.getJSONObject("owner")) && ChannelGovernance.capabilities(p,ChatProtocol.participant(ib.optJSONObject("issuer")?:ib.getJSONObject("owner"))).getBoolean("canInvite")) {"Ask for a current invitation."}
+                    // Approval off: the first manager's phone to see a link request admits it, as if they tapped Approve.
+                    if(link && admission=="INVITE_AUTO") {
+                        if(previous!=null)return
+                        remember(person);save("chat-join-inbox",b.getString("id"),obj("id" to b.getString("id"),"request" to request,"resolved" to false))
+                        if(actions(pb.getString("id")).none{val a=it.getJSONObject("envelope").getJSONObject("body");a.getString("action")=="APPROVE_JOIN" && a.getString("targetId")==personId})runCatching{moderateUnlocked(pb.getString("id"),"APPROVE_JOIN",personId)}
+                        return
                     }
                 }
                 remember(person);save("chat-join-inbox",b.getString("id"),obj("id" to b.getString("id"),"request" to request,"resolved" to false));return
@@ -373,9 +378,13 @@ class ChatRepository(private val context: Context, private val repository: Repos
         val policy=current(id)?:error("Channel is unavailable.");val b=policy.getJSONObject("body")
         require(b.getString("visibility")=="INVITE" && !b.getBoolean("deleted")) {"Join links are only available for active private channels."}
         require(ChannelGovernance.capabilities(policy,self()).getBoolean("canInvite")) {"You do not have permission to create an invitation."}
-        val issued=now();val admission=b.optJSONObject("settings")?.optString("admission")?:"INVITE_AUTO"
-        val invite=signed(obj("v" to 1,"kind" to "CHAT_ADMISSION","id" to UUID.randomUUID().toString(),"channelId" to id,"name" to b.getString("name"),"owner" to b.getJSONObject("owner"),"issuer" to profile(),"recipientId" to "*","policyHash" to Protocol.hash(policy),"admission" to if(admission=="INVITE_AUTO")"INVITE_PLUS_APPROVAL" else admission,"issuedAt" to issued.toString(),"expiresAt" to b.getString("expiresAt")))
-        onChange();encodeInvite(invite)
+        // One reusable link per group: share the current one while it has at least a day left, else sign a new 7-day link.
+        val issued=now();store.get("chat-join-links",id)?.takeIf{Instant.parse(it.getString("expiresAt"))>issued.plusSeconds(86400)}?.let{return@withLock it.getString("link")}
+        val admission=b.optJSONObject("settings")?.optString("admission")?:"INVITE_AUTO"
+        // The document always asks for approval; the managers' phones apply the group's current setting when a request arrives.
+        val invite=signed(obj("v" to 1,"kind" to "CHAT_ADMISSION","id" to UUID.randomUUID().toString(),"channelId" to id,"name" to b.getString("name"),"owner" to b.getJSONObject("owner"),"issuer" to profile(),"recipientId" to "*","policyHash" to Protocol.hash(policy),"admission" to if(admission=="INVITE_AUTO")"INVITE_PLUS_APPROVAL" else admission,"issuedAt" to issued.toString(),"expiresAt" to issued.plusSeconds(ChannelGovernance.JOIN_LINK_SECONDS).toString()))
+        val link=encodeInvite(invite);save("chat-join-links",id,obj("id" to id,"link" to link,"expiresAt" to invite.getJSONObject("body").getString("expiresAt")))
+        onChange();link
     } }
     private fun encodeInvite(invite:JSONObject):String {val bytes=ByteArrayOutputStream(); GZIPOutputStream(bytes).use { it.write(invite.toString().toByteArray()) };return "cjpswarm://invite/"+Protocol.b64(bytes.toByteArray())}
     fun decodeInvite(link:String):JSONObject {
@@ -389,7 +398,9 @@ class ChatRepository(private val context: Context, private val repository: Repos
         val existing=store.get("chat-invites",b.getString("id"))
         require(existing==null || existing.getString("hash")==Protocol.hash(invite))
         if(b.getString("kind")=="CHAT_ADMISSION") {
-            require(existing==null){"This invitation has already been used. Ask for a new one."}
+            // A personal invitation works once; a group's join link may be opened again (it just re-sends the request).
+            require(existing==null || b.getString("recipientId")=="*"){"This invitation has already been used. Ask for a new one."}
+            if(store.get("chat-conversations",id)?.optBoolean("joined")==true)return@withLock id
             val request=makeJoin(id,"JOIN",invite);save("chat-joins",id,obj("id" to id,"request" to request))
             save("chat-conversations",id,obj("id" to id,"type" to "CHANNEL","title" to b.getString("name"),"muted" to false,"joined" to false,"pendingJoin" to true,"lastRead" to Instant.EPOCH.toString()))
             save("chat-invites",b.getString("id"),obj("id" to b.getString("id"),"hash" to Protocol.hash(invite),"expiresAt" to b.getString("expiresAt")))
@@ -783,7 +794,7 @@ class ChatRepository(private val context: Context, private val repository: Repos
         store.all("chat-joins").filter{Instant.parse(it.getJSONObject("request").getJSONObject("body").getString("expiresAt"))<=time}.forEach{j->store.remove("chat-joins",j.getString("id"));store.get("chat-conversations",j.getString("id"))?.takeIf{!it.optBoolean("joined")}?.let{it.put("pendingJoin",false).put("joinStatus","EXPIRED");save("chat-conversations",it.getString("id"),it)}}
         expired.forEach { store.remove("chat-messages",it.getString("id"));store.remove("chat-manifests",it.getString("id"));store.remove("chat-media-progress",it.getString("id")) }
         store.all("chat-invites").filter { Instant.parse(it.getString("expiresAt"))<=time }.forEach { store.remove("chat-invites",it.getString("id")) }
-        store.all("chat-link-uses").filter { Instant.parse(it.getString("expiresAt"))<=time }.forEach { store.remove("chat-link-uses",it.getString("id")) }
+        store.all("chat-join-links").filter { Instant.parse(it.getString("expiresAt"))<=time }.forEach { store.remove("chat-join-links",it.getString("id")) }
         val messages=store.all("chat-messages");val ids=messages.map{it.getString("id")}.toSet()
         val attachmentIds=messages.mapNotNull{it.getJSONObject("payload").optJSONObject("attachment")?.optString("id")}.toSet()
         expired.mapNotNull{it.getJSONObject("payload").optJSONObject("attachment")?.optString("id")}.filter{it !in attachmentIds}.forEach{session.removeFile(it)}

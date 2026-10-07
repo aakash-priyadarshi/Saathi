@@ -163,8 +163,10 @@ import SwarmCore
         let existing = store.get("chat-invites", inviteID)
         try J.req(existing == nil || existing?["hash"] as? String == hash(invite))
         if try J.str(b, "kind") == "CHAT_ADMISSION" {
-            try J.req(existing == nil, "This invitation has already been used. Ask for a new one.")
+            // A personal invitation works once; a group's join link may be opened again (it just re-sends the request).
+            try J.req(existing == nil || b["recipientId"] as? String == "*", "This invitation has already been used. Ask for a new one.")
             let id = try J.str(b, "channelId")
+            if conversation(id)?["joined"] as? Bool == true { return id }
             let request = try ChatDocuments.join(me, profile: profile, channelID: id, action: "JOIN", invitation: invite)
             try save("chat-joins", id, ["id": id, "request": request])
             try save("chat-conversations", id, ["id": id, "type": "CHANNEL", "title": try J.str(b, "name"), "muted": false, "joined": false,
@@ -172,7 +174,7 @@ import SwarmCore
             try save("chat-invites", inviteID, ["id": inviteID, "hash": hash(invite), "expiresAt": try J.str(b, "expiresAt")])
             changed()
             if session.confirmed { try? await session.send("CHAT_JOIN", request) }
-            notice = "Request sent. You join when a channel admin approves it nearby."
+            notice = "Request sent. You join when a group admin's phone receives it, nearby or online. Some groups need an admin to approve it."
             return id
         }
         let p = try J.obj(b, "policy"), id = try J.str(try J.obj(p, "body"), "id")
@@ -477,7 +479,7 @@ import SwarmCore
             store.remove("chat-joins", j["id"] as? String ?? "")
             if var c = conversation(j["id"] as? String ?? ""), c["joined"] as? Bool != true { c["pendingJoin"] = false; c["joinStatus"] = "EXPIRED"; try? save("chat-conversations", c["id"] as! String, c) }
         }
-        for u in store.all("chat-link-uses") where time(u["expiresAt"]) <= t { store.remove("chat-link-uses", u["id"] as? String ?? "") }
+        for u in store.all("chat-join-links") where time(u["expiresAt"]) <= t { store.remove("chat-join-links", u["id"] as? String ?? "") }
         let ids = Set(store.all("chat-messages").compactMap { $0["id"] as? String })
         for r in store.all("chat-receipts") where !ids.contains(body(r["receipt"] as? JSON ?? [:])["messageId"] as? String ?? "") { store.remove("chat-receipts", r["id"] as? String ?? "") }
         // Expired messages are never accepted again, so their delete-for-me markers can go.

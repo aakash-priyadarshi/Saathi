@@ -152,7 +152,7 @@ describe('Signed channel capability boundaries', () => {
       validChatAdmission(invite, member.profile.body.id, Date.now() + 8 * 3600000),
     ).rejects.toThrow();
   });
-  it('join links admit any signed requester for approval, never an unsigned or forged one', async () => {
+  it('reusable 7-day join links admit any signed requester, never an unsigned or forged one', async () => {
     const owner = await chatPerson('Owner'),
       visitor = await chatPerson('Visitor'),
       { policy } = await chatPolicy(owner, [owner], 'INVITE');
@@ -167,10 +167,29 @@ describe('Signed channel capability boundaries', () => {
       policyHash: await hash(policy),
       admission: 'INVITE_PLUS_APPROVAL' as const,
       issuedAt: new Date().toISOString(),
-      expiresAt: policy.body.expiresAt,
+      expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
     };
     const link = { body, signature: await sign(body, owner.signing.privateKey) };
     await expect(validChatAdmission(link, visitor.profile.body.id)).resolves.toEqual(link);
+    // Many people may use one link; it lasts at most 7 days, and only '*' links get that long.
+    await expect(validChatAdmission(link, owner.profile.body.id)).resolves.toEqual(link);
+    await expect(
+      validChatAdmission(link, visitor.profile.body.id, Date.now() + 8 * 86400000),
+    ).rejects.toThrow();
+    const longer = { ...body, expiresAt: new Date(Date.now() + 8 * 86400000).toISOString() };
+    await expect(
+      validChatAdmission(
+        { body: longer, signature: await sign(longer, owner.signing.privateKey) },
+        visitor.profile.body.id,
+      ),
+    ).rejects.toThrow();
+    const personal = { ...body, recipientId: visitor.profile.body.id };
+    await expect(
+      validChatAdmission(
+        { body: personal, signature: await sign(personal, owner.signing.privateKey) },
+        visitor.profile.body.id,
+      ),
+    ).rejects.toThrow();
     await expect(
       validChatAdmission(
         { ...link, signature: await sign(body, visitor.signing.privateKey) },
