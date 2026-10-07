@@ -38,6 +38,7 @@ data class AppState(
     val chatJoinInbox:List<JSONObject> = emptyList(),val chatReportInbox:List<JSONObject> = emptyList(),
     val relayReservedBytes:Long = 0,
     val gatewayStatus:String = "No recent Swarm internet gateway is known.",
+    val hotspot: SwarmHotspot.Network? = null,
     val walkieConversation: String? = null, val walkieStatus: String = "OFF", val walkieAvailable: Boolean = false,
     val localWifiAddress: Boolean = false
 )
@@ -439,6 +440,14 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
             runCatching { activate(nearby); nearby.scan(false, true, chat.profile().getJSONObject("body").getString("name")) }
         }
     }
+    private val swarmHotspot by lazy { SwarmHotspot(getApplication()) }
+    /** Starts a no-internet hotspot others join by QR, so iPhones and Androids find each other both ways. */
+    fun startHotspot() {
+        if (!nearbyPermitted()) { notice("Tap Search nearby once and allow nearby devices, then start the hotspot."); return }
+        swarmHotspot.start({ network -> mutable.update { it.copy(hotspot = network) }; notice("Swarm hotspot is on. Others join by scanning its QR code.") },
+            { message -> mutable.update { it.copy(hotspot = null) }; notice(message) })
+    }
+    fun stopHotspot() { swarmHotspot.stop(); mutable.update { it.copy(hotspot = null) } }
     private val autoAttempts = mutableMapOf<String, Long>()
     /** People already met reconnect without a tap (the code check still follows). A random delay avoids both phones dialling at once. */
     private fun autoConnect(peers: Map<String, String>) {
@@ -475,5 +484,5 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         networkCallback = null
         nearby.stopScan();ble.stopScan();cancelVoice();stopWalkie(); if (state.value.calling) hangup()
     }
-    override fun onCleared() { disconnect(); if (wifiDelegate.isInitialized()) wifi.release(); repository.store.close() }
+    override fun onCleared() { swarmHotspot.stop(); disconnect(); if (wifiDelegate.isInitialized()) wifi.release(); repository.store.close() }
 }

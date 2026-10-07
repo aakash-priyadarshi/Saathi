@@ -123,6 +123,7 @@ fun chatStatus(message:JSONObject)=when {
             Text(if(peer!=null)"This connection may carry saved messages for shared channels." else "Your chosen display name appears to nearby devices while you search. Compare the code before connecting.",style=MaterialTheme.typography.bodySmall)
             Text("Android Nearby can connect directly with Wi-Fi and Bluetooth on. No internet, router or manual hotspot is needed for messages and saved media.",style=MaterialTheme.typography.bodySmall)
         }}}
+        item {HotspotCard(vm,state)}
         item {Text("People",style=MaterialTheme.typography.titleLarge)}
         if(peer!=null)item {Column{Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){Avatar(peer.getJSONObject("body").getString("name"));Column(Modifier.weight(1f)){Text(peer.getJSONObject("body").getString("name"),style=MaterialTheme.typography.titleMedium);Text("Nearby participant",style=MaterialTheme.typography.bodySmall)};Button(onClick={vm.openChat(peer,open)},enabled=!state.busy){Text("Message")}};TextButton({reportPerson=ChatProtocol.participant(peer)}){Text("Report person")}}}
         items(state.peers.entries.toList(),key={it.key}){item->ListItem(headlineContent={Text(item.value)},supportingContent={Text("Compare a code to meet this person")},leadingContent={Icon(Icons.Outlined.PersonOutline,null)},trailingContent={TextButton(onClick={vm.connect(item.key)},enabled=!state.busy){Text("Connect")}})}
@@ -371,4 +372,23 @@ private fun AppState.channelReports(id:String)=chatReportInbox.filter{report->re
         item {HorizontalDivider();TextButton(onClick=team){Icon(Icons.Outlined.VerifiedUser,null);Spacer(Modifier.width(8.dp));Text(if(state.preparation==null)"Team sign in" else "My relief team")};TextButton(onClick=saved){Icon(Icons.Outlined.Inventory2,null);Spacer(Modifier.width(8.dp));Text("Saved relief work and earlier messages")};TextButton(onClick=connection){Icon(Icons.Outlined.Link,null);Spacer(Modifier.width(8.dp));Text("Connection options")}}
         item {HorizontalDivider();Text(BuildConfig.BRAND_DISPLAY,style=MaterialTheme.typography.headlineMedium);Text(BuildConfig.BRAND_BYLINE);Text("Connect nearby. Coordinate together.");Text("Developed by Cockroach Janta Party",Modifier.padding(top=12.dp),style=MaterialTheme.typography.bodySmall);Text("Version ${BuildConfig.VERSION_NAME} · ${BuildConfig.ENVIRONMENT}",style=MaterialTheme.typography.bodySmall);Text("Chat is an experimental addition. It has not received an independent cryptographic review. Native 1:1 local Wi-Fi calls passed the earlier two-device checks; huddles remain disabled.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
     }
+}
+
+/** Two-way discovery for mixed groups: phones on one hotspot (no internet needed) find each other over Wi-Fi. */
+@Composable private fun HotspotCard(vm:SaathiViewModel,state:AppState) {
+    Surface(shape=RoundedCornerShape(12.dp),color=MaterialTheme.colorScheme.surfaceVariant){Column(Modifier.fillMaxWidth().padding(20.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
+        Text("Swarm hotspot",style=MaterialTheme.typography.titleLarge)
+        val network=state.hotspot
+        if(network==null){
+            Text("Phones on one Swarm hotspot find each other in both directions, including iPhones, and send photos and videos at Wi-Fi speed. No internet is needed.",style=MaterialTheme.typography.bodyMedium)
+            Button(onClick={vm.startHotspot()},enabled=!state.busy){Text("Start Swarm hotspot")}
+        }else{
+            Text("Others join by pointing their camera at this code. On iPhone, use the Camera app and tap Join. Keep Swarm open here to keep the hotspot on.",style=MaterialTheme.typography.bodyMedium)
+            val qr=remember(network){runCatching{val matrix=MultiFormatWriter().encode(network.qr,BarcodeFormat.QR_CODE,600,600);Bitmap.createBitmap(600,600,Bitmap.Config.ARGB_8888).apply{for(y in 0 until 600)for(x in 0 until 600)setPixel(x,y,if(matrix[x,y])android.graphics.Color.BLACK else android.graphics.Color.WHITE)}}.getOrNull()}
+            if(qr!=null)Image(qr.asImageBitmap(),"Wi-Fi QR code for the Swarm hotspot",Modifier.fillMaxWidth().aspectRatio(1f))
+            Text("Network · "+network.ssid,style=MaterialTheme.typography.titleMedium)
+            Text("Password · "+network.password,style=MaterialTheme.typography.bodyLarge)
+            OutlinedButton(onClick={vm.stopHotspot()}){Text("Stop hotspot")}
+        }
+    }}
 }
