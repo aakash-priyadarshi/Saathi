@@ -18,3 +18,14 @@ await check('conversation id', async () => {
 });
 await check('receipt', () => p.validChatReceipt(d.receipt, d.dm, null));
 await check('join', () => p.validChatJoin(d.join));
+await check('channel policy (iPhone-owned, keys wrapped)', () => p.validChannelPolicy(d.policy));
+await check('peer unwraps its channel key', async () => {
+  const b = d.policy.body, me = d.peerProfile.body.id;
+  const jwe = b.keys.find((k) => k.participantId === me).jwe;
+  const v = await p.decryptChatValue(jwe, d.peerEncryptionPrivateJwk, `channel:${b.id}:${b.epoch}:${me}`);
+  if (v.key !== d.channelKey) throw new Error('key mismatch');
+});
+await check('channel post', () => p.validChatMessage(d.post, d.policy));
+await check('admin action (SET_ROLE ADMIN)', () => p.validChatAction(d.action, d.policy));
+await check('invite for the peer', () => p.validChatInvite(d.invite, d.peerProfile.body.id));
+await check('approval admission', () => p.validChatAdmission(d.admission, d.peerProfile.body.id));

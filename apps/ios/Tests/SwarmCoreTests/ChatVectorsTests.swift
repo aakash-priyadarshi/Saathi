@@ -136,8 +136,25 @@ final class InteropExportTests: XCTestCase {
                                            payload: ["text": "Water at Gate 2 ✅ — पानी"], format: "TEXT")
         let receipt = try ChatDocuments.receipt(peer, profile: peerProfile, for: dm, status: "DELIVERED")
         let join = try ChatDocuments.join(me, profile: profile, channelID: UUID().uuidString.lowercased(), action: "JOIN")
+        // Groups: an invite-only channel owned by this iPhone with the peer as a member, an admin action, invitations.
+        let now = Date()
+        let members: [JSON] = [["profile": profile, "role": "OWNER", "joinedAt": Instant.string(now), "removedAt": NSNull()],
+                               ["profile": peerProfile, "role": "MEMBER", "joinedAt": Instant.string(now), "removedAt": NSNull()]]
+        let policy = try ChatDocuments.policy(me, profile: profile, previous: nil, name: "Core team", visibility: "INVITE", members: members,
+                                              settings: ["mode": "DISCUSSION", "admission": "INVITE_AUTO"])
+        let channelKey = try XCTUnwrap(try ChatDocuments.channelKey(policy: policy, me: peer))
+        let post = try ChatDocuments.message(me, profile: profile, conversationID: (policy["body"] as! JSON)["id"] as! String, policy: policy,
+                                             channelKey: channelKey, sequence: 1, payload: ["text": "Briefing at 4"], format: "TEXT")
+        let action = try ChatDocuments.action(me, profile: profile, policy: policy, action: "SET_ROLE", target: peer.participantID, role: "ADMIN")
+        try ChatRules.action(action, policy: policy)
+        let invite = try ChatDocuments.invite(me, policy: policy, recipient: peer.participantID)
+        let link = try ChatDocuments.encodeInvite(invite)
+        XCTAssertEqual(try ChatCrypto.sha256Hex(Canonical.data(ChatDocuments.decodeInvite(link))), try ChatCrypto.sha256Hex(Canonical.data(invite)))
+        let admission = try ChatDocuments.admission(me, profile: profile, policy: try ChatDocuments.policy(me, profile: profile, previous: policy,
+            name: "Core team", visibility: "INVITE", members: members, settings: ["mode": "DISCUSSION", "admission": "INVITE_PLUS_APPROVAL"]), recipient: peer.participantID)
         let doc: JSON = ["profile": profile, "peerProfile": peerProfile, "dm": dm, "receipt": receipt, "join": join,
-                         "peerEncryptionPrivateJwk": peer.encryptionPrivateJWK]
+                         "peerEncryptionPrivateJwk": peer.encryptionPrivateJWK, "policy": policy, "post": post, "action": action,
+                         "invite": invite, "admission": admission, "channelKey": ChatCrypto.base64url(channelKey)]
         try JSONSerialization.data(withJSONObject: doc).write(to: URL(fileURLWithPath: out))
     }
 }
