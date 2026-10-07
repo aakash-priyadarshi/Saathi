@@ -54,12 +54,12 @@ class ChatReadUiTest {
             ui.onRoot().captureToImage().asAndroidBitmap().let{capture->File(context.cacheDir,"chat-simple-message.png").outputStream().use{capture.compress(Bitmap.CompressFormat.PNG,100,it)}}
             val textMessageId=vm.state.value.chatMessages.first{it.getJSONObject("payload").optString("text").contains("Fictional coordination")}.getString("id")
             ui.onNodeWithTag("message-$textMessageId").performTouchInput{longClick()}
-            listOf("Reply","Copy","Forward","Delete").forEach{ui.onNodeWithText(it).assertIsDisplayed()}
+            listOf("Reply","Copy","Forward","Delete").forEach{ui.onNode(hasText(it) and hasAnyAncestor(isPopup())).assertIsDisplayed()}
             ui.onRoot().captureToImage().asAndroidBitmap().let{capture->File(context.cacheDir,"chat-simple-actions.png").outputStream().use{capture.compress(Bitmap.CompressFormat.PNG,100,it)}}
-            ui.onNodeWithText("Copy").performClick()
+            ui.onNode(hasText("Copy") and hasAnyAncestor(isPopup())).performClick()
             val attachmentMessageId=vm.state.value.chatMessages.first{it.getJSONObject("payload").has("attachment")}.getString("id")
             ui.onNodeWithTag("message-$attachmentMessageId").performTouchInput{longClick()}
-            listOf("Forward","Save","Delete").forEach{ui.onNodeWithText(it).assertIsDisplayed()}
+            listOf("Forward","Save","Delete").forEach{ui.onNode(hasText(it) and hasAnyAncestor(isPopup())).assertIsDisplayed()}
         } finally {
             ui.runOnIdle{shown.value=false;viewModels.clear()}
             SecureStore(context,storageScope).use{it.clearPrivate()};context.deleteDatabase("saathi-$storageScope.db");imageFile.delete()
