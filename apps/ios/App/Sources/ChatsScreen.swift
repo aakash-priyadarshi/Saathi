@@ -150,6 +150,8 @@ struct ConversationView: View {
     @State private var picking = false
     @State private var importing = false
     @State private var previewURL: URL?
+    @State private var jumpTo: String?
+    @State private var highlight: String?
     @Environment(\.scenePhase) private var phase
 
     var body: some View {
@@ -182,11 +184,23 @@ struct ConversationView: View {
                         if messages.isEmpty {
                             EmptyState(title: channel ? "No posts yet" : "Say hello", text: "Messages are signed on this phone and delivered when you meet the other person or a member nearby.", icon: "text.bubble")
                         }
-                        ForEach(messages.indices, id: \.self) { i in bubble(messages[i], channel: channel, gone: gone, canPost: canPost, info: info).id(i) }
+                        ForEach(messages.indices, id: \.self) { i in bubble(messages[i], channel: channel, gone: gone, canPost: canPost, info: info).id(messages[i]["id"] as? String ?? "\(i)") }
                     }.padding(16)
                 }
-                .onAppear { proxy.scrollTo(messages.count - 1, anchor: .bottom) }
-                .onChange(of: messages.count) { _ in withAnimation { proxy.scrollTo(messages.count - 1, anchor: .bottom) } }
+                .onAppear { proxy.scrollTo(messages.last?["id"] as? String ?? "", anchor: .bottom) }
+                .onChange(of: messages.count) { _ in withAnimation { proxy.scrollTo(messages.last?["id"] as? String ?? "", anchor: .bottom) } }
+                // Tapping a quote scrolls to the quoted message (opening its thread when it lives in one) and flashes it.
+                .onChange(of: jumpTo) { target in
+                    guard let target else { return }
+                    if !messages.contains(where: { $0["id"] as? String == target }) {
+                        if all.contains(where: { $0["id"] as? String == target }) { thread = info.roots[target]; Task { try? await Task.sleep(nanoseconds: 300_000_000); jumpTo = nil; jumpTo = target } }
+                        else { chat.notice = "The quoted message is not on this phone."; jumpTo = nil }
+                        return
+                    }
+                    withAnimation { proxy.scrollTo(target, anchor: .center) }
+                    highlight = target; jumpTo = nil
+                    Task { try? await Task.sleep(nanoseconds: 1_500_000_000); withAnimation { highlight = nil } }
+                }
             }
             composer(conversation, canPost: canPost, channel: channel, threadRoot: info.announce ? thread : nil, info: info)
         }
@@ -393,17 +407,29 @@ struct ConversationView: View {
                     Text(deleted ? "This message was deleted" : "Removed by a group admin").font(Type.bodyMedium).italic().foregroundStyle(Palette.muted)
                 } else {
                     if payload["forwarded"] as? Bool == true { Label("Forwarded", systemImage: "arrowshape.turn.up.right").font(Type.labelSmall).italic().foregroundStyle(Palette.muted) }
-                    if let quoted, quoted != thread { ReplyQuote(chat: chat, message: chat.store.get("chat-messages", quoted), deleted: gone.contains(quoted)) }
+                    if let quoted, quoted != thread {
+                        Button { jumpTo = quoted } label: { ReplyQuote(chat: chat, message: chat.store.get("chat-messages", quoted), deleted: gone.contains(quoted)) }
+                            .buttonStyle(.plain).accessibilityHint("Shows the original message")
+                    }
                 }
                 if let image {
                     Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: 260, maxHeight: 300)
                         .clipShape(RoundedRectangle(cornerRadius: 10)).onTapGesture { viewing = image }
                         .accessibilityLabel("Photo from \(mine ? "you" : author)").accessibilityAddTraits(.isButton)
                 } else if (attachment?["mime"] as? String ?? "").hasPrefix("audio/"), let clip = chat.voice(attachmentID) {
-                    Button { player.toggle(attachmentID, clip) } label: {
-                        Label(player.playing == attachmentID ? "Playing… tap to stop" : "Voice message", systemImage: player.playing == attachmentID ? "stop.circle.fill" : "play.circle.fill")
-                            .font(Type.bodyMedium).foregroundStyle(Palette.primary)
-                    }.buttonStyle(.plain)
+                    // Voice message: play/stop, progress and length (same layout as Android).
+                    let playingThis = player.playing == attachmentID, length = player.length(attachmentID, clip)
+                    HStack(spacing: 10) {
+                        Button { player.toggle(attachmentID, clip) } label: {
+                            Image(systemName: playingThis ? "stop.fill" : "play.fill").font(.system(size: 16, weight: .bold)).foregroundStyle(Palette.onPrimary)
+                                .frame(width: 40, height: 40).background(Palette.primary, in: Circle())
+                        }.buttonStyle(.plain).accessibilityLabel(playingThis ? "Stop" : "Play voice message")
+                        VStack(alignment: .leading, spacing: 4) {
+                            ProgressView(value: playingThis && length > 0 ? min(player.elapsed / length, 1) : 0).tint(Palette.primary)
+                            Text(String(format: "%d:%02d", Int(playingThis ? player.elapsed : length) / 60, Int(playingThis ? player.elapsed : length) % 60))
+                                .font(Type.labelSmall).foregroundStyle(Palette.muted)
+                        }
+                    }.frame(minWidth: 200)
                 } else if let attachment, chat.voice(attachmentID) != nil {
                     // Videos, audio files and text open in the system viewer.
                     let mime = attachment["mime"] as? String ?? "", size = attachment["size"] as? Int ?? 0
@@ -438,7 +464,7 @@ struct ConversationView: View {
             }
             .padding(12)
             // Received posts are paper cards with a rule, so they read apart from your own tinted bubbles.
-            .background(mine ? Palette.primaryContainer : Palette.surface, in: RoundedRectangle(cornerRadius: 14))
+            .background(highlight == messageID ? Palette.primary.opacity(0.25) : mine ? Palette.primaryContainer : Palette.surface, in: RoundedRectangle(cornerRadius: 14))
             .overlay { if !mine { RoundedRectangle(cornerRadius: 14).stroke(Palette.outline) } }
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14))
             .contextMenu {

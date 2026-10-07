@@ -36,16 +36,27 @@ import SwarmCore
 @MainActor final class VoicePlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     static let shared = VoicePlayer()
     @Published private(set) var playing: String?
+    @Published private(set) var elapsed: TimeInterval = 0
     private var player: AVAudioPlayer?
+    private var ticker: Timer?
+    private var lengths: [String: TimeInterval] = [:]
+    /// A clip's length, read once from its audio header.
+    func length(_ id: String, _ data: Data?) -> TimeInterval {
+        if let known = lengths[id] { return known }
+        let value = data.flatMap { try? AVAudioPlayer(data: $0) }?.duration ?? 0
+        lengths[id] = value; return value
+    }
 
     func toggle(_ id: String, _ data: Data?) { playing == id ? stop() : play(id, data) }
     func play(_ id: String, _ data: Data?) {
         guard let data, let p = try? AVAudioPlayer(data: data) else { return }
         try? AVAudioSession.sharedInstance().setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker, .allowBluetooth])
         try? AVAudioSession.sharedInstance().setActive(true)
-        player?.stop(); p.delegate = self; player = p; playing = id; p.play()
+        player?.stop(); p.delegate = self; player = p; playing = id; elapsed = 0; p.play()
+        ticker?.invalidate()
+        ticker = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in Task { @MainActor in self?.elapsed = self?.player?.currentTime ?? 0 } }
     }
-    func stop() { player?.stop(); player = nil; playing = nil }
+    func stop() { ticker?.invalidate(); ticker = nil; player?.stop(); player = nil; playing = nil; elapsed = 0 }
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) { Task { @MainActor in self.stop() } }
 }
 
