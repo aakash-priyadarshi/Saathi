@@ -285,9 +285,12 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
             } catch (_: Exception) { notice("Saved information could not be unlocked. Do not clear app storage if you need to recover work.") }
     }
     private suspend fun refreshRemote() {
-        repository.refresh()
-        if (repository.preparation != null) loadDashboard()
-        if (BuildConfig.CHAT_ENABLED) { runCatching { chat.sync() }; runCatching { community.sync() } }
+        // Hidden for the Oct 2026 build: no public Needs/Updates lists, team dashboard or community relay fetches
+        // (only Chats, Nearby and More are shown). checkReachability still loads the service configuration chat sync needs.
+        // repository.refresh()
+        // if (repository.preparation != null) loadDashboard()
+        repository.checkReachability()
+        if (BuildConfig.CHAT_ENABLED) { runCatching { chat.sync() } /* ; runCatching { community.sync() } */ }
     }
     private fun refreshInBackground() {
         if (backgroundRefresh?.isActive == true) return
@@ -511,7 +514,8 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     private suspend fun refreshConnectionState() {
         repository.checkReachability()
         if (BuildConfig.CHAT_ENABLED) {
-            if (repository.reachable) { runCatching { chat.sync(); chat.autoMedia() }; runCatching { community.sync() } }
+            // Hidden for the Oct 2026 build: periodic community relay sync (public updates are not shown).
+            if (repository.reachable) { runCatching { chat.sync(); chat.autoMedia() } /* ; runCatching { community.sync() } */ }
             if (session.confirmed) {
                 val now = System.currentTimeMillis()
                 if (now - lastChatAnnounceAt >= 120_000) { runCatching { chat.announce() }; lastChatAnnounceAt = now }

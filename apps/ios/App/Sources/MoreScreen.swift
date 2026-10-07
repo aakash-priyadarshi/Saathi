@@ -2,11 +2,15 @@ import SwiftUI
 import SwarmCore
 import WiFiAware
 
-/// Android More: profile, appearance, privacy and the About material.
+/// Android More, item by item and in the same order: Nearby profile, Appearance, Privacy & Nearby,
+/// Storage & data, Connection options and About.
 struct MoreView: View {
     @ObservedObject var chat: ChatEngine
+    @ObservedObject var nearby: Nearby
     @AppStorage("appearance") private var appearance = "SYSTEM"
+    @AppStorage(Nearby.visibleKey) private var nearbyVisible = true
     @State private var name = ""
+    @State private var savedMB = 0
     @State private var license: String?
 
     var body: some View {
@@ -14,8 +18,9 @@ struct MoreView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     TopBar()
-                    Heading(title: "More", text: "Your profile, appearance and information about Swarm.")
+                    Heading(title: "More", text: "Your profile and settings.")
                     VStack(alignment: .leading, spacing: 12) {
+                        Text("Nearby profile").font(Type.titleLarge).foregroundStyle(Palette.ink)
                         HStack(spacing: 12) {
                             Avatar(name: chat.name)
                             VStack(alignment: .leading, spacing: 2) {
@@ -24,12 +29,18 @@ struct MoreView: View {
                             }
                         }
                         HStack {
-                            TextField("Your name", text: $name).font(Type.bodyLarge).textInputAutocapitalization(.words)
+                            TextField("Display name", text: $name).font(Type.bodyLarge).textInputAutocapitalization(.words)
                                 .padding(12).background(Palette.surface, in: RoundedRectangle(cornerRadius: 10)).overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.outline))
-                            Button("Save") { Task { do { try await chat.setName(name) } catch { chat.notice = error.localizedDescription } } }
+                            Button("Save name") { Task { do { try await chat.setName(name) } catch { chat.notice = error.localizedDescription } } }
                                 .buttonStyle(PrimaryButtonStyle()).disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || name == chat.name)
                         }
-                    }.onAppear { name = chat.name }
+                        Text("Nearby devices see this name while you search and after you connect. It is not a verified volunteer identity; choose a name your group can recognize.")
+                            .font(Type.bodySmall).foregroundStyle(Palette.muted)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Chat identity").font(Type.label).foregroundStyle(Palette.ink)
+                            Text(chat.selfID).font(.caption.monospaced()).foregroundStyle(Palette.muted).textSelection(.enabled)
+                        }
+                    }.onAppear { name = chat.name; savedMB = chat.media.savedBytes / 1_048_576 }
 
                     Divider().overlay(Palette.outline)
                     Text("Appearance").font(Type.titleLarge).foregroundStyle(Palette.ink)
@@ -45,10 +56,21 @@ struct MoreView: View {
 
                     Divider().overlay(Palette.outline)
                     Text("Privacy & Nearby").font(Type.titleLarge).foregroundStyle(Palette.ink)
-                    Notice(title: "Your identity stays on this phone", text: "Your chat keys were created here and are kept in this iPhone's Keychain. Direct messages and invite-only channels are end-to-end encrypted. Searching is a one-minute, foreground action.", icon: "lock.shield")
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Chat identity").font(Type.label).foregroundStyle(Palette.ink)
-                        Text(chat.selfID).font(.caption.monospaced()).foregroundStyle(Palette.muted).textSelection(.enabled)
+                    Toggle(isOn: Binding(get: { nearbyVisible }, set: { on in
+                        nearbyVisible = on
+                        if on { nearby.resume() } else { nearby.disconnect(); nearby.stop() }
+                    })) { Text("Nearby visibility").font(Type.bodyLarge).foregroundStyle(Palette.ink) }.tint(Palette.primary)
+                    Text("Searching runs while Swarm is open. Turning visibility off ends nearby discovery and its active connection.")
+                        .font(Type.bodySmall).foregroundStyle(Palette.muted)
+                    Notice(title: "Your identity stays on this phone", text: "Your chat keys were created here and are kept in this iPhone's Keychain. Direct messages and invite-only channels are end-to-end encrypted.", icon: "lock.shield")
+
+                    Divider().overlay(Palette.outline)
+                    Text("Storage & data").font(Type.titleLarge).foregroundStyle(Palette.ink)
+                    Text("Saved media · \(savedMB) MB").font(Type.bodySmall).foregroundStyle(Palette.ink)
+
+                    Divider().overlay(Palette.outline)
+                    NavigationLink { ConnectionOptionsView(chat: chat, nearby: nearby) } label: {
+                        Label("Connection options", systemImage: "link").font(Type.label).foregroundStyle(Palette.primary)
                     }
 
                     Divider().overlay(Palette.outline)
@@ -91,3 +113,61 @@ struct MoreView: View {
 }
 
 struct LicenseText: Identifiable { let text: String; var id: Int { text.hashValue } }
+
+extension Nearby {
+    /// More › Privacy & Nearby › Nearby visibility (Android `nearbyVisible`), on by default.
+    static let visibleKey = "nearbyVisible"
+    /// Automatic search when Swarm opens, unless the person turned Nearby visibility off.
+    func resumeIfVisible() { if UserDefaults.standard.object(forKey: Self.visibleKey) as? Bool ?? true { resume() } }
+}
+
+/// Android "Connection options" (NearbyScreen): status, find and connect, what works now, disconnect.
+/// Left out because they are Android-only: Bluetooth fallback, local Wi-Fi pairing, live calls, walkie-talkie
+/// and the earlier nearby messages.
+struct ConnectionOptionsView: View {
+    @ObservedObject var chat: ChatEngine
+    @ObservedObject var nearby: Nearby
+    var body: some View {
+        let _ = chat.revision
+        let confirmed = chat.peer != nil
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Heading(title: "Here, even without internet", text: "Connect with another person using Swarm nearby. Your saved work stays on this phone.")
+                Notice(title: confirmed ? "Connected nearby" : "Nearby Swarm", text: nearby.status, icon: "dot.radiowaves.left.and.right")
+                if nearby.connected == nil {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Find another phone").font(Type.titleMedium).foregroundStyle(Palette.ink)
+                        Text("Turn on Wi-Fi and Bluetooth. Swarm connects directly for messages and photos; you do not need internet or a router. Nearby devices see your chosen display name while you search.")
+                            .font(Type.bodyMedium).foregroundStyle(Palette.muted)
+                        if nearby.searching { Button("Stop searching") { nearby.stop() }.buttonStyle(OutlineButtonStyle()) }
+                        else { Button("Find Swarm") { nearby.start() }.buttonStyle(PrimaryButtonStyle()) }
+                    }
+                    ForEach(nearby.peers.sorted(by: { $0.value < $1.value }), id: \.key) { id, name in
+                        Button { nearby.connect(id) } label: { Label("Connect to \(name)", systemImage: "person") }.buttonStyle(OutlineButtonStyle())
+                    }
+                } else if confirmed {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("What works right now").font(Type.titleMedium).foregroundStyle(Palette.ink)
+                        capability("Messages", works: true)
+                        capability("Voice and video calls", works: false)
+                        Text("Live calls and walkie-talkie run between Android phones on local Wi-Fi. Messages can continue on this connection.")
+                            .font(Type.bodySmall).foregroundStyle(Palette.muted)
+                    }
+                }
+                Text("Nearby communication works only while devices remain within local connection range. If the connection disappears, move closer or reconnect. Saved messages remain safe.")
+                    .font(Type.bodySmall).foregroundStyle(Palette.muted)
+                if nearby.connected != nil || !nearby.peers.isEmpty {
+                    Button("Disconnect nearby") { nearby.disconnect() }.font(Type.label).foregroundStyle(Palette.error)
+                }
+            }.padding(20)
+        }
+        .background(Palette.background.ignoresSafeArea())
+        .navigationTitle("Connection options").navigationBarTitleDisplayMode(.inline)
+    }
+    func capability(_ label: String, works: Bool) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: works ? "checkmark.circle" : "minus.circle").foregroundStyle(works ? Palette.primary : Palette.muted)
+            Text(works ? label : "\(label) · Unavailable").font(Type.bodyMedium).foregroundStyle(Palette.ink)
+        }
+    }
+}

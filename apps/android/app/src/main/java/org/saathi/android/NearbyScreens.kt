@@ -28,7 +28,8 @@ import org.webrtc.SurfaceViewRenderer
     LazyColumn(modifier, contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         item { Heading("Here, even without internet", "Connect with another person using Swarm nearby. Your saved work stays on this phone.") }
         item { Notice(if (state.confirmed) "Connected nearby" else "Nearby Swarm", state.nearbyStatus, Icons.Outlined.WifiTethering) }
-        item { Notice("Internet relay", state.gatewayStatus, Icons.Outlined.CloudSync) }
+        // Hidden for the Oct 2026 build: internet relay of public community updates (Updates is not shown).
+        // item { Notice("Internet relay", state.gatewayStatus, Icons.Outlined.CloudSync) }
         if (!state.connected) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -61,11 +62,14 @@ import org.webrtc.SurfaceViewRenderer
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("What works right now", style = MaterialTheme.typography.titleMedium)
-                    Capability("Messages", true); Capability("Share signed requests and updates", true); Capability("Files", vm.session.transport?.supportsFiles == true)
+                    // Hidden for the Oct 2026 build: signed requests and updates belong to Needs/Updates.
+                    // Capability("Messages", true); Capability("Share signed requests and updates", true); Capability("Files", vm.session.transport?.supportsFiles == true)
+                    Capability("Messages", true); Capability("Files", vm.session.transport?.supportsFiles == true)
                     Capability("Voice and video calls", state.media)
                     if (!state.media) Text("Live calls and walkie-talkie need local Wi-Fi pairing on a shared network or hotspot. Nearby messaging can continue on this connection.", style = MaterialTheme.typography.bodySmall)
                     if (vm.session.transport?.supportsFiles != true) Text("Photos, files, and calls stay saved or waiting until you reconnect using local Wi-Fi. This Bluetooth link carries messages and small updates.", style = MaterialTheme.typography.bodySmall)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedButton(onClick = { vm.share() }, enabled = !state.busy) { Text("Share saved updates") }; OutlinedButton(onClick = { picker.launch(arrayOf("image/jpeg", "image/png", "image/webp", "text/plain", "audio/*", "video/mp4", "video/webm")) }, enabled = !state.busy) { Text(if (vm.session.transport?.supportsFiles == true) "Share a file" else "Save file for Wi-Fi") } }
+                    // Hidden for the Oct 2026 build: sharing signed updates and nearby files that only appear in the hidden Saved page.
+                    // Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedButton(onClick = { vm.share() }, enabled = !state.busy) { Text("Share saved updates") }; OutlinedButton(onClick = { picker.launch(arrayOf("image/jpeg", "image/png", "image/webp", "text/plain", "audio/*", "video/mp4", "video/webm")) }, enabled = !state.busy) { Text(if (vm.session.transport?.supportsFiles == true) "Share a file" else "Save file for Wi-Fi") } }
                     if (state.media && !state.calling) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = { call(false, false) }) { Icon(Icons.Outlined.Call, null); Spacer(Modifier.width(6.dp)); Text("Voice call") }; OutlinedButton(onClick = { call(true, false) }) { Icon(Icons.Outlined.Videocam, null); Spacer(Modifier.width(6.dp)); Text("Video call") } }
                 }
             }

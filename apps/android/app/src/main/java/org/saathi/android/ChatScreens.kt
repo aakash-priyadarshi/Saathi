@@ -291,7 +291,9 @@ fun AppState.shownMessages(conversationId:String)=chatMessages.filter{it.body().
                                 else {
                                     if(payload.optBoolean("forwarded"))Text("Forwarded",style=MaterialTheme.typography.labelSmall,fontStyle=FontStyle.Italic,color=bubbleContentColor.copy(alpha=.78f))
                                     (payload.optString("replyTo").ifEmpty{null}?:body.optString("threadRootId").ifEmpty{null})?.takeIf{it!=thread}?.let{q->ReplyQuote(byId[q],q in gone){jump(q)}}
-                                    payload.optJSONObject("reference")?.let {r->Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Outlined.VolunteerActivism,null);TextButton(onClick={if(r.getString("type")=="NEED")openNeed(r.getString("id")) else vm.notice("Find this public update in Updates and check its latest status.")}){Text(r.getString("title"))}}}
+                                    // Hidden for the Oct 2026 build: the link from a shared need/update into the Needs and Updates tabs. The title stays as plain text.
+                                    // payload.optJSONObject("reference")?.let {r->Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Outlined.VolunteerActivism,null);TextButton(onClick={if(r.getString("type")=="NEED")openNeed(r.getString("id")) else vm.notice("Find this public update in Updates and check its latest status.")}){Text(r.getString("title"))}}}
+                                    payload.optJSONObject("reference")?.let {r->Text(r.getString("title"),style=MaterialTheme.typography.bodyLarge)}
                                     attachment?.let{a->
                                         val progress=state.transfers[a.getString("id")]
                                         when{
@@ -392,8 +394,9 @@ private fun bubbleStatus(m:JSONObject)=when{m.optBoolean("attention")->"Needs at
             if(text!=null)item("Copy",Icons.Outlined.ContentCopy){clipboard.setText(AnnotatedString(text))}
             if(canForward)item("Forward",Icons.Outlined.Shortcut,run=forward)
             if(canSave)item("Save",Icons.Outlined.Download,run=save)
-            if(relief)item("Create help request",Icons.Outlined.VolunteerActivism,run=help)
-            if(relief&&team)item("Create need",Icons.Outlined.Inventory2,run=need)
+            // Hidden for the Oct 2026 build: help requests and needs from a chat message (Needs is not shown).
+            // if(relief)item("Create help request",Icons.Outlined.VolunteerActivism,run=help)
+            // if(relief&&team)item("Create need",Icons.Outlined.Inventory2,run=need)
             if(!owned)item("Report",Icons.Outlined.Flag,run=report)
         }
         item("Delete",Icons.Outlined.Delete,danger=true,run=delete)
@@ -562,32 +565,39 @@ private fun roleLabel(role:String)=when(role){"OWNER"->"Group creator";"ADMIN"->
 @Composable fun MoreScreen(vm:SaathiViewModel,state:AppState,team:()->Unit,saved:()->Unit,connection:()->Unit,modifier:Modifier){
     var name by rememberSaveable(state.chatProfile?.getJSONObject("body")?.optString("name")){mutableStateOf(state.chatProfile?.getJSONObject("body")?.optString("name")?:"")}
     LazyColumn(modifier,contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(20.dp)){
-        item {Heading("More","Your profile, relief work and saved information.")}
+        // Hidden for the Oct 2026 build: relief work and saved information are not shown.
+        // item {Heading("More","Your profile, relief work and saved information.")}
+        item {Heading("More","Your profile and settings.")}
         if(BuildConfig.CHAT_ENABLED)item {Column(verticalArrangement=Arrangement.spacedBy(10.dp)){Text("Nearby profile",style=MaterialTheme.typography.titleLarge);OutlinedTextField(name,{name=it.take(32)},Modifier.fillMaxWidth(),label={Text("Display name")},singleLine=true);Button(onClick={vm.chatName(name)},enabled=name.isNotBlank()&&!state.busy){Text("Save name")};Text("Nearby devices see this name while you search and after you connect. It is not a verified volunteer identity; choose a name your group can recognize.",style=MaterialTheme.typography.bodySmall);state.chatProfile?.let {Text("Chat identity "+ChatProtocol.participant(it).chunked(8).joinToString(" "),style=MaterialTheme.typography.bodySmall)}}}
         item {HorizontalDivider();Text("Appearance",style=MaterialTheme.typography.titleLarge);listOf("SYSTEM" to "System","LIGHT" to "Light","DARK" to "Dark").forEach{(value,label)->Row(Modifier.fillMaxWidth().clickable{vm.preference("appearance",value)},verticalAlignment=Alignment.CenterVertically){RadioButton(state.preferences.optString("appearance","SYSTEM")==value,{vm.preference("appearance",value)});Text(label)}}}
         item {HorizontalDivider();Text("Privacy & Nearby",style=MaterialTheme.typography.titleLarge);Row(verticalAlignment=Alignment.CenterVertically){Text("Nearby visibility",Modifier.weight(1f));Switch(state.preferences.optBoolean("nearbyVisible",true),{vm.preference("nearbyVisible",it)})};Text("Searching runs while Swarm is open and stops in the background. Turning visibility off ends nearby discovery and its active connection.",style=MaterialTheme.typography.bodySmall)}
-        item {Text("Help Swarm send public updates online",style=MaterialTheme.typography.titleLarge);Text("Your device can carry authenticated reports for others. Choose when it may use your data.",style=MaterialTheme.typography.bodyMedium);listOf("OFF" to "Off","WIFI" to "Wi-Fi only","ANY" to "Wi-Fi + mobile data").forEach{(value,label)->Row(Modifier.fillMaxWidth().clickable{vm.preference("relay",value)},verticalAlignment=Alignment.CenterVertically){RadioButton(state.preferences.optString("relay","OFF")==value,{vm.preference("relay",value)});Text(label)}};Row(verticalAlignment=Alignment.CenterVertically){Text("Relay public media",Modifier.weight(1f));Switch(state.preferences.optBoolean("mediaRelay"),{vm.preference("mediaRelay",it)})}}
+        // Hidden for the Oct 2026 build: relay of public community updates (Updates is not shown).
+        // item {Text("Help Swarm send public updates online",style=MaterialTheme.typography.titleLarge);Text("Your device can carry authenticated reports for others. Choose when it may use your data.",style=MaterialTheme.typography.bodyMedium);listOf("OFF" to "Off","WIFI" to "Wi-Fi only","ANY" to "Wi-Fi + mobile data").forEach{(value,label)->Row(Modifier.fillMaxWidth().clickable{vm.preference("relay",value)},verticalAlignment=Alignment.CenterVertically){RadioButton(state.preferences.optString("relay","OFF")==value,{vm.preference("relay",value)});Text(label)}};Row(verticalAlignment=Alignment.CenterVertically){Text("Relay public media",Modifier.weight(1f));Switch(state.preferences.optBoolean("mediaRelay"),{vm.preference("mediaRelay",it)})}}
         item {
             Text("Storage & data",style=MaterialTheme.typography.titleLarge)
-            var limit by remember(state.preferences.optInt("dailyLimitMB",500)){mutableFloatStateOf(state.preferences.optInt("dailyLimitMB",500).coerceIn(500,5000).toFloat())}
-            var limitMenu by remember{mutableStateOf(false)}
-            Text("Daily relay limit · ${CommunityRelayPolicy.dailyLimitLabel(limit.toInt())}")
-            Box {
-                OutlinedButton(onClick={limitMenu=true}){Text("Choose allowance");Icon(Icons.Outlined.ArrowDropDown,null)}
-                DropdownMenu(expanded=limitMenu,onDismissRequest={limitMenu=false}) {
-                    CommunityRelayPolicy.dailyLimitPresetsMB.forEach{mb->DropdownMenuItem(text={Text(CommunityRelayPolicy.dailyLimitLabel(mb))},onClick={limitMenu=false;limit=mb.toFloat();vm.preference("dailyLimitMB",mb)})}
-                }
-            }
-            Slider(limit,{limit=it},valueRange=500f..5000f,steps=8,onValueChangeFinished={val mb=(limit.toInt()/500*500).coerceIn(500,5000);limit=mb.toFloat();vm.preference("dailyLimitMB",mb)})
-            var battery by remember(state.preferences.optInt("batteryMinimum",20)){mutableFloatStateOf(state.preferences.optInt("batteryMinimum",20).toFloat())}
-            Text("Pause relay below ${battery.toInt()}% battery")
-            Slider(battery,{battery=it},valueRange=10f..80f,onValueChangeFinished={vm.preference("batteryMinimum",battery.toInt())})
+            // Hidden for the Oct 2026 build: the daily relay limit and battery pause only control relaying public community updates.
+            // var limit by remember(state.preferences.optInt("dailyLimitMB",500)){mutableFloatStateOf(state.preferences.optInt("dailyLimitMB",500).coerceIn(500,5000).toFloat())}
+            // var limitMenu by remember{mutableStateOf(false)}
+            // Text("Daily relay limit · ${CommunityRelayPolicy.dailyLimitLabel(limit.toInt())}")
+            // Box {
+            //     OutlinedButton(onClick={limitMenu=true}){Text("Choose allowance");Icon(Icons.Outlined.ArrowDropDown,null)}
+            //     DropdownMenu(expanded=limitMenu,onDismissRequest={limitMenu=false}) {
+            //         CommunityRelayPolicy.dailyLimitPresetsMB.forEach{mb->DropdownMenuItem(text={Text(CommunityRelayPolicy.dailyLimitLabel(mb))},onClick={limitMenu=false;limit=mb.toFloat();vm.preference("dailyLimitMB",mb)})}
+            //     }
+            // }
+            // Slider(limit,{limit=it},valueRange=500f..5000f,steps=8,onValueChangeFinished={val mb=(limit.toInt()/500*500).coerceIn(500,5000);limit=mb.toFloat();vm.preference("dailyLimitMB",mb)})
+            // var battery by remember(state.preferences.optInt("batteryMinimum",20)){mutableFloatStateOf(state.preferences.optInt("batteryMinimum",20).toFloat())}
+            // Text("Pause relay below ${battery.toInt()}% battery")
+            // Slider(battery,{battery=it},valueRange=10f..80f,onValueChangeFinished={vm.preference("batteryMinimum",battery.toInt())})
             Text("Saved media · "+(state.files.sumOf{it.optLong("size")}/1048576)+" MB",style=MaterialTheme.typography.bodySmall)
-            Text("Relay allowance reserved today · "+state.relayReservedBytes/1_000_000+" MB",style=MaterialTheme.typography.bodySmall)
-            Text("The allowance includes request overhead; retries count. Bluetooth carries text only. Public media waits for a Wi-Fi-capable route.",style=MaterialTheme.typography.bodySmall)
-            TextButton({vm.clearSafeMedia()},enabled=!state.busy){Text("Clear safe public media caches")}
+            // Hidden for the Oct 2026 build: relay allowance and public media caches (relay of public updates is not shown).
+            // Text("Relay allowance reserved today · "+state.relayReservedBytes/1_000_000+" MB",style=MaterialTheme.typography.bodySmall)
+            // Text("The allowance includes request overhead; retries count. Bluetooth carries text only. Public media waits for a Wi-Fi-capable route.",style=MaterialTheme.typography.bodySmall)
+            // TextButton({vm.clearSafeMedia()},enabled=!state.busy){Text("Clear safe public media caches")}
         }
-        item {HorizontalDivider();TextButton(onClick=team){Icon(Icons.Outlined.VerifiedUser,null);Spacer(Modifier.width(8.dp));Text(if(state.preparation==null)"Team sign in" else "My relief team")};TextButton(onClick=saved){Icon(Icons.Outlined.Inventory2,null);Spacer(Modifier.width(8.dp));Text("Saved relief work and earlier messages")};TextButton(onClick=connection){Icon(Icons.Outlined.Link,null);Spacer(Modifier.width(8.dp));Text("Connection options")}}
+        // Hidden for the Oct 2026 build: Team sign in / My relief team and Saved relief work. Connection options stays.
+        // item {HorizontalDivider();TextButton(onClick=team){Icon(Icons.Outlined.VerifiedUser,null);Spacer(Modifier.width(8.dp));Text(if(state.preparation==null)"Team sign in" else "My relief team")};TextButton(onClick=saved){Icon(Icons.Outlined.Inventory2,null);Spacer(Modifier.width(8.dp));Text("Saved relief work and earlier messages")};TextButton(onClick=connection){Icon(Icons.Outlined.Link,null);Spacer(Modifier.width(8.dp));Text("Connection options")}}
+        item {HorizontalDivider();TextButton(onClick=connection){Icon(Icons.Outlined.Link,null);Spacer(Modifier.width(8.dp));Text("Connection options")}}
         item {HorizontalDivider();Text(BuildConfig.BRAND_DISPLAY,style=MaterialTheme.typography.headlineMedium);Text(BuildConfig.BRAND_BYLINE);Text("Connect nearby. Coordinate together.");Text("Developed by Cockroach Janta Party",Modifier.padding(top=12.dp),style=MaterialTheme.typography.bodySmall);Text("Version ${BuildConfig.VERSION_NAME} · ${BuildConfig.ENVIRONMENT}",style=MaterialTheme.typography.bodySmall);val aware=LocalContext.current.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_WIFI_AWARE);Text(if(aware)"Wi-Fi Aware · supported: iPhones can find this phone directly once the iPhone app gains Wi-Fi Aware" else "Wi-Fi Aware · not supported: iPhones find this phone one way, or both ways on a shared hotspot",style=MaterialTheme.typography.bodySmall);Text("Chat is an experimental addition. It has not received an independent cryptographic review. Native 1:1 local Wi-Fi calls passed the earlier two-device checks; huddles remain disabled.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
     }
 }
