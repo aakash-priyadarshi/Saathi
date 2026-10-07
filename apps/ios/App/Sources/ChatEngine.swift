@@ -26,11 +26,11 @@ import SwarmCore
         prune()
     }
     func changed() { revision += 1 }
-    private func now() -> Date { Date() }
-    private func hash(_ v: Any) -> String { (try? ChatCrypto.sha256Hex(Canonical.data(v))) ?? "" }
-    private func body(_ envelope: JSON) -> JSON { envelope["body"] as? JSON ?? [:] }
+    func now() -> Date { Date() }
+    func hash(_ v: Any) -> String { (try? ChatCrypto.sha256Hex(Canonical.data(v))) ?? "" }
+    func body(_ envelope: JSON) -> JSON { envelope["body"] as? JSON ?? [:] }
     func envelopeBody(_ record: JSON) -> JSON { body(record["envelope"] as? JSON ?? [:]) }
-    private func time(_ s: Any?) -> Date { (s as? String).flatMap { try? Instant.parse($0) } ?? .distantPast }
+    func time(_ s: Any?) -> Date { (s as? String).flatMap { try? Instant.parse($0) } ?? .distantPast }
 
     // MARK: identity
     var hasProfile: Bool { store.get("chat", "profile") != nil }
@@ -49,7 +49,7 @@ import SwarmCore
     var peer: JSON? { peerGeneration == session.generation && session.confirmed ? heldPeer : nil }
     var peerID: String? { peer.map(ChatRules.participant) }
 
-    private func save(_ bucket: String, _ id: String, _ value: JSON) throws {
+    func save(_ bucket: String, _ id: String, _ value: JSON) throws {
         if bucket == "chat-receipts" && store.get(bucket, id) == nil && store.count(bucket) >= 500,
            let oldest = store.all(bucket).min(by: { (body($0["receipt"] as? JSON ?? [:])["recordedAt"] as? String ?? "") < (body($1["receipt"] as? JSON ?? [:])["recordedAt"] as? String ?? "") }) {
             store.remove(bucket, oldest["id"] as? String ?? "")
@@ -57,7 +57,7 @@ import SwarmCore
         try J.req(store.get(bucket, id) != nil || store.count(bucket) < 500, "Chat storage is full. Clear an old conversation first.")
         try store.put(bucket, id, value)
     }
-    private func remember(_ person: JSON) throws {
+    func remember(_ person: JSON) throws {
         try ChatRules.profile(person, now: now()); let id = ChatRules.participant(person)
         let old = store.get("chat-contacts", id)?["profile"] as? JSON
         if let old { try J.req(hash(body(old)["encryptionKey"] ?? [:]) == hash(body(person)["encryptionKey"] ?? [:]), "This person's chat identity changed. Compare identities again.") }
@@ -97,11 +97,11 @@ import SwarmCore
         let b = body(p)
         return time(b["expiresAt"]) > now() && ChatRules.member(p, selfID) && store.get("chat-conversations", b["id"] as? String ?? "")?["joined"] as? Bool == true
     }
-    private func archive(_ p: JSON) throws {
+    func archive(_ p: JSON) throws {
         let h = hash(p); try save("chat-policy-history", h, ["id": h, "policy": p])
         if let key = try ChatDocuments.channelKey(policy: p, me: me) { try save("chat-keys", h, ["id": h, "key": ChatCrypto.base64url(key)]) }
     }
-    private func applyPolicy(_ p: JSON, consent: Bool = false) throws {
+    func applyPolicy(_ p: JSON, consent: Bool = false) throws {
         let b = try J.obj(p, "body")
         try J.req(time(b["issuedAt"]) <= now().addingTimeInterval(300))
         try ChatRules.policy(p, now: try Instant.parse(try J.str(b, "issuedAt")))
@@ -113,6 +113,24 @@ import SwarmCore
             let version = try J.int(b, "version"), oldVersion = (previous["version"] as? Int) ?? 0
             if version < oldVersion || (previous["deleted"] as? Bool == true && b["deleted"] as? Bool != true) { return }
             try J.req(version != oldVersion || hash(old) == hash(p), "Conflicting channel membership. Sending is paused.")
+            if version > oldVersion {
+                // A newer owner policy must account for every membership action held at the old version (Android parity).
+                let members = (b["members"] as? [JSON]) ?? [], applied = J.optStrs(b, "appliedActions"), bans = J.optStrs(b, "bannedIds")
+                let locked = J.optStrs((b["moderation"] as? JSON) ?? [:], "lockedThreads"), hidden = J.optStrs((b["moderation"] as? JSON) ?? [:], "hiddenMessages")
+                for row in actions(id) {
+                    let action = body(row["envelope"] as? JSON ?? [:]), kind = action["action"] as? String ?? "", target = action["targetId"] as? String ?? ""
+                    guard action["version"] as? Int == oldVersion, !["REACT", "UNREACT", "REVIEW_REPORT"].contains(kind) else { continue }
+                    let member = members.first { ChatRules.participant($0["profile"] as? JSON ?? [:]) == target }
+                    let ok = applied.contains(action["id"] as? String ?? "") &&
+                        (!["REMOVE", "BAN", "REJECT_JOIN"].contains(kind) || member == nil || !J.isNull(member!, "removedAt")) &&
+                        (kind != "BAN" || bans.contains(target)) && (kind != "UNBAN" || !bans.contains(target)) &&
+                        (kind != "APPROVE_JOIN" || (member.map { J.isNull($0, "removedAt") } ?? false)) &&
+                        (kind != "SET_ROLE" || member?["role"] as? String == action["role"] as? String) &&
+                        (kind != "LOCK_THREAD" || locked.contains(target)) && (kind != "UNLOCK_THREAD" || !locked.contains(target)) &&
+                        (kind != "HIDE_MESSAGE" || hidden.contains(target)) && (kind != "RESTORE_MESSAGE" || !hidden.contains(target))
+                    try J.req(ok, "This policy omitted a known moderation action. Check permissions again.")
+                }
+            }
         }
         try J.req(conversation != nil || consent, "Join this channel before accepting its history.")
         try archive(p); try save("chat-policies", id, ["id": id, "policy": p])
@@ -188,6 +206,7 @@ import SwarmCore
         if let peerID { try J.req(!blocked(peerID), "Unblock this person before sending.") }
         let p = direct ? nil : current(conversationID)
         if !direct { guard let p, live(p) else { throw ChatRuleError("Waiting for the channel owner to refresh membership. Your conversation is safe.") } }
+        if let p { try J.req(!pendingMembership(p), "Membership is changing. Waiting for fresh group keys from the creator.") }
         let recipient = direct ? store.get("chat-contacts", peerID ?? "")?["profile"] as? JSON : nil
         if direct && recipient == nil { throw ChatRuleError("This person's identity is unavailable.") }
         let key = p.flatMap { store.get("chat-keys", hash($0))?["key"] as? String }.flatMap { try? ChatCrypto.unbase64url($0) }
@@ -205,13 +224,13 @@ import SwarmCore
         try store.put("chat-sequences", conversationID, ["value": sequence]); changed()
         if let record = store.get("chat-messages", id) { await sendRecord(record) }
     }
-    private func eligible(_ record: JSON, _ person: String) -> Bool {
+    func eligible(_ record: JSON, _ person: String) -> Bool {
         let b = envelopeBody(record), author = ChatRules.participant(b["author"] as? JSON ?? [:])
         if author == person || blocked(person) || blocked(author) || time(b["expiresAt"]) <= now() || (record["hops"] as? Int ?? 0) >= 6 { return false }
         if !J.isNull(b, "recipientId") { return b["recipientId"] as? String == person && record["owned"] as? Bool == true }
         guard let current = current(b["conversationId"] as? String ?? ""),
               let historic = store.get("chat-policy-history", b["policyHash"] as? String ?? "")?["policy"] as? JSON else { return false }
-        return live(current) && ChatRules.member(current, person) && (body(historic)["visibility"] as? String == "OPEN" || ChatRules.member(historic, person))
+        return live(current) && !pendingMembership(current) && ChatRules.member(current, person) && (body(historic)["visibility"] as? String == "OPEN" || ChatRules.member(historic, person))
     }
     private func sendRecord(_ record: JSON) async {
         guard let person = peerID, session.confirmed, eligible(record, person) else { return }
@@ -227,7 +246,7 @@ import SwarmCore
             await offerAttachment(of: record)
         } catch { }
     }
-    private func sendPolicy(_ p: JSON, kind: String = "CHAT_POLICY") async {
+    func sendPolicy(_ p: JSON, kind: String = "CHAT_POLICY") async {
         if policyGeneration != session.generation { sentPolicyFrames = []; policyGeneration = session.generation }
         let key = kind + ":" + hash(p)
         guard !sentPolicyFrames.contains(key) else { return }
@@ -258,6 +277,7 @@ import SwarmCore
         if !J.isNull(b, "policyHash") && p == nil { throw ChatRuleError("Channel history is unavailable.") }
         let cp = p == nil ? nil : current(try J.str(b, "conversationId"))
         if p != nil { guard let cp, live(cp) else { throw ChatRuleError("Channel membership needs a refresh.") }; try J.req(ChatRules.member(cp, author), "This author's membership has been removed.") }
+        if let cp, hash(cp) == (b["policyHash"] as? String) { try J.req(!pendingMembership(cp), "Waiting for fresh membership.") }
         try ChatRules.message(envelope, policy: p, now: now(), history: true)
         if let old = store.get("chat-messages", id) {
             try J.req(hash(old["envelope"] ?? [:]) == hash(envelope), "Conflicting message identifier.")
@@ -301,6 +321,7 @@ import SwarmCore
     // MARK: nearby exchange
     func announce() async {
         guard session.confirmed, hasProfile else { NSLog("Swarm: announce skipped"); return }
+        renewOwned()
         NSLog("Swarm: announce peer=%@", peerID.map { String($0.prefix(8)) } ?? "none")
         defer { NSLog("Swarm: announce done") }
         try? await session.send("CHAT_PROFILE", profile)
@@ -314,6 +335,23 @@ import SwarmCore
         for p in policies() where ChatRules.member(p, person) { await sendPolicy(p) }
         for join in store.all("chat-joins") {
             if let request = join["request"] as? JSON, time(body(request)["expiresAt"]) > now() { try? await session.send("CHAT_JOIN", request) }
+        }
+        for p in policies() where ChatRules.member(p, person) {
+            let id = body(p)["id"] as? String ?? ""
+            if ChatRules.capabilities(p, person)["canManageMembers"] == true { for r in joinRequests(id) { if let req = r["request"] { try? await session.send("CHAT_JOIN", req) } } }
+            for r in actions(id).suffix(100) {
+                guard let e = r["envelope"] as? JSON else { continue }
+                let eb = body(e), proof = store.get("chat-policy-history", eb["policyHash"] as? String ?? "")?["policy"] as? JSON
+                if let proof, J.optStrs(body(p), "appliedActions").contains(eb["id"] as? String ?? "") { try? await session.send("CHAT_ACTION_PROOF", ["action": e, "policy": proof]) }
+                else { try? await session.send("CHAT_ACTION", e) }
+            }
+        }
+        for r in store.all("chat-actions") {
+            guard let e = r["envelope"] as? JSON else { continue }
+            let eb = body(e)
+            if eb["action"] as? String == "REJECT_JOIN" && eb["targetId"] as? String == person && ChatRules.participant(eb["actor"] as? JSON ?? [:]) == selfID && time(eb["expiresAt"]) > now() {
+                try? await session.send("CHAT_ADMISSION_REJECTION", e)
+            }
         }
         let inventory = messages().filter { eligible($0, person) }.prefix(500).map { ["id": $0["id"]!, "conversationId": envelopeBody($0)["conversationId"]!] as JSON }
         try? await session.send("CHAT_INVENTORY", Array(inventory))
@@ -418,8 +456,11 @@ import SwarmCore
                           ChatCrypto.verify(e, publicKey: try J.obj(try J.obj(owner, "body"), "publicKey")), "Join decision could not be verified.")
                 if var c = conversation(channelID) { c["pendingJoin"] = false; c["joinStatus"] = "REJECTED"; try save("chat-conversations", channelID, c) }
                 store.remove("chat-joins", channelID); changed()
+            case "CHAT_JOIN": try await handleJoin(try J.obj(frame, "value")); changed()
+            case "CHAT_ACTION": try await receiveAction(try J.obj(frame, "value"), server: false)
+            case "CHAT_ACTION_PROOF": try await receiveActionProof(try J.obj(frame, "value"))
             default:
-                break // CHAT_JOIN / CHAT_ACTION / attachments: channel administration and media come in later iPhone milestones.
+                break
             }
         } catch {
             NSLog("Swarm: chat frame rejected: %@", String(describing: error))

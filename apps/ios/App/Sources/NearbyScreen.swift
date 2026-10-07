@@ -7,6 +7,7 @@ struct NearbyView: View {
     @ObservedObject var nearby: Nearby
     @State private var openConversation: String?
     @State private var joining = false
+    @State private var creating = false
 
     var body: some View {
         let _ = chat.revision
@@ -23,11 +24,15 @@ struct NearbyView: View {
                     Divider().overlay(Palette.outline)
                     Text("Channels nearby").font(Type.titleLarge).foregroundStyle(Palette.ink)
                     channels
-                    Button { joining = true } label: { Label("Join with invite", systemImage: "qrcode") }.buttonStyle(OutlineButtonStyle())
+                    HStack {
+                        Button { creating = true } label: { Label("Create group", systemImage: "plus") }.buttonStyle(OutlineButtonStyle())
+                        Button { joining = true } label: { Label("Join with invite", systemImage: "qrcode") }.buttonStyle(OutlineButtonStyle())
+                    }
                 }.padding(20)
             }
             .mastheadToolbar()
             .sheet(isPresented: $joining) { JoinInviteSheet(chat: chat, showing: $joining) }
+            .sheet(isPresented: $creating) { NewGroupSheet(chat: chat, showing: $creating) { openConversation = $0 } }
             .navigationDestination(isPresented: Binding(get: { openConversation != nil }, set: { if !$0 { openConversation = nil } })) {
                 if let id = openConversation { ConversationView(chat: chat, nearby: nearby, id: id) }
             }

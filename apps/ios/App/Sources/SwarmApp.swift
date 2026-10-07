@@ -53,6 +53,8 @@ struct SwarmApp: App {
             session.onFile = { [weak chat] frame, generation in await chat?.receiveFile(frame, generation: generation) }
             session.onReset = { [weak chat] in chat?.reset() }
             session.onError = { [weak chat] in chat?.notice = $0 }
+            // Group creators re-sign every few hours so their groups keep working offline (policies last six hours).
+            Task { [weak chat] in while let chat { chat.renewOwned(); try? await Task.sleep(nanoseconds: 600_000_000_000) } }
         } catch {
             failure = (error as? LocalizedError)?.errorDescription ?? "Swarm could not open this phone's identity."
         }

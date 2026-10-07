@@ -10,7 +10,7 @@ import SwarmCore
         switch UserDefaults.standard.string(forKey: "SwarmTab") { case "nearby": return .nearby; case "more": return .more; default: return .chats }
     }
     static var open: String? { UserDefaults.standard.string(forKey: "SwarmOpen") }
-    static var dmID = "", channelID = ""
+    static var dmID = "", channelID = "", ownedID = ""
 
     static func seed(_ chat: ChatEngine) {
         guard enabled else { return }
@@ -70,10 +70,21 @@ import SwarmCore
                     let id = (envelope["body"] as! JSON)["id"] as! String
                     try chat.store.put("chat-messages", id, ["id": id, "envelope": envelope, "payload": ["text": post.2], "owned": false, "hops": 1, "receivedAt": Instant.string(now), "serverSaved": false])
                 }
+                // A group this phone created, with Asha as admin.
+                let owned = try ChatDocuments.policy(me, profile: myProfile, previous: nil, name: "Medics", visibility: "INVITE",
+                    members: [["profile": myProfile, "role": "OWNER", "joinedAt": Instant.string(issued), "removedAt": NSNull()],
+                              ["profile": asha, "role": "ADMIN", "joinedAt": Instant.string(issued), "removedAt": NSNull()],
+                              ["profile": vikram, "role": "MEMBER", "joinedAt": Instant.string(issued), "removedAt": NSNull()]],
+                    settings: ["mode": "DISCUSSION", "admission": "INVITE_AUTO"], at: now.addingTimeInterval(-60))
+                ownedID = (owned["body"] as! JSON)["id"] as! String
+                try chat.store.put("chat-conversations", ownedID, ["id": ownedID, "type": "CHANNEL", "title": "Medics", "muted": false, "joined": true, "pendingJoin": false,
+                                                                  "deleted": false, "visibility": "INVITE", "ownerId": me.participantID, "lastRead": Instant.string(.distantPast)])
+                try chat.applyPolicy(owned, consent: true)
                 chat.changed()
             } else {
                 dmID = chat.conversations().first { $0["type"] as? String == "DIRECT" }?["id"] as? String ?? ""
-                channelID = chat.conversations().first { $0["type"] as? String == "CHANNEL" }?["id"] as? String ?? ""
+                channelID = chat.conversations().first { $0["type"] as? String == "CHANNEL" && $0["title"] as? String != "Medics" }?["id"] as? String ?? ""
+                ownedID = chat.conversations().first { $0["title"] as? String == "Medics" }?["id"] as? String ?? ""
             }
         } catch { chat.notice = "Demo data: \(error.localizedDescription)" }
     }
@@ -92,7 +103,9 @@ import SwarmCore
 extension Demo {
     static var reviewing: Bool { enabled }
     static var startTab: Tab { tab }
-    static var startConversation: String? { open == "dm" ? (dmID.isEmpty ? nil : dmID) : open == "channel" ? (channelID.isEmpty ? nil : channelID) : nil }
+    static var startConversation: String? {
+        switch open { case "dm": return dmID; case "channel": return channelID; case "owned": return ownedID; case "info": return "info:" + ownedID; default: return nil }
+    }
 }
 #else
 /// Release builds never show demo content.

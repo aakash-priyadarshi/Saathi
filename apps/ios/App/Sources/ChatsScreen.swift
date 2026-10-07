@@ -9,6 +9,7 @@ struct ChatsView: View {
     let findPeople: () -> Void
     @State private var search = ""
     @State private var joining = false
+    @State private var creating = false
     @State private var path: [String] = Demo.startConversation.map { [$0] } ?? []
 
     struct Row: Identifiable { let id: String; let title: String; let preview: String; let channel: Bool; let unread: Int; let last: String; let status: String? }
@@ -17,7 +18,12 @@ struct ChatsView: View {
         NavigationStack(path: $path) {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
-                    TopBar { Button { joining = true } label: { Image(systemName: "qrcode").font(.title3).foregroundStyle(Palette.primary) }.accessibilityLabel("Join with invite") }
+                    TopBar {
+                        HStack(spacing: 18) {
+                            Button { joining = true } label: { Image(systemName: "qrcode").font(.title3).foregroundStyle(Palette.primary) }.accessibilityLabel("Join with invite")
+                            Button { creating = true } label: { Image(systemName: "plus.circle").font(.title3).foregroundStyle(Palette.primary) }.accessibilityLabel("New group")
+                        }
+                    }
                     Heading(title: "Chats", text: "Direct messages and channels stay on this phone and travel when you meet people.")
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass").foregroundStyle(Palette.muted)
@@ -43,7 +49,11 @@ struct ChatsView: View {
             }
             .mastheadToolbar()
             .sheet(isPresented: $joining) { JoinInviteSheet(chat: chat, showing: $joining) }
-            .navigationDestination(for: String.self) { id in ConversationView(chat: chat, nearby: nearby, id: id) }
+            .sheet(isPresented: $creating) { NewGroupSheet(chat: chat, showing: $creating) { path.append($0) } }
+            .navigationDestination(for: String.self) { id in
+                if id.hasPrefix("info:") { GroupInfoView(chat: chat, nearby: nearby, id: String(id.dropFirst(5))) }
+                else { ConversationView(chat: chat, nearby: nearby, id: id) }
+            }
         }
     }
 
@@ -123,7 +133,10 @@ struct ConversationView: View {
         let channel = conversation?["type"] as? String == "CHANNEL"
         let title = conversation?["title"] as? String ?? "Chat"
         VStack(spacing: 0) {
-            header(title: title, channel: channel, conversation: conversation)
+            if channel {
+                NavigationLink { GroupInfoView(chat: chat, nearby: nearby, id: id) } label: { header(title: title, channel: channel, conversation: conversation) }
+                    .buttonStyle(.plain).accessibilityHint("Opens group members and settings")
+            } else { header(title: title, channel: channel, conversation: conversation) }
             Divider().overlay(Palette.outline)
             ScrollViewReader { proxy in
                 ScrollView {
@@ -165,6 +178,7 @@ struct ConversationView: View {
                 Avatar(name: title, channel: channel)
                 Text(title).font(Type.titleLarge).foregroundStyle(Palette.ink).lineLimit(2)
                 Spacer(minLength: 0)
+                if channel { Image(systemName: "info.circle").foregroundStyle(Palette.primary) }
             }
             HStack(spacing: 6) {
                 Circle().fill(here ? Palette.primary : Palette.muted.opacity(0.5)).frame(width: 8, height: 8)
