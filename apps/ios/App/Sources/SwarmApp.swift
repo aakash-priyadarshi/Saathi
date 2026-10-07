@@ -6,6 +6,7 @@ struct SwarmApp: App {
     @StateObject private var model = AppModel()
     @AppStorage("appearance") private var appearance = "SYSTEM"
     @State private var revealing = !Demo.reviewing
+    @Environment(\.scenePhase) private var phase
     var body: some Scene {
         WindowGroup {
             ZStack {
@@ -19,6 +20,8 @@ struct SwarmApp: App {
             .preferredColorScheme(appearance == "LIGHT" ? .light : appearance == "DARK" ? .dark : nil)
             .tint(Palette.primary)
             .onOpenURL { url in model.openInvite(url.absoluteString) }
+            // Search automatically whenever Swarm is on screen; iOS suspends radios in the background anyway.
+            .onChange(of: phase) { value in if value == .active { model.nearby.resume() } else if value == .background { model.nearby.pause() } }
         }
     }
 }
@@ -43,6 +46,8 @@ struct SwarmApp: App {
             nearby.onConnected = { [session] in session.markConfirmed(); Task { await session.confirm() } }
             nearby.onDisconnected = { [session] in session.reset() }
             nearby.onError = { [weak chat] in chat?.notice = $0 }
+            nearby.displayName = { [weak chat] in chat?.name ?? "" }
+            nearby.knownNames = { [weak chat] in Set((chat?.contacts() ?? []).compactMap { (($0["profile"] as? JSON)?["body"] as? JSON)?["name"] as? String }) }
             session.onConfirmed = { [weak chat] in await chat?.announce() }
             session.onChat = { [weak chat] frame, generation in await chat?.receive(frame, generation: generation) }
             session.onFile = { [weak chat] frame, generation in await chat?.receiveFile(frame, generation: generation) }
@@ -113,6 +118,7 @@ struct RootView: View {
             MoreView(chat: chat)
                 .tabItem { Label("More", systemImage: "ellipsis.circle") }.tag(Tab.more)
         }
+        .onAppear { nearby.resume() } // first launch and right after choosing a name
         .alert("Notice", isPresented: Binding(get: { chat.notice != nil }, set: { if !$0 { chat.notice = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(chat.notice ?? "") }

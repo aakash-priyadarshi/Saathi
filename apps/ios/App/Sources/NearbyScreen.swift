@@ -42,15 +42,14 @@ struct NearbyView: View {
             if nearby.connected == nil {
                 if nearby.searching {
                     // Restarting cancels a Bluetooth handshake that can take 5–15 s; offer Stop instead.
-                    HStack(spacing: 10) { ProgressView().tint(Palette.primary); Text("Keep both phones open. Finding over Bluetooth can take up to 30 seconds.").font(Type.bodySmall) }
-                    Button("Stop") { nearby.stop() }.buttonStyle(OutlineButtonStyle())
+                    HStack(spacing: 10) { ProgressView().tint(Palette.primary); Text("Searching while Swarm is open. People you've met reconnect on their own; finding over Bluetooth can take up to 30 seconds.").font(Type.bodySmall) }
+                    Button("Stop searching") { nearby.stop() }.buttonStyle(OutlineButtonStyle())
                 } else {
-                    Button("Search nearby for one minute") { nearby.start(visible: false, name: chat.name) }.buttonStyle(PrimaryButtonStyle())
-                    Button("Make this iPhone visible") { nearby.start(visible: true, name: chat.name) }.buttonStyle(OutlineButtonStyle())
+                    Button("Search nearby") { nearby.start() }.buttonStyle(PrimaryButtonStyle())
                 }
             }
             Text(nearby.status).font(Type.bodySmall).foregroundStyle(Palette.onPrimaryContainer)
-            Text("Without a shared Wi-Fi network, search from the iPhone while the Android phone is visible. Your name appears to nearby phones during the one-minute search; compare the code before connecting.")
+            Text("Your name is visible to nearby Swarm phones while you search. Compare the code before connecting. Without a shared Wi-Fi network, the Android phone must be searching too.")
                 .font(Type.bodySmall).foregroundStyle(Palette.onPrimaryContainer.opacity(0.8))
         }
         .padding(20).frame(maxWidth: .infinity, alignment: .leading).background(Palette.primaryContainer, in: RoundedRectangle(cornerRadius: 12))
@@ -79,7 +78,7 @@ struct NearbyView: View {
                         Text("Compare a code to meet this person").font(Type.bodySmall).foregroundStyle(Palette.muted)
                     }
                     Spacer()
-                    Button("Connect") { nearby.connect(id, name: chat.name) }.buttonStyle(OutlineButtonStyle())
+                    Button("Connect") { nearby.connect(id) }.buttonStyle(OutlineButtonStyle())
                 }
             }
         } else {
