@@ -26,3 +26,6 @@ local.properties
 apps/android/.kotlin/
 apps/ios/.build/
 apps/ios/.swiftpm/
+# XcodeGen output; regenerate from apps/ios/NearbyProbe/project.yml
+apps/ios/NearbyProbe/*.xcodeproj/
+apps/ios/NearbyProbe/Sources/Info.plist

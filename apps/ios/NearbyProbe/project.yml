@@ -1,0 +1,40 @@
+# iPhone ↔ Android Nearby Connections interoperability probe (pairs with spikes/android).
+# Generate the Xcode project with: xcodegen generate
+name: NearbyProbe
+options:
+  bundleIdPrefix: org.cjp.swarm
+  deploymentTarget: { iOS: "16.0" }
+packages:
+  NearbyConnections:
+    url: https://github.com/google/nearby
+    revision: 4f4c36caa883a4c43d7a48c561636280f5b2a53f
+targets:
+  NearbyProbe:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    dependencies:
+      - package: NearbyConnections
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.cjp.swarm.nearbyprobe
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_VERSION: "5.0"
+        # Set to your Apple ID team in Xcode (Signing & Capabilities); a free Apple ID works for your own iPhone.
+        DEVELOPMENT_TEAM: ""
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Swarm Probe
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: Finds and talks to nearby Swarm test phones over Bluetooth.
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: Finds and talks to nearby Swarm test phones on local Wi-Fi.
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: iOS requires location access to join a nearby phone's fast Wi-Fi link.
+    info:
+      path: Sources/Info.plist
+      properties:
+        # "_" + first 12 hex chars of SHA-256(service ID), uppercase. Probe plus the three app environments.
+        NSBonjourServices:
+          - _6E51459687A2._tcp
+          - _7E8E2BF69E50._tcp
+          - _F02AC9190703._tcp
+          - _7A8E729F4BC1._tcp
