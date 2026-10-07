@@ -1,5 +1,6 @@
 import SwiftUI
 import SwarmCore
+import WiFiAware
 
 /// Android More: profile, appearance, privacy and the About material.
 struct MoreView: View {
@@ -58,6 +59,7 @@ struct MoreView: View {
                         Text("Developed by Cockroach Janta Party").font(Type.bodySmall).foregroundStyle(Palette.muted).padding(.top, 12)
                         Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") · iPhone preview · staging")
                             .font(Type.bodySmall).foregroundStyle(Palette.muted)
+                        Text(wifiAwareStatus).font(Type.bodySmall).foregroundStyle(Palette.muted)
                         Text("Chat is an experimental addition. It has not received an independent cryptographic review. On iPhone, channels are joined from their Android owners; photos travel over Bluetooth and videos need a later release.")
                             .font(Type.bodySmall).foregroundStyle(Palette.muted)
                         HStack(spacing: 16) {
@@ -75,6 +77,13 @@ struct MoreView: View {
                 }
             }
         }
+    }
+    /// Wi-Fi Aware (iOS 26) gives two-way discovery with Android phones that support it; it needs the paid Apple team.
+    var wifiAwareStatus: String {
+        if #available(iOS 26.0, *), WACapabilities.supportedFeatures.contains(.wifiAware) {
+            return "Wi-Fi Aware · supported on this iPhone (two-way discovery with Android arrives with the paid Apple team)"
+        }
+        return "Wi-Fi Aware · not supported on this iPhone: it finds Android phones one way, or both ways on a shared hotspot"
     }
     func text(_ name: String) -> String {
         Bundle.main.url(forResource: name, withExtension: "txt").flatMap { try? String(contentsOf: $0) } ?? "Licence text is unavailable."
