@@ -8,7 +8,7 @@ struct SwarmApp: App {
         WindowGroup {
             Group {
                 if let chat = model.chat {
-                    if chat.hasProfile { RootView(chat: chat, nearby: model.nearby) } else { NameView(chat: chat) }
+                    StartView(chat: chat, nearby: model.nearby)
                 } else {
                     Text(model.failure ?? "Opening…").padding()
                 }
@@ -46,6 +46,15 @@ struct SwarmApp: App {
     func openInvite(_ link: String) {
         guard let chat else { return }
         Task { do { try await chat.acceptInvite(link) } catch { chat.notice = (error as? LocalizedError)?.errorDescription ?? "Invitation could not be used." } }
+    }
+}
+
+/// Observes the chat engine so saving a name switches to the main screen.
+struct StartView: View {
+    @ObservedObject var chat: ChatEngine
+    let nearby: Nearby
+    var body: some View {
+        if chat.hasProfile { RootView(chat: chat, nearby: nearby) } else { NameView(chat: chat) }
     }
 }
 
