@@ -239,6 +239,24 @@ describe('Real PostgreSQL operational chat boundary', () => {
     expect(pending.policies).toEqual([]);
     expect(pending.messages).toEqual([]);
     expect((await sync(owner)).joins).toHaveLength(1);
+    // A join link is single use: a second person carrying it is refused, the first may re-send.
+    const late = await chatPerson('Late link visitor');
+    const lateBody = { ...joinBody, id: randomUUID(), participant: late.profile };
+    const refused = await request(app.getHttpServer())
+      .post('/api/v1/chat/sync')
+      .set('Origin', origin)
+      .send(
+        await chatBatch(late, {
+          joins: [{ body: lateBody, signature: await sign(lateBody, late.signing.privateKey) }],
+        }),
+      );
+    expect(refused.status).toBe(403);
+    expect(refused.body.message).toBe('This join link has already been used.');
+    const againBody = { ...joinBody, id: randomUUID(), issuedAt: new Date().toISOString() };
+    await sync(visitor, {
+      joins: [{ body: againBody, signature: await sign(againBody, visitor.signing.privateKey) }],
+    });
+    expect((await sync(owner)).joins).toHaveLength(1);
   });
   it('gates private admission, delegated approval and bans, pauses old epochs, and keeps rename-bound bans', async () => {
     const owner = await chatPerson('Private owner'),

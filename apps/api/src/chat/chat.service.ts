@@ -582,6 +582,20 @@ export class ChatService {
                   'This channel requires a current authenticated invitation.',
                 );
             }
+            // A join link admits one person: the first participant whose request carries it reserves it.
+            const link = j.invitation?.body;
+            if (
+              link?.recipientId === '*' &&
+              (await tx.chatJoinRequest.findFirst({
+                where: {
+                  conversationId: j.channelId,
+                  participantId: { not: j.participant.body.id },
+                  profile: { path: ['body', 'invitation', 'body', 'id'], equals: link.id },
+                },
+                select: { id: true },
+              }))
+            )
+              throw new ForbiddenException('This join link has already been used.');
           }
           if (j.action === 'LEAVE' && c.ownerId === j.participant.body.id) continue;
           await this.profile(tx, j.participant);

@@ -327,17 +327,17 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         else {val id=chat.create(reference.getString("title").take(48),"OPEN");repository.store.put("chat-discussions",key,obj("conversationId" to id));chat.send(id,obj("reference" to reference),"RELIEF");open(id);runCatching {chat.sync()}}
     }
     fun openChat(person:JSONObject,open:(String)->Unit)=chatAction { open(chat.direct(person)) }
-    fun createChannel(name:String,visibility:String,mode:String="DISCUSSION",admission:String=if(visibility=="OPEN")"OPEN" else "INVITE_PLUS_APPROVAL",open:(String)->Unit)=chatAction { open(chat.create(name,visibility,mode,admission));runCatching {chat.sync()} }
+    fun createChannel(name:String,visibility:String,type:String="FREE",admission:String=if(visibility=="OPEN")"OPEN" else "INVITE_PLUS_APPROVAL",open:(String)->Unit)=chatAction { open(chat.create(name,visibility,if(type=="FREE")"DISCUSSION" else "ANNOUNCEMENT",admission,type));runCatching {chat.sync()} }
     fun joinChannel(id:String)=chatAction { chat.join(id);runCatching {chat.sync()} }
     fun joinInvite(link:String,open:(String)->Unit)=chatAction { open(chat.acceptInvite(link));runCatching {chat.sync()} }
     fun invitePerson(id:String,person:JSONObject,show:(String)->Unit)=chatAction { show(chat.invite(id,person));runCatching {chat.sync()} }
     fun createChannelJoinLink(id:String,show:(String)->Unit)=chatAction { show(chat.createJoinLink(id)) }
-    fun chatSend(id:String,text:String,replyTo:String?=null,saved:()->Unit={})=chatAction { val payload=obj("text" to text);if(replyTo!=null)payload.put("replyTo",replyTo);chat.send(id,payload);saved();runCatching {chat.sync()} }
+    fun chatSend(id:String,text:String,replyTo:String?=null,threadRootId:String?=null,saved:()->Unit={})=chatAction { val payload=obj("text" to text);if(replyTo!=null)payload.put("replyTo",replyTo);chat.send(id,payload,threadRootId=threadRootId);saved();runCatching {chat.sync()} }
     fun forwardChat(messageId:String,targets:List<String>)=chatAction { chat.forward(messageId,targets);runCatching {chat.sync()};notice("Forwarded to ${targets.size} chat${if(targets.size==1)"" else "s"}.") }
     fun deleteChatForMe(messageId:String)=chatAction { chat.deleteForMe(messageId) }
     fun deleteChatForEveryone(messageId:String)=chatAction { chat.deleteForEveryone(messageId);runCatching {chat.sync()} }
     fun moderateChannel(id:String,action:String,target:String,role:String?=null,reaction:String?=null)=chatAction {chat.moderate(id,action,target,role,reaction);runCatching{chat.sync()};notice("Saved. The change reaches the group as phones meet.")}
-    fun configureChannel(id:String,mode:String,admission:String)=chatAction {chat.configure(id,mode,admission);runCatching{chat.sync()}}
+    fun configureChannel(id:String,type:String,admission:String)=chatAction {chat.configure(id,if(type=="FREE")"DISCUSSION" else "ANNOUNCEMENT",admission,type);runCatching{chat.sync()}}
     private val composerVersions=mutableMapOf<String,Long>()
     fun saveChatComposer(id:String,text:String) {
         val version=maxOf(composerVersions[id]?:0,repository.store.get("chat-drafts",id)?.optLong("version")?:0)+1;composerVersions[id]=version
@@ -355,7 +355,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     fun reportChat(id:String,reason:String="ABUSE")=chatAction { chat.report(id,reason);runCatching {chat.sync()};notice("Report saved. It will reach the team when connected.") }
     fun reportPerson(id:String,reason:String)=chatAction{chat.reportPerson(id,reason);runCatching{chat.sync()};notice("Report saved for review. Sending waits for an online connection.")}
     fun syncChats()=chatAction { chat.sync();notice("Chats checked. Recipient confirmations determine delivery.") }
-    fun attachChat(id:String,uri:Uri)=chatAction { chat.attach(id,uri);runCatching {chat.sync()} }
+    fun attachChat(id:String,uri:Uri,threadRootId:String?=null)=chatAction { chat.attach(id,uri,threadRootId=threadRootId);runCatching {chat.sync()} }
     fun shareChatAttachment(id:String)=chatAction { chat.offerAttachment(id) }
     fun clearChat(id:String)=chatAction {chat.clearConversation(id)}
     fun sendNearbyInvite(link:String)=chatAction {require(chat.peer!=null);session.send("CHAT_INVITE",link);notice("Invitation sent nearby. The recipient decides whether to join.")}
@@ -377,9 +377,9 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         try {chat.attach(id,Uri.fromFile(file),"audio/mp4","Voice note.m4a",threadRootId);runCatching {chat.sync()} }finally { file.delete();voiceFile=null }
     }
     /** Hold-to-talk release: send the clip (a tap under half a second is discarded), once recording has started. */
-    fun releaseVoice(id:String,send:Boolean)=viewModelScope.launch {
+    fun releaseVoice(id:String,send:Boolean,threadRootId:String?=null)=viewModelScope.launch {
         var waited=0; while(!state.value.recording && waited<1000){delay(50);waited+=50}
-        if(send && state.value.recording) sendVoice(id) else cancelVoice()
+        if(send && state.value.recording) sendVoice(id,threadRootId) else cancelVoice()
     }
     private var voicePlayer:android.media.MediaPlayer?=null
     /** Plays a held voice message; used for clips that arrive while their chat is open. */

@@ -162,6 +162,17 @@ fun AppState.deletedForEveryone():Set<String>{
     val byId=chatMessages.associateBy{it.getString("id")}
     return chatMessages.mapNotNull{m->m.getJSONObject("payload").optString("deletes").ifEmpty{null}?.takeIf{t->byId[t]?.let{it.authorId()==m.authorId()}?:true}}.toSet()
 }
+/** Telegram-style threads: a reply belongs to the thread of the top-level message it (transitively) answers. */
+fun threadRoot(m:JSONObject,byId:Map<String,JSONObject>):String?{
+    m.body().optString("threadRootId").ifEmpty{null}?.let{return it}
+    var target=m.getJSONObject("payload").optString("replyTo").ifEmpty{null}?:return null
+    repeat(20){
+        val t=byId[target]?:return target
+        val up=t.body().optString("threadRootId").ifEmpty{null}?:t.getJSONObject("payload").optString("replyTo").ifEmpty{null}?:return target
+        target=up
+    }
+    return target
+}
 /** What a conversation shows, oldest first: no delete markers, nothing deleted on this phone. */
 fun AppState.shownMessages(conversationId:String)=chatMessages.filter{it.body().getString("conversationId")==conversationId && !it.getJSONObject("payload").has("deletes") && it.getString("id") !in chatDeleted}
     .sortedWith(compareBy<JSONObject>{it.body().getString("createdAt")}.thenBy{it.getString("id")})
@@ -170,21 +181,28 @@ fun AppState.shownMessages(conversationId:String)=chatMessages.filter{it.body().
     val conversation=state.conversations.firstOrNull {it.getString("id")==id}
     if(conversation==null){EmptyState("Conversation unavailable","Return to Chats and try again.",Icons.Outlined.ChatBubbleOutline);return}
     val channel=conversation.getString("type")=="CHANNEL"
-    var info by rememberSaveable(id){mutableStateOf(false)}
+    var info by rememberSaveable(id){mutableStateOf(false)};var thread by rememberSaveable(id){mutableStateOf<String?>(null)}
     androidx.activity.compose.BackHandler(info){info=false}
+    androidx.activity.compose.BackHandler(!info&&thread!=null){thread=null}
     if(info){if(channel)GroupInfoScreen(vm,state,id,{info=false},modifier) else ContactInfoScreen(vm,state,conversation,{info=false},modifier);return}
     var text by remember(id){mutableStateOf("")}; LaunchedEffect(id){val saved=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){vm.repository.store.get("chat-drafts",id)?.optString("text")?:""};if(text.isEmpty())text=saved}
     var replyTo by remember(id){mutableStateOf<JSONObject?>(null)};var forwarding by remember{mutableStateOf<String?>(null)}
     var reportId by remember{mutableStateOf<String?>(null)};var helpMessage by remember{mutableStateOf<JSONObject?>(null)};var deleting by remember{mutableStateOf<JSONObject?>(null)}
     var exportId by rememberSaveable {mutableStateOf("")}
-    val transcript=key(id){rememberLazyListState()};val uiScope=rememberCoroutineScope()
+    val transcript=key(id,thread){rememberLazyListState()};val uiScope=rememberCoroutineScope()
     var followLatest by remember(id){mutableStateOf(true)}
     val visibleMessages by remember(transcript){derivedStateOf{transcript.layoutInfo.visibleItemsInfo.mapNotNull{it.key as? String}}}
     val exporter=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")){uri->if(uri!=null)vm.exportChatAttachment(exportId,uri)}
-    val picker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->if(uri!=null)vm.attachChat(id,uri)}
-    val messages=state.shownMessages(id);val gone=state.deletedForEveryone();val byId=state.chatMessages.associateBy{it.getString("id")}
+    val all=state.shownMessages(id);val gone=state.deletedForEveryone();val byId=state.chatMessages.associateBy{it.getString("id")}
+    val roots=all.associate{it.getString("id") to threadRoot(it,byId)};val replyCounts=roots.values.filterNotNull().groupingBy{it}.eachCount()
+    // Admin-post groups keep replies inside each post's thread; free chats and DMs also show replies inline with a quote.
+    val announce=channel&&state.channelPolicy(id)?.getJSONObject("body")?.optJSONObject("settings")?.optString("mode")=="ANNOUNCEMENT"
+    val messages=if(thread==null)all.filter{!it.body().has("threadRootId")} else all.filter{it.getString("id")==thread||roots[it.getString("id")]==thread}
     val caps=if(channel)state.channelCapabilities(id)else null
-    val canPost=conversation.optBoolean("joined") && (!channel || caps?.optBoolean("canPostTopLevel")==true)
+    val canReplyThreads=conversation.optBoolean("joined")&&(!channel||caps?.optBoolean(if(announce)"canReplyInThreads" else "canPostTopLevel")==true)
+    val canPost=if(thread!=null)canReplyThreads else conversation.optBoolean("joined") && (!channel || caps?.optBoolean("canPostTopLevel")==true)
+    val threadRootForSend=if(announce)thread else null
+    val picker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->if(uri!=null)vm.attachChat(id,uri,threadRootForSend)}
     val callReady=!channel&&state.media&&state.chatPeer?.let {ChatProtocol.participant(it)}==conversation.optString("peerId")&&!(conversation.optString("peerId") in state.chatBlocks)
     val peerId=state.chatPeer?.let{ChatProtocol.participant(it)}
     val members=state.channelPolicy(id)?.getJSONObject("body")?.getJSONArray("members")?.objects()?.filter{it.isNull("removedAt")}.orEmpty()
@@ -216,6 +234,10 @@ fun AppState.shownMessages(conversationId:String)=chatMessages.filter{it.body().
             }
         }
         if(state.calling)CallPanel(vm,state)
+        if(thread!=null)Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha=.5f)).padding(horizontal=4.dp),verticalAlignment=Alignment.CenterVertically){
+            IconButton(onClick={thread=null}){Icon(Icons.Outlined.ArrowBack,"Back to chat")}
+            Text("Thread · ${replyCounts[thread]?:0} ${if(replyCounts[thread]==1)"reply" else "replies"}",style=MaterialTheme.typography.titleMedium)
+        }
         HorizontalDivider()
         LazyColumn(Modifier.weight(1f).testTag("chat-transcript"),state=transcript,reverseLayout=true,contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
             if(messages.isEmpty())item {EmptyState(if(conversation.optBoolean("pendingJoin"))"Waiting for approval" else if(channel)"No posts yet" else "Say hello",if(conversation.optBoolean("pendingJoin"))"The group creator must add you before messages arrive." else "Messages are signed on this phone and delivered when you meet the other person or a member nearby.",Icons.Outlined.ChatBubbleOutline)}
@@ -232,7 +254,7 @@ fun AppState.shownMessages(conversationId:String)=chatMessages.filter{it.body().
                                 if(deleted||hidden)Text(if(deleted)"This message was deleted" else "Removed by a group admin",style=MaterialTheme.typography.bodyMedium,fontStyle=FontStyle.Italic,color=MaterialTheme.colorScheme.onSurfaceVariant)
                                 else {
                                     if(payload.optBoolean("forwarded"))Text("Forwarded",style=MaterialTheme.typography.labelSmall,fontStyle=FontStyle.Italic,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                                    (payload.optString("replyTo").ifEmpty{null}?:body.optString("threadRootId").ifEmpty{null})?.let{ReplyQuote(byId[it],it in gone)}
+                                    (payload.optString("replyTo").ifEmpty{null}?:body.optString("threadRootId").ifEmpty{null})?.takeIf{it!=thread}?.let{ReplyQuote(byId[it],it in gone)}
                                     payload.optJSONObject("reference")?.let {r->Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Outlined.VolunteerActivism,null);TextButton(onClick={if(r.getString("type")=="NEED")openNeed(r.getString("id")) else vm.notice("Find this public update in Updates and check its latest status.")}){Text(r.getString("title"))}}}
                                     attachment?.let{a->
                                         val format=body.getString("format");val progress=state.transfers[a.getString("id")]
@@ -250,11 +272,14 @@ fun AppState.shownMessages(conversationId:String)=chatMessages.filter{it.body().
                                     if(payload.has("text"))Text(payload.getString("text"),style=MaterialTheme.typography.bodyLarge)
                                 }
                                 Text(timeLabel(body.getString("createdAt"))+if(owned)" · "+chatStatus(message) else "",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                                // Telegram-style: replies open as a thread under the message they answer.
+                                val count=replyCounts[messageId]?:0
+                                if(thread==null&&!deleted&&(count>0||(announce&&canReplyThreads)))Text(if(count>0)"$count ${if(count==1)"reply" else "replies"}" else "Reply",Modifier.clickable{thread=messageId;replyTo=null;followLatest=true}.padding(vertical=2.dp),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
                             }
                         }
-                        MessageMenu(menu,{menu=false},deleted=deleted||hidden,text=payload.optString("text").ifEmpty{null},canReply=canPost,canForward=payload.has("text")||complete,canSave=complete,owned=owned,
+                        MessageMenu(menu,{menu=false},deleted=deleted||hidden,text=payload.optString("text").ifEmpty{null},canReply=if(thread==null&&announce)canReplyThreads else canPost,canForward=payload.has("text")||complete,canSave=complete,owned=owned,
                             relief=payload.has("text")&&!owned,team=state.preparation!=null,
-                            reply={replyTo=message},forward={forwarding=messageId},save={exportId=messageId;exporter.launch(attachment!!.getString("name"))},report={reportId=messageId},delete={deleting=message},
+                            reply={if(thread==null&&announce){thread=roots[messageId]?:messageId};replyTo=message},forward={forwarding=messageId},save={exportId=messageId;exporter.launch(attachment!!.getString("name"))},report={reportId=messageId},delete={deleting=message},
                             help={helpMessage=message},need={createNeed(message)})
                     }
                 }
@@ -262,7 +287,7 @@ fun AppState.shownMessages(conversationId:String)=chatMessages.filter{it.body().
         }
         if(transcript.firstVisibleItemIndex>0)TextButton(onClick={uiScope.launch{transcript.scrollToItem(0);followLatest=true}}){Text("Latest messages")}
         if(!channel && canPost)WalkieTalkieControl(vm,state,id,conversation.getString("title"),callReady)
-        if(!canPost)Text(admissionState(conversation)?:if(conversation.optBoolean("pendingJoin"))"You can post after a group admin adds you." else if(channel && conversation.optBoolean("joined"))"Only group admins can post here." else "Sending is unavailable. Saved history remains here.",Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(16.dp),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        if(!canPost)Text(admissionState(conversation)?:if(conversation.optBoolean("pendingJoin"))"You can post after a group admin adds you." else if(channel && conversation.optBoolean("joined"))(if(announce&&canReplyThreads)"Only group admins post here. Tap Reply under a post to answer in its thread." else "Only group admins can post here.") else "Sending is unavailable. Saved history remains here.",Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(16.dp),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         else Surface(color=MaterialTheme.colorScheme.surface){Column{
             HorizontalDivider()
             if(state.recording)Text("Recording… release to send",Modifier.padding(start=16.dp,top=8.dp),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.error)
@@ -280,10 +305,10 @@ fun AppState.shownMessages(conversationId:String)=chatMessages.filter{it.body().
                             if(androidx.core.content.ContextCompat.checkSelfPermission(context,android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED){record();return@detectTapGestures}
                             val started=System.currentTimeMillis();vm.startVoice()
                             val released=tryAwaitRelease()
-                            vm.releaseVoice(id,released&&System.currentTimeMillis()-started>=500)
+                            vm.releaseVoice(id,released&&System.currentTimeMillis()-started>=500,threadRootForSend)
                         })},contentAlignment=Alignment.Center){Icon(Icons.Outlined.Mic,null,tint=if(state.recording)MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSecondaryContainer)}
                 }
-                else FilledIconButton(onClick={vm.chatSend(id,text.trim(),replyTo?.getString("id")){text="";replyTo=null;vm.saveChatComposer(id,"")}},enabled=!state.busy){Icon(Icons.Outlined.ArrowUpward,"Send")}
+                else FilledIconButton(onClick={vm.chatSend(id,text.trim(),replyTo?.getString("id")?:thread,threadRootForSend){text="";replyTo=null;vm.saveChatComposer(id,"")}},enabled=!state.busy){Icon(Icons.Outlined.ArrowUpward,"Send")}
             }
         }}
     }
@@ -341,8 +366,8 @@ fun AppState.shownMessages(conversationId:String)=chatMessages.filter{it.body().
 }
 @Composable fun ChannelCreate(create:(String,String,String,String)->Unit,close:()->Unit,busy:Boolean){
     var name by rememberSaveable{mutableStateOf("")};var visibility by rememberSaveable{mutableStateOf("INVITE")}
-    var mode by rememberSaveable{mutableStateOf("DISCUSSION")};var approval by rememberSaveable{mutableStateOf(false)}
-    AlertDialog(onDismissRequest=close,title={Text("New group")},text={Column(Modifier.heightIn(max=480.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){OutlinedTextField(name,{name=it.take(48)},label={Text("Group name")},singleLine=true);listOf("INVITE" to "Invite only · encrypted","OPEN" to "Open nearby · people nearby can ask to join").forEach {(value,label)->Row(Modifier.fillMaxWidth().clickable{visibility=value},verticalAlignment=Alignment.CenterVertically){RadioButton(visibility==value,{visibility=value});Text(label)}};Row(verticalAlignment=Alignment.CenterVertically){Switch(mode=="ANNOUNCEMENT",{mode=if(it)"ANNOUNCEMENT"else"DISCUSSION"});Text("Announcements only",Modifier.padding(start=8.dp))};Row(verticalAlignment=Alignment.CenterVertically){Checkbox(approval,{approval=it});Text("Admins approve new members")};Text("You become the group creator: you sign who is in it, and you can make admins. Up to 200 members.",style=MaterialTheme.typography.bodySmall)}},confirmButton={TextButton(onClick={create(name.trim(),visibility,mode,if(visibility=="OPEN")if(approval)"APPROVAL_ONLY"else"OPEN" else if(approval)"INVITE_PLUS_APPROVAL"else"INVITE_AUTO")},enabled=!busy&&name.isNotBlank()){Text("Create group")}},dismissButton={TextButton(onClick=close){Text("Cancel")}})
+    var type by rememberSaveable{mutableStateOf("FREE")};var approval by rememberSaveable{mutableStateOf(false)}
+    AlertDialog(onDismissRequest=close,title={Text("New group")},text={Column(Modifier.heightIn(max=480.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){OutlinedTextField(name,{name=it.take(48)},label={Text("Group name")},singleLine=true);listOf("INVITE" to "Invite only · encrypted","OPEN" to "Open nearby · people nearby can ask to join").forEach {(value,label)->Row(Modifier.fillMaxWidth().clickable{visibility=value},verticalAlignment=Alignment.CenterVertically){RadioButton(visibility==value,{visibility=value});Text(label)}};Text("Who can post",style=MaterialTheme.typography.titleSmall);GroupType.labels.forEach{(value,label)->Row(Modifier.fillMaxWidth().clickable{type=value},verticalAlignment=Alignment.CenterVertically){RadioButton(type==value,{type=value});Text(label)}};Row(verticalAlignment=Alignment.CenterVertically){Checkbox(approval,{approval=it});Text("Admins approve new members")};Text("You become the group creator: you sign who is in it, and you can make admins. Up to 200 members.",style=MaterialTheme.typography.bodySmall)}},confirmButton={TextButton(onClick={create(name.trim(),visibility,type,if(visibility=="OPEN")if(approval)"APPROVAL_ONLY"else"OPEN" else if(approval)"INVITE_PLUS_APPROVAL"else"INVITE_AUTO")},enabled=!busy&&name.isNotBlank()){Text("Create group")}},dismissButton={TextButton(onClick=close){Text("Cancel")}})
 }
 @Composable fun JoinInvite(vm:SaathiViewModel,link:String="",accept:(String)->Unit,close:()->Unit,busy:Boolean){
     var value by remember(link){mutableStateOf(link)}
@@ -394,11 +419,12 @@ private fun roleLabel(role:String)=when(role){"OWNER"->"Group creator";"ADMIN"->
                 if(banned.isNotEmpty()){item{Text("Banned",style=MaterialTheme.typography.titleLarge)};items(banned){personId->Row(verticalAlignment=Alignment.CenterVertically){Text(state.chatContacts.firstOrNull{it.getString("id")==personId}?.getJSONObject("profile")?.getJSONObject("body")?.getString("name")?:personId.take(12),Modifier.weight(1f));OutlinedButton(onClick={vm.moderateChannel(id,"UNBAN",personId)},enabled=!state.busy){Text("Unban")}}}}
             }
             if(owner&&pb!=null)item{
-                val config=pb.optJSONObject("settings");val mode=config?.optString("mode")?:"DISCUSSION";val open=pb.getString("visibility")=="OPEN";val admission=config?.optString("admission")?:if(open)"OPEN" else "INVITE_AUTO"
+                val config=pb.optJSONObject("settings");val type=GroupType.of(config);val open=pb.getString("visibility")=="OPEN";val admission=config?.optString("admission")?:if(open)"OPEN" else "INVITE_AUTO"
                 Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
                     Text("Settings",style=MaterialTheme.typography.titleLarge)
-                    Row(verticalAlignment=Alignment.CenterVertically){Text("Announcements only",Modifier.weight(1f));Switch(mode=="ANNOUNCEMENT",{vm.configureChannel(id,if(it)"ANNOUNCEMENT" else "DISCUSSION",admission)},enabled=!state.busy)}
-                    Row(verticalAlignment=Alignment.CenterVertically){Text("Admins approve new members",Modifier.weight(1f));Switch(admission in listOf("APPROVAL_ONLY","INVITE_PLUS_APPROVAL"),{vm.configureChannel(id,mode,if(open)if(it)"APPROVAL_ONLY" else "OPEN" else if(it)"INVITE_PLUS_APPROVAL" else "INVITE_AUTO")},enabled=!state.busy)}
+                    Text("Who can post",style=MaterialTheme.typography.titleSmall)
+                    GroupType.labels.forEach{(value,label)->Row(Modifier.fillMaxWidth().clickable(enabled=!state.busy&&type!=value){vm.configureChannel(id,value,admission)},verticalAlignment=Alignment.CenterVertically){RadioButton(type==value,{vm.configureChannel(id,value,admission)},enabled=!state.busy);Text(label)}}
+                    Row(verticalAlignment=Alignment.CenterVertically){Text("Admins approve new members",Modifier.weight(1f));Switch(admission in listOf("APPROVAL_ONLY","INVITE_PLUS_APPROVAL"),{vm.configureChannel(id,type,if(open)if(it)"APPROVAL_ONLY" else "OPEN" else if(it)"INVITE_PLUS_APPROVAL" else "INVITE_AUTO")},enabled=!state.busy)}
                 }
             }
             item{Text("Removed people can't rejoin on their own; only an admin can add them back. Changes reach other phones as people meet.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}

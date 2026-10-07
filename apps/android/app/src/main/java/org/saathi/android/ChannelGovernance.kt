@@ -71,3 +71,17 @@ object ChannelGovernance {
         return value
     }
 }
+
+/** Group types, built from existing channel settings: FREE (everyone posts), ANNOUNCE (admins post, members reply in
+ *  threads) and VIEW (admins post; members read and react only). */
+object GroupType {
+    private val viewOnly=obj("canRead" to true,"canPostTopLevel" to false,"canReplyInThreads" to false,"canCreateThreads" to false,"canAttachMedia" to false,
+        "canReact" to true,"canInvite" to false,"canModerate" to false,"canStartCalls" to false,"canJoinCalls" to false,"canManageMembers" to false)
+    fun settings(type:String,admission:String)=obj("mode" to if(type=="FREE")"DISCUSSION" else "ANNOUNCEMENT","admission" to admission).apply{if(type=="VIEW")put("capabilities",obj("MEMBER" to JSONObject(viewOnly.toString())))}
+    fun of(settings:JSONObject?)=when{
+        settings?.optString("mode")!="ANNOUNCEMENT"->"FREE"
+        settings.optJSONObject("capabilities")?.optJSONObject("MEMBER")?.optBoolean("canReplyInThreads",true)==false->"VIEW"
+        else->"ANNOUNCE"
+    }
+    val labels=listOf("FREE" to "Free chat · everyone can post","ANNOUNCE" to "Admins post · members reply in threads","VIEW" to "View only · only admins post")
+}

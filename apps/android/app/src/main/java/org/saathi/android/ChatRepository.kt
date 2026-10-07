@@ -299,10 +299,10 @@ class ChatRepository(private val context: Context, private val repository: Repos
         }
         val policy=signed(body); ChatProtocol.policy(policy,issued); return policy
     }
-    suspend fun create(name:String,visibility:String,mode:String="DISCUSSION",admission:String=if(visibility=="OPEN")"OPEN" else "INVITE_AUTO"):String=withContext(Dispatchers.IO) { lock.withLock {
+    suspend fun create(name:String,visibility:String,mode:String="DISCUSSION",admission:String=if(visibility=="OPEN")"OPEN" else "INVITE_AUTO",type:String=if(mode=="ANNOUNCEMENT")"ANNOUNCE" else "FREE"):String=withContext(Dispatchers.IO) { lock.withLock {
         require(name.trim().length in 1..48 && visibility in listOf("OPEN","INVITE") && conversations().count { it.getString("type")=="CHANNEL"&&it.optBoolean("joined") }<16)
         val members=JSONArray().put(obj("profile" to profile(),"role" to "OWNER","joinedAt" to now().toString(),"removedAt" to null))
-        val policy=revised(null,name.trim(),visibility,members,settings=obj("mode" to mode,"admission" to admission)); applyPolicy(policy,true); announceUnlocked(); onChange(); policy.getJSONObject("body").getString("id")
+        val policy=revised(null,name.trim(),visibility,members,settings=GroupType.settings(type,admission)); applyPolicy(policy,true); announceUnlocked(); onChange(); policy.getJSONObject("body").getString("id")
     } }
     private fun makeJoin(id:String,action:String,invitation:JSONObject?=null):JSONObject {
         val time=now();val body=obj("v" to 1,"kind" to "CHAT_JOIN","id" to UUID.randomUUID().toString(),"channelId" to id,"participant" to profile(),"action" to action,"issuedAt" to time.toString(),"expiresAt" to time.plusSeconds(21600).toString());if(invitation!=null)body.put("invitation",invitation);return signed(body)
@@ -405,9 +405,9 @@ class ChatRepository(private val context: Context, private val repository: Repos
         if(session.confirmed && peer?.let{ChatProtocol.member(policy,ChatProtocol.participant(it))}==true)session.send("CHAT_ACTION",envelope)
         onChange()
     }
-    suspend fun configure(id:String,mode:String,admission:String)=withContext(Dispatchers.IO){lock.withLock{
+    suspend fun configure(id:String,mode:String,admission:String,type:String=if(mode=="ANNOUNCEMENT")"ANNOUNCE" else "FREE")=withContext(Dispatchers.IO){lock.withLock{
         val p=current(id)?:error("Channel is unavailable.");val b=p.getJSONObject("body");require(ChatProtocol.participant(b.getJSONObject("owner"))==self()&&!pendingMembership(p))
-        val settings=JSONObject((b.optJSONObject("settings")?:obj("mode" to "DISCUSSION","admission" to if(b.getString("visibility")=="OPEN")"OPEN"else"INVITE_AUTO")).toString()).put("mode",mode).put("admission",admission)
+        val settings=GroupType.settings(type,admission)
         val next=revised(p,b.getString("name"),b.getString("visibility"),b.getJSONArray("members"),settings=settings);applyPolicy(next,true);announceUnlocked();onChange()
     }}
     private suspend fun receiveAction(envelope:JSONObject,server:Boolean){
