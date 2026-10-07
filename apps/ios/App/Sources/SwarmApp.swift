@@ -1,19 +1,23 @@
-import PhotosUI
 import SwiftUI
 import SwarmCore
 
 @main
 struct SwarmApp: App {
     @StateObject private var model = AppModel()
+    @AppStorage("appearance") private var appearance = "SYSTEM"
+    @State private var revealing = true
     var body: some Scene {
         WindowGroup {
-            Group {
-                if let chat = model.chat {
-                    StartView(chat: chat, nearby: model.nearby)
-                } else {
-                    Text(model.failure ?? "Opening…").padding()
+            ZStack {
+                Group {
+                    if let chat = model.chat { StartView(chat: chat, nearby: model.nearby) }
+                    else { EmptyState(title: "Swarm could not open", text: model.failure ?? "Opening…", icon: "exclamationmark.triangle").padding(24) }
                 }
+                if revealing { StartupReveal(showing: $revealing).transition(.opacity) }
             }
+            .animation(.easeOut(duration: 0.25), value: revealing)
+            .preferredColorScheme(appearance == "LIGHT" ? .light : appearance == "DARK" ? .dark : nil)
+            .tint(Palette.primary)
             .onOpenURL { url in model.openInvite(url.absoluteString) }
         }
     }
@@ -64,27 +68,47 @@ struct NameView: View {
     @ObservedObject var chat: ChatEngine
     @State private var name = ""
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("SWARM").font(.largeTitle.bold())
-            Text("by CJP").foregroundStyle(.secondary)
-            Text("Choose the name nearby team members will see. Your identity stays on this phone.").font(.callout)
-            TextField("Your name", text: $name).textFieldStyle(.roundedBorder).textInputAutocapitalization(.words)
-            Button("Continue") { Task { do { try await chat.setName(name) } catch { chat.notice = error.localizedDescription } } }
-                .buttonStyle(.borderedProminent).disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
-            if let notice = chat.notice { Text(notice).foregroundStyle(.red).font(.footnote) }
-            Spacer()
-        }.padding(24)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Image("SwarmLockupImage").resizable().scaledToFit().frame(maxWidth: .infinity).padding(24)
+                    .background(Palette.forest, in: RoundedRectangle(cornerRadius: 16)).accessibilityLabel("SWARM by CJP")
+                Heading(title: "People first.", text: "Choose the name nearby team members will see. Your identity is created on this phone and never leaves it.")
+                TextField("Your name", text: $name)
+                    .font(Type.bodyLarge).textInputAutocapitalization(.words).submitLabel(.done)
+                    .padding(14).background(Palette.surface, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.outline))
+                Button("Continue") { Task { do { try await chat.setName(name) } catch { chat.notice = error.localizedDescription } } }
+                    .buttonStyle(PrimaryButtonStyle()).disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                if let notice = chat.notice { Text(notice).font(Type.bodySmall).foregroundStyle(Palette.error) }
+            }.padding(20)
+        }.background(Palette.background.ignoresSafeArea())
     }
 }
+
+enum Tab: Hashable { case chats, nearby, more }
 
 struct RootView: View {
     @ObservedObject var chat: ChatEngine
     @ObservedObject var nearby: Nearby
+    @State private var tab = Tab.chats
+    init(chat: ChatEngine, nearby: Nearby) {
+        self.chat = chat; self.nearby = nearby
+        let bar = UITabBarAppearance(); bar.configureWithOpaqueBackground()
+        bar.backgroundColor = UIColor(Palette.surface); bar.shadowColor = UIColor(Palette.outline)
+        UITabBar.appearance().standardAppearance = bar; UITabBar.appearance().scrollEdgeAppearance = bar
+        let nav = UINavigationBarAppearance(); nav.configureWithOpaqueBackground()
+        nav.backgroundColor = UIColor(Palette.background); nav.shadowColor = .clear
+        nav.titleTextAttributes = [.font: UIFont(name: "Manrope-Bold", size: 17) ?? .boldSystemFont(ofSize: 17), .foregroundColor: UIColor(Palette.ink)]
+        UINavigationBar.appearance().standardAppearance = nav; UINavigationBar.appearance().scrollEdgeAppearance = nav
+    }
     var body: some View {
-        TabView {
-            ChatsView(chat: chat, nearby: nearby).tabItem { Label("Chats", systemImage: "bubble.left.and.bubble.right") }
-            NearbyView(chat: chat, nearby: nearby).tabItem { Label("Nearby", systemImage: "antenna.radiowaves.left.and.right") }
-            MeView(chat: chat).tabItem { Label("You", systemImage: "person.crop.circle") }
+        TabView(selection: $tab) {
+            ChatsView(chat: chat, nearby: nearby, findPeople: { tab = .nearby })
+                .tabItem { Label("Chats", systemImage: "bubble.left.and.bubble.right") }.tag(Tab.chats)
+            NearbyView(chat: chat, nearby: nearby)
+                .tabItem { Label("Nearby", systemImage: "dot.radiowaves.left.and.right") }.tag(Tab.nearby)
+            MoreView(chat: chat)
+                .tabItem { Label("More", systemImage: "ellipsis.circle") }.tag(Tab.more)
         }
         .alert("Notice", isPresented: Binding(get: { chat.notice != nil }, set: { if !$0 { chat.notice = nil } })) {
             Button("OK", role: .cancel) {}
@@ -93,237 +117,45 @@ struct RootView: View {
             Button("Join") { if let link = chat.receivedInvite { Task { do { try await chat.acceptInvite(link) } catch { chat.notice = error.localizedDescription } } } }
             Button("Not now", role: .cancel) {}
         } message: { Text("The nearby person invited you to a channel.") }
-        .alert("Compare codes", isPresented: Binding(get: { nearby.pairCode != nil }, set: { _ in })) {
+        .alert("Compare the code", isPresented: Binding(get: { nearby.pairCode != nil }, set: { _ in })) {
             Button("Codes match") { nearby.confirm(true) }
             Button("Reject", role: .cancel) { nearby.confirm(false) }
-        } message: { Text("This phone shows \(nearby.pairCode ?? ""). Accept only if the other phone shows the same code.") }
+        } message: { Text("This iPhone shows \(nearby.pairCode ?? ""). Accept only if the other phone shows the same code.") }
     }
 }
 
-// MARK: chats
-struct ChatsView: View {
+/// Toolbar for the three destinations: full SWARM masthead on the leading side.
+struct MastheadToolbar: ViewModifier {
+    func body(content: Content) -> some View {
+        content.navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .navigationBarLeading) { Masthead() } }
+            .background(Palette.background.ignoresSafeArea())
+    }
+}
+extension View { func mastheadToolbar() -> some View { modifier(MastheadToolbar()) } }
+
+/// Paste a `cjpswarm://invite/…` link from a channel admin.
+struct JoinInviteSheet: View {
     @ObservedObject var chat: ChatEngine
-    @ObservedObject var nearby: Nearby
+    @Binding var showing: Bool
     @State private var link = ""
-    @State private var showJoin = false
     var body: some View {
         NavigationStack {
-            List {
-                let rows = sortedConversations
-                if rows.isEmpty {
-                    Text("No conversations yet. Connect to a team member in Nearby, or join a channel with an invite link.").foregroundStyle(.secondary)
-                }
-                ForEach(rows, id: \.id) { row in
-                    NavigationLink { ConversationView(chat: chat, nearby: nearby, id: row.id) } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Image(systemName: row.channel ? "number" : "lock.fill").foregroundStyle(.secondary)
-                                Text(row.title).font(.headline)
-                                Spacer()
-                                if row.unread > 0 { Text("\(row.unread)").font(.caption.bold()).padding(6).background(Circle().fill(.orange)).foregroundStyle(.white) }
-                            }
-                            Text(row.subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Chats")
-            .toolbar { Button { showJoin = true } label: { Image(systemName: "link.badge.plus") } }
-            .sheet(isPresented: $showJoin) {
-                NavigationStack {
-                    Form {
-                        Section(footer: Text("Paste the cjpswarm:// link a channel admin shared with you.")) {
-                            TextField("Invite link", text: $link, axis: .vertical).lineLimit(3...6).autocorrectionDisabled().textInputAutocapitalization(.never)
-                        }
-                        Button("Join channel") {
-                            Task { do { try await chat.acceptInvite(link); link = ""; showJoin = false } catch { chat.notice = error.localizedDescription } }
-                        }.disabled(link.isEmpty)
-                    }.navigationTitle("Join a channel").toolbar { Button("Close") { showJoin = false } }
-                }
-            }
-        }
-    }
-    struct Row { let id: String; let title: String; let subtitle: String; let channel: Bool; let unread: Int; let last: String }
-    var sortedConversations: [Row] {
-        _ = chat.revision
-        return chat.conversations().compactMap { c -> Row? in
-            guard let id = c["id"] as? String else { return nil }
-            let last = chat.messages(in: id).last
-            let lastBody = (last?["envelope"] as? JSON).flatMap { $0["body"] as? JSON }
-            let text = (last?["payload"] as? JSON)?["text"] as? String
-            let status = c["pendingJoin"] as? Bool == true ? "Waiting for an admin to add you" : c["joinStatus"] as? String == "REJECTED" ? "Join request declined" : nil
-            return Row(id: id, title: c["title"] as? String ?? "Conversation", subtitle: status ?? text ?? "No messages yet",
-                       channel: c["type"] as? String == "CHANNEL", unread: chat.unread(id), last: lastBody?["createdAt"] as? String ?? "")
-        }.sorted { $0.last > $1.last }
-    }
-}
-
-struct ConversationView: View {
-    @ObservedObject var chat: ChatEngine
-    @ObservedObject var nearby: Nearby
-    let id: String
-    @State private var draft = ""
-    @State private var photoItem: PhotosPickerItem?
-    var body: some View {
-        let _ = chat.revision
-        let conversation = chat.conversation(id)
-        let messages = chat.messages(in: id)
-        VStack(spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(messages.indices, id: \.self) { i in bubble(messages[i]).id(i) }
-                    }.padding()
-                }
-                .onAppear { proxy.scrollTo(messages.count - 1, anchor: .bottom) }
-                .onChange(of: messages.count) { _ in proxy.scrollTo(messages.count - 1, anchor: .bottom) }
-            }
-            Divider()
-            if conversation?["joined"] as? Bool == true && chat.capabilities(id)?["canPostTopLevel"] != false {
+            VStack(alignment: .leading, spacing: 16) {
+                Heading(title: "Join with invite", text: "Paste the cjpswarm:// link a channel admin made for your identity. Approval invitations wait for an admin nearby.")
+                TextField("cjpswarm://invite/…", text: $link, axis: .vertical).lineLimit(3...6).font(Type.bodyMedium)
+                    .autocorrectionDisabled().textInputAutocapitalization(.never)
+                    .padding(14).background(Palette.surface, in: RoundedRectangle(cornerRadius: 10)).overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.outline))
                 HStack {
-                    PhotosPicker(selection: $photoItem, matching: .images) { Image(systemName: "photo") }
-                        .onChange(of: photoItem) { item in
-                            guard let item else { return }
-                            photoItem = nil
-                            Task {
-                                do {
-                                    guard let data = try await item.loadTransferable(type: Data.self), let image = UIImage(data: data) else { throw ChatRuleError("This photo could not be opened.") }
-                                    try await chat.sendPhoto(id, image: image)
-                                } catch { chat.notice = error.localizedDescription }
-                            }
-                        }
-                    TextField("Message", text: $draft, axis: .vertical).lineLimit(1...5).textFieldStyle(.roundedBorder)
-                    Button { let text = draft; draft = ""; Task { do { try await chat.send(id, text: text) } catch { draft = text; chat.notice = error.localizedDescription } } }
-                        label: { Image(systemName: "paperplane.fill") }.disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }.padding(10)
-                Text(nearby.connected == nil ? "Saved here. Sends when you meet a member nearby." : "Connected to \(nearby.connectedName)")
-                    .font(.caption2).foregroundStyle(.secondary).padding(.bottom, 6)
-            } else {
-                Text(conversation?["pendingJoin"] as? Bool == true ? "Waiting for a channel admin to add you." : "You can read this channel but not post.")
-                    .font(.footnote).foregroundStyle(.secondary).padding()
+                    Button("Paste") { link = UIPasteboard.general.string ?? link }.buttonStyle(OutlineButtonStyle())
+                    Button("Join channel") {
+                        Task { do { try await chat.acceptInvite(link); link = ""; showing = false } catch { chat.notice = error.localizedDescription } }
+                    }.buttonStyle(PrimaryButtonStyle()).disabled(link.isEmpty)
+                }
+                Spacer()
             }
-        }
-        .navigationTitle(conversation?["title"] as? String ?? "Chat").navigationBarTitleDisplayMode(.inline)
-        .task(id: messages.count) { await chat.read(id) }
-    }
-    @ViewBuilder func bubble(_ r: JSON) -> some View {
-        let b = ((r["envelope"] as? JSON)?["body"] as? JSON) ?? [:]
-        let mine = r["owned"] as? Bool == true
-        let author = ((b["author"] as? JSON)?["body"] as? JSON)?["name"] as? String ?? ""
-        let attachment = chat.attachment(of: r)
-        let attachmentID = attachment?["id"] as? String ?? ""
-        let isPhoto = (attachment?["mime"] as? String ?? "").hasPrefix("image/")
-        let text = (r["payload"] as? JSON)?["text"] as? String
-        let when = (try? Instant.parse(b["createdAt"] as? String ?? "")).map { $0.formatted(date: .omitted, time: .shortened) } ?? ""
-        let state = r["readAt"] != nil ? "Read" : r["deliveredAt"] != nil ? "Delivered" : r["sentNearby"] != nil ? "Sent" : "Saved"
-        HStack {
-            if mine { Spacer(minLength: 40) }
-            VStack(alignment: .leading, spacing: 4) {
-                if !mine { Text(author).font(.caption.bold()).foregroundStyle(.orange) }
-                if isPhoto, let image = chat.photo(attachmentID) {
-                    Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: 240, maxHeight: 280).clipShape(RoundedRectangle(cornerRadius: 10))
-                } else if attachment != nil {
-                    let progress = chat.transfers.progress[attachmentID]
-                    Label(progress.map { "\(isPhoto ? "Photo" : "Attachment") · \(Int($0 * 100))%" } ?? (isPhoto ? (mine ? "Photo" : "Photo · arrives when the sender is nearby") : "Attachment (open on Android for now)"),
-                          systemImage: isPhoto ? "photo" : "paperclip").font(.callout)
-                }
-                if let text { Text(text) }
-                Text(mine ? "\(when) · \(state)" : when).font(.caption2).foregroundStyle(.secondary)
-            }
-            .padding(10).background(RoundedRectangle(cornerRadius: 14).fill(mine ? Color.orange.opacity(0.18) : Color(.secondarySystemBackground)))
-            if !mine { Spacer(minLength: 40) }
-        }
-    }
-}
-
-// MARK: nearby
-struct NearbyView: View {
-    @ObservedObject var chat: ChatEngine
-    @ObservedObject var nearby: Nearby
-    @State private var openConversation: String?
-    var body: some View {
-        let _ = chat.revision
-        NavigationStack {
-            List {
-                Section {
-                    Text(nearby.status).font(.callout)
-                    if nearby.connected == nil {
-                        if nearby.searching {
-                            // Restarting cancels a Bluetooth handshake that can take 5–15 s; offer Stop instead.
-                            ProgressView("Keep both phones open. Finding over Bluetooth can take up to 30 seconds.")
-                            Button("Stop", role: .destructive) { nearby.stop() }
-                        } else {
-                            Button("Be visible to a nearby phone") { nearby.start(visible: true, name: chat.name) }
-                            Button("Search for a nearby phone") { nearby.start(visible: false, name: chat.name) }
-                        }
-                    }
-                } footer: {
-                    Text("Works without internet over Bluetooth and Wi-Fi. Keep Swarm open on both phones. One person at a time; messages travel on as people meet.")
-                }
-                if nearby.connected == nil && !nearby.peers.isEmpty {
-                    Section("Nearby") {
-                        ForEach(nearby.peers.sorted(by: { $0.value < $1.value }), id: \.key) { id, name in
-                            Button("Connect to \(name)") { nearby.connect(id, name: chat.name) }
-                        }
-                    }
-                }
-                if nearby.connected != nil {
-                    Section("Connected") {
-                        if let peer = chat.peer {
-                            let name = ((peer["body"] as? JSON)?["name"] as? String) ?? "Team member"
-                            // Creates the conversation only on tap; a NavigationLink destination is built on every render.
-                            Button("Message \(name)") {
-                                do { openConversation = try chat.direct(peer) } catch { chat.notice = error.localizedDescription }
-                            }
-                            Text("Identity verified · \(String(ChatRules.participant(peer).prefix(8)))").font(.caption).foregroundStyle(.secondary)
-                        } else {
-                            Text("Verifying identity…").foregroundStyle(.secondary)
-                        }
-                        Button("Disconnect", role: .destructive) { nearby.disconnect() }
-                    }
-                    if !chat.discovery.isEmpty {
-                        Section("Open channels nearby") {
-                            ForEach(chat.discovery.indices, id: \.self) { i in
-                                let d = chat.discovery[i], id = d["id"] as? String ?? ""
-                                HStack {
-                                    VStack(alignment: .leading) { Text(d["name"] as? String ?? "Channel"); Text("\(d["members"] as? Int ?? 0) members").font(.caption).foregroundStyle(.secondary) }
-                                    Spacer()
-                                    if chat.conversation(id)?["joined"] as? Bool == true { Text("Joined").foregroundStyle(.secondary) }
-                                    else { Button("Join") { Task { do { try await chat.join(id) } catch { chat.notice = error.localizedDescription } } } }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Nearby")
-            .navigationDestination(isPresented: Binding(get: { openConversation != nil }, set: { if !$0 { openConversation = nil } })) {
-                if let id = openConversation { ConversationView(chat: chat, nearby: nearby, id: id) }
-            }
-        }
-    }
-}
-
-// MARK: you
-struct MeView: View {
-    @ObservedObject var chat: ChatEngine
-    @State private var name = ""
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Your name") {
-                    TextField("Name", text: $name).onAppear { name = chat.name }
-                    Button("Save name") { Task { do { try await chat.setName(name) } catch { chat.notice = error.localizedDescription } } }
-                }
-                Section("Identity") {
-                    Text(chat.selfID).font(.caption.monospaced()).textSelection(.enabled)
-                    Text("Your chat identity was created on this phone and never leaves it. Private messages are end-to-end encrypted.").font(.footnote)
-                }
-                Section("About") {
-                    Text("SWARM by CJP · iPhone preview").font(.footnote)
-                    Text("Talks to Swarm QA (staging) Android phones. Group creation, photos and online sync are coming next.").font(.footnote).foregroundStyle(.secondary)
-                }
-            }.navigationTitle("You")
+            .padding(20).background(Palette.background.ignoresSafeArea())
+            .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Close") { showing = false } } }
         }
     }
 }
