@@ -70,7 +70,7 @@ struct GroupInfoView: View {
                     Avatar(name: pb["name"] as? String ?? "", channel: true, size: 56)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(pb["name"] as? String ?? "Group").font(Type.titleLarge).foregroundStyle(Palette.ink)
-                        Text((pb["visibility"] as? String == "INVITE" ? "Invite only · encrypted" : "Open nearby · member-readable") + " · \(members.count) members")
+                        Text((pb["visibility"] as? String == "INVITE" ? "Invite only · encrypted" : "Open nearby · member-readable") + " · \(members.count) member\(members.count == 1 ? "" : "s")")
                             .font(Type.bodySmall).foregroundStyle(Palette.muted)
                     }
                 }

@@ -212,7 +212,7 @@ struct ConversationView: View {
         let status: String = conversation?["pendingJoin"] as? Bool == true ? "Waiting for the channel owner to add you"
             : conversation?["joined"] as? Bool == false ? "Left or removed · Saved history"
             : here ? (channel ? "Connected to a member nearby · posts deliver now" : "Connected nearby · messages deliver now")
-            : (channel ? "\(members) members · posts travel when you meet a member" : "Saved on this phone · delivers when you meet")
+            : (channel ? "\(members) member\(members == 1 ? "" : "s") · posts travel when you meet a member" : "Saved on this phone · delivers when you meet")
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
                 Avatar(name: title, channel: channel)
