@@ -24,16 +24,18 @@ export async function communityEvent(
   objectId?: string,
   changes: Record<string, unknown> = {},
 ): Promise<CommunityEnvelope> {
-  const id = randomUUID();
+  const id = randomUUID(),
+    // One clock read: two could straddle a millisecond and exceed the maximum lifetime by 1 ms.
+    now = Date.now();
   const body = {
     v: 1,
     kind: 'COMMUNITY_EVENT',
     id,
     objectId: objectId ?? id,
     author: person.profile,
-    createdAt: new Date().toISOString(),
+    createdAt: new Date(now).toISOString(),
     expiresAt: new Date(
-      Date.now() + (type === 'HELP' || type === 'HELP_OFFER' ? 7200000 : 7 * 86400000),
+      now + (type === 'HELP' || type === 'HELP_OFFER' ? 7200000 : 7 * 86400000),
     ).toISOString(),
     maxHops: 16,
     type,
