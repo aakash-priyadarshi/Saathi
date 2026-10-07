@@ -623,20 +623,22 @@ private fun roleLabel(role:String)=when(role){"OWNER"->"Group creator";"ADMIN"->
         // item {Text("Help Swarm send public updates online",style=MaterialTheme.typography.titleLarge);Text("Your device can carry authenticated reports for others. Choose when it may use your data.",style=MaterialTheme.typography.bodyMedium);listOf("OFF" to "Off","WIFI" to "Wi-Fi only","ANY" to "Wi-Fi + mobile data").forEach{(value,label)->Row(Modifier.fillMaxWidth().clickable{vm.preference("relay",value)},verticalAlignment=Alignment.CenterVertically){RadioButton(state.preferences.optString("relay","OFF")==value,{vm.preference("relay",value)});Text(label)}};Row(verticalAlignment=Alignment.CenterVertically){Text("Relay public media",Modifier.weight(1f));Switch(state.preferences.optBoolean("mediaRelay"),{vm.preference("mediaRelay",it)})}}
         item {
             Text("Storage & data",style=MaterialTheme.typography.titleLarge)
-            // Hidden for the Oct 2026 build: the daily relay limit and battery pause only control relaying public community updates.
-            // var limit by remember(state.preferences.optInt("dailyLimitMB",2000)){mutableFloatStateOf(state.preferences.optInt("dailyLimitMB",2000).coerceIn(500,5000).toFloat())}
-            // var limitMenu by remember{mutableStateOf(false)}
-            // Text("Daily relay limit · ${CommunityRelayPolicy.dailyLimitLabel(limit.toInt())}")
-            // Box {
-            //     OutlinedButton(onClick={limitMenu=true}){Text("Choose allowance");Icon(Icons.Outlined.ArrowDropDown,null)}
-            //     DropdownMenu(expanded=limitMenu,onDismissRequest={limitMenu=false}) {
-            //         CommunityRelayPolicy.dailyLimitPresetsMB.forEach{mb->DropdownMenuItem(text={Text(CommunityRelayPolicy.dailyLimitLabel(mb))},onClick={limitMenu=false;limit=mb.toFloat();vm.preference("dailyLimitMB",mb)})}
-            //     }
-            // }
-            // Slider(limit,{limit=it},valueRange=500f..5000f,steps=8,onValueChangeFinished={val mb=(limit.toInt()/500*500).coerceIn(500,5000);limit=mb.toFloat();vm.preference("dailyLimitMB",mb)})
-            // var battery by remember(state.preferences.optInt("batteryMinimum",0)){mutableFloatStateOf(state.preferences.optInt("batteryMinimum",0).toFloat())}
-            // Text(if(battery.toInt()==0)"Relay at any battery level" else "Pause relay below ${battery.toInt()}% battery")
-            // Slider(battery,{battery=it},valueRange=0f..80f,onValueChangeFinished={vm.preference("batteryMinimum",battery.toInt())})
+            // Daily data and battery limits for automatic online media (and the hidden public relay); the same on iPhone.
+            var limit by remember(state.preferences.optInt("dailyLimitMB",2000)){mutableFloatStateOf(state.preferences.optInt("dailyLimitMB",2000).coerceIn(500,5000).toFloat())}
+            var limitMenu by remember{mutableStateOf(false)}
+            Text("Daily data limit · ${CommunityRelayPolicy.dailyLimitLabel(limit.toInt())}")
+            Box {
+                OutlinedButton(onClick={limitMenu=true}){Text("Choose allowance");Icon(Icons.Outlined.ArrowDropDown,null)}
+                DropdownMenu(expanded=limitMenu,onDismissRequest={limitMenu=false}) {
+                    CommunityRelayPolicy.dailyLimitPresetsMB.forEach{mb->DropdownMenuItem(text={Text(CommunityRelayPolicy.dailyLimitLabel(mb))},onClick={limitMenu=false;limit=mb.toFloat();vm.preference("dailyLimitMB",mb)})}
+                }
+            }
+            Slider(limit,{limit=it},valueRange=500f..5000f,steps=8,onValueChangeFinished={val mb=(limit.toInt()/500*500).coerceIn(500,5000);limit=mb.toFloat();vm.preference("dailyLimitMB",mb)})
+            var battery by remember(state.preferences.optInt("batteryMinimum",0)){mutableFloatStateOf(state.preferences.optInt("batteryMinimum",0).toFloat())}
+            Text(if(battery.toInt()==0)"Use data at any battery level" else "Pause online media below ${battery.toInt()}% battery")
+            Slider(battery,{battery=it},valueRange=0f..80f,onValueChangeFinished={vm.preference("batteryMinimum",battery.toInt())})
+            Text("Data used today · "+state.relayReservedBytes/1_000_000+" MB",style=MaterialTheme.typography.bodySmall)
+            Text("Covers photos, voice and videos sent or fetched over the internet. Nearby transfers are free and not limited.",style=MaterialTheme.typography.bodySmall)
             Text("Saved media · "+(state.files.sumOf{it.optLong("size")}/1048576)+" MB",style=MaterialTheme.typography.bodySmall)
             // Hidden for the Oct 2026 build: relay allowance and public media caches (relay of public updates is not shown).
             // Text("Relay allowance reserved today · "+state.relayReservedBytes/1_000_000+" MB",style=MaterialTheme.typography.bodySmall)
@@ -645,7 +647,8 @@ private fun roleLabel(role:String)=when(role){"OWNER"->"Group creator";"ADMIN"->
         }
         // Hidden for the Oct 2026 build: Team sign in / My relief team and Saved relief work. Connection options stays.
         // item {HorizontalDivider();TextButton(onClick=team){Icon(Icons.Outlined.VerifiedUser,null);Spacer(Modifier.width(8.dp));Text(if(state.preparation==null)"Team sign in" else "My relief team")};TextButton(onClick=saved){Icon(Icons.Outlined.Inventory2,null);Spacer(Modifier.width(8.dp));Text("Saved relief work and earlier messages")};TextButton(onClick=connection){Icon(Icons.Outlined.Link,null);Spacer(Modifier.width(8.dp));Text("Connection options")}}
-        item {HorizontalDivider();TextButton(onClick=connection){Icon(Icons.Outlined.Link,null);Spacer(Modifier.width(8.dp));Text("Connection options")}}
+        // Hidden for the Oct 2026 build: Connection options (kept in code; calls and local Wi-Fi pairing stay reachable from chats).
+        // item {HorizontalDivider();TextButton(onClick=connection){Icon(Icons.Outlined.Link,null);Spacer(Modifier.width(8.dp));Text("Connection options")}}
         item {HorizontalDivider();Text(BuildConfig.BRAND_DISPLAY,style=MaterialTheme.typography.headlineMedium);Text(BuildConfig.BRAND_BYLINE);Text("Connect nearby. Coordinate together.");Text("Developed by Cockroach Janta Party",Modifier.padding(top=12.dp),style=MaterialTheme.typography.bodySmall);Text("Version ${BuildConfig.VERSION_NAME} · ${BuildConfig.ENVIRONMENT}",style=MaterialTheme.typography.bodySmall);val aware=LocalContext.current.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_WIFI_AWARE);Text(if(aware)"Wi-Fi Aware · supported: iPhones can find this phone directly once the iPhone app gains Wi-Fi Aware" else "Wi-Fi Aware · not supported: iPhones find this phone one way, or both ways on a shared hotspot",style=MaterialTheme.typography.bodySmall);Text("Chat is an experimental addition. It has not received an independent cryptographic review. Native 1:1 local Wi-Fi calls passed the earlier two-device checks; huddles remain disabled.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
     }
 }

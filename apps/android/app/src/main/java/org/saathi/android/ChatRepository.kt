@@ -221,7 +221,8 @@ class ChatRepository(private val context: Context, private val repository: Repos
             val chunks=JSONArray()
             if(upload)for(part in missing)chunks.put(obj("part" to part,"data" to Protocol.b64(session.readPart(a.getString("id"),part))))
             val body=obj("v" to 1,"kind" to "CHAT_ATTACHMENT_REQUEST","profile" to profile(),"issuedAt" to now().toString(),"messageId" to messageId,"manifest" to if(upload)manifest else null,"parts" to JSONArray(if(upload)emptyList<Int>() else missing),"chunks" to chunks)
-            val response=JSONObject(repository.api("/chat/attachment",signed(body),false,bulk=true));require(response.getInt("v")==1)
+            val request=signed(body);val raw=repository.api("/chat/attachment",request,false,bulk=true);countData(request.toString().length+raw.length.toLong())
+            val response=JSONObject(raw);require(response.getInt("v")==1)
             val verified=verifyManifest(response.getJSONObject("manifest"),record);save("chat-manifests",messageId,obj("id" to messageId,"manifest" to verified))
             val cipherSize=verified.getJSONObject("body").getInt("size");val parts=(cipherSize+8191)/8192
             val received=response.getJSONArray("received");require(received.length()<=parts);val indices=(0 until received.length()).map{received.getInt(it)};require(indices.distinct().size==indices.size&&indices.all{it in 0 until parts})
@@ -238,8 +239,14 @@ class ChatRepository(private val context: Context, private val repository: Repos
             kotlinx.coroutines.delay(750)
         }
     }}
+    /** Today's online data (shared with the public relay's allowance), counted per request. */
+    private fun countData(bytes:Long)=synchronized(store){val day=java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString();val old=store.get("relay-usage",day)?:obj("day" to day,"bytes" to 0);store.put("relay-usage",day,old.put("bytes",old.getLong("bytes")+bytes))}
     suspend fun autoMedia(){
         if(mediaLock.isLocked)return
+        // The More tab's daily data limit and battery floor apply to automatic media; a tap on an attachment still fetches it.
+        val p=store.get("preferences","local");val battery=context.getSystemService(android.os.BatteryManager::class.java)
+        val used=store.get("relay-usage",java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString())?.optLong("bytes")?:0
+        if(!CommunityRelayPolicy.mediaAllowed(battery.isCharging,battery.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY),p?.optInt("batteryMinimum",0)?:0,used,p?.optInt("dailyLimitMB",2000)?:2000))return
         val next=messages().firstOrNull{m->val a=m.getJSONObject("payload").optJSONObject("attachment");a!=null&&m.optBoolean("serverSaved")&&!m.optBoolean("attention")&&
             (store.get("attachments",a.getString("id"))?.optBoolean("complete")!=true || (store.get("chat-manifests",m.getString("id"))?.getJSONObject("manifest")?.getJSONObject("body")?.getInt("size")?.let{size->(store.get("chat-media-progress",m.getString("id"))?.optJSONArray("received")?.length()?:0)<(size+8191)/8192}==true))}
         if(next!=null)runCatching{synchronizeAttachment(next.getString("id"))}

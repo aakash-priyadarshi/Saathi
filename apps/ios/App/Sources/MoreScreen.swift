@@ -3,7 +3,7 @@ import SwarmCore
 import WiFiAware
 
 /// Android More, item by item and in the same order: Nearby profile, Appearance, Privacy & Nearby,
-/// Storage & data, Connection options and About.
+/// Storage & data and About. (Connection options is hidden for the Oct 2026 build, as on Android.)
 struct MoreView: View {
     @ObservedObject var chat: ChatEngine
     @ObservedObject var nearby: Nearby
@@ -11,6 +11,8 @@ struct MoreView: View {
     @AppStorage(Nearby.visibleKey) private var nearbyVisible = true
     @State private var name = ""
     @State private var savedMB = 0
+    @AppStorage(DataLimits.limitKey) private var dailyLimitMB = 2000
+    @AppStorage(DataLimits.batteryKey) private var batteryMinimum = 0
     @State private var license: String?
 
     var body: some View {
@@ -66,12 +68,24 @@ struct MoreView: View {
 
                     Divider().overlay(Palette.outline)
                     Text("Storage & data").font(Type.titleLarge).foregroundStyle(Palette.ink)
+                    // Daily data and battery limits for automatic online media, the same as Android.
+                    Text("Daily data limit · \(DataLimits.label(dailyLimitMB))").foregroundStyle(Palette.ink)
+                    Menu {
+                        ForEach(DataLimits.presets, id: \.self) { mb in Button(DataLimits.label(mb)) { dailyLimitMB = mb } }
+                    } label: { Label("Choose allowance", systemImage: "chevron.down").font(Type.label) }.buttonStyle(OutlineButtonStyle())
+                    Slider(value: Binding(get: { Double(dailyLimitMB) }, set: { dailyLimitMB = min(max(Int($0) / 500 * 500, 500), 5000) }), in: 500...5000, step: 500).tint(Palette.primary)
+                    Text(batteryMinimum == 0 ? "Use data at any battery level" : "Pause online media below \(batteryMinimum)% battery").foregroundStyle(Palette.ink)
+                    Slider(value: Binding(get: { Double(batteryMinimum) }, set: { batteryMinimum = Int($0) }), in: 0...80, step: 1).tint(Palette.primary)
+                    Text("Data used today · \(DataLimits.usedToday / 1_000_000) MB").font(Type.bodySmall).foregroundStyle(Palette.ink)
+                    Text("Covers photos, voice and videos sent or fetched over the internet. Nearby transfers are free and not limited.").font(Type.bodySmall).foregroundStyle(Palette.muted)
                     Text("Saved media · \(savedMB) MB").font(Type.bodySmall).foregroundStyle(Palette.ink)
 
+                    /* Hidden for the Oct 2026 build: Connection options (kept for restoring).
                     Divider().overlay(Palette.outline)
                     NavigationLink { ConnectionOptionsView(chat: chat, nearby: nearby) } label: {
                         Label("Connection options", systemImage: "link").font(Type.label).foregroundStyle(Palette.primary)
                     }
+                    */
 
                     Divider().overlay(Palette.outline)
                     VStack(alignment: .leading, spacing: 6) {
