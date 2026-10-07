@@ -44,4 +44,13 @@ class ChannelGovernanceTest {
         assertThrows(Exception::class.java){ChannelGovernance.admission(invite,ChatProtocol.participant(owner),now)}
         assertThrows(Exception::class.java){ChannelGovernance.admission(invite,ChatProtocol.participant(recipient),now.plusSeconds(7200))}
     }
+
+    @Test fun privateJoinLinkIsSignedAndCanBeReviewedByAnyRecipient(){
+        val key=keys();val owner=person(key,"Owner");val recipient=person(keys(),"Recipient");val p=policy(owner,recipient,key)
+        val body=obj("v" to 1,"kind" to "CHAT_ADMISSION","id" to UUID.randomUUID().toString(),"channelId" to p.getJSONObject("body").getString("id"),"name" to "Organizers","owner" to owner,"issuer" to owner,"recipientId" to "*","policyHash" to Protocol.hash(p),"admission" to "INVITE_PLUS_APPROVAL","issuedAt" to now.toString(),"expiresAt" to now.plusSeconds(3600).toString())
+        val link=signed(body,key)
+        assertTrue("Join links contain no membership policy or channel key",link.getJSONObject("body").keys().asSequence().none{it in listOf("policy","keys")})
+        assertSame(link,ChatProtocol.invite(link,ChatProtocol.participant(recipient),now))
+        assertThrows(Exception::class.java){ChatProtocol.invite(link,ChatProtocol.participant(recipient),now.plusSeconds(7200))}
+    }
 }

@@ -48,7 +48,7 @@ object ChannelGovernance {
         require(b.get("v")==1 && b.getString("kind")=="CHAT_ADMISSION" && b.getString("channelId").matches(uuid) && b.getString("policyHash").matches(identity))
         require(b.getString("admission") in listOf("INVITE_PLUS_APPROVAL","APPROVAL_ONLY"));bounded(b,now)
         ChatProtocol.profile(b.getJSONObject("owner"),now);val issuer=ChatProtocol.profile(b.optJSONObject("issuer")?:b.getJSONObject("owner"),now)
-        require(b.getString("recipientId")==recipient) {"This invitation is for a different participant."}
+        require(b.getString("recipientId")==recipient || b.getString("recipientId")=="*") {"This invitation is for a different participant."}
         require(Protocol.verify(b,value.getString("signature"),issuer.getJSONObject("body").getJSONObject("publicKey"))) {"This invitation could not be authenticated."}
         return value
     }

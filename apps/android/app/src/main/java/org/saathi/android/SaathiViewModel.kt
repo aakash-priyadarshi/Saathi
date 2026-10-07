@@ -308,6 +308,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     fun joinChannel(id:String)=chatAction { chat.join(id);runCatching {chat.sync()} }
     fun joinInvite(link:String,open:(String)->Unit)=chatAction { open(chat.acceptInvite(link));runCatching {chat.sync()} }
     fun invitePerson(id:String,person:JSONObject,show:(String)->Unit)=chatAction { show(chat.invite(id,person));runCatching {chat.sync()} }
+    fun createChannelJoinLink(id:String,show:(String)->Unit)=chatAction { show(chat.createJoinLink(id)) }
     fun chatSend(id:String,text:String,mentions:List<String> = emptyList(),threadRootId:String?=null,saved:()->Unit={})=chatAction { val payload=obj("text" to text);if(mentions.isNotEmpty())payload.put("mentions",org.json.JSONArray(mentions));chat.send(id,payload,threadRootId=threadRootId);saved();runCatching {chat.sync()} }
     fun moderateChannel(id:String,action:String,target:String,role:String?=null,reaction:String?=null)=chatAction {chat.moderate(id,action,target,role,reaction);runCatching{chat.sync()};notice("Channel action saved. Check its confirmation in channel settings.")}
     fun configureChannel(id:String,mode:String,admission:String)=chatAction {chat.configure(id,mode,admission);runCatching{chat.sync()}}

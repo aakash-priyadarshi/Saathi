@@ -2,6 +2,7 @@ package org.saathi.android
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.net.Uri
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +28,44 @@ import java.util.UUID
 class ChatReadUiTest {
     @get:Rule val ui=createComposeRule()
 
+    @Test fun messageActionsStayOutOfTheTranscriptUntilRequested() {
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val storageScope="test-chat-simple-${UUID.randomUUID()}"
+        lateinit var vm:SaathiViewModel
+        val viewModels=ViewModelStore();val shown=mutableStateOf(true)
+        InstrumentationRegistry.getInstrumentation().runOnMainSync{vm=SaathiViewModel(context.applicationContext as Application,storageScope,startServices=false);viewModels.put("fixture",vm)}
+        val imageFile=File(context.cacheDir,"chat-simple-preview.png")
+        try {
+            val preview=Bitmap.createBitmap(48,32,Bitmap.Config.ARGB_8888).apply{eraseColor(android.graphics.Color.rgb(35,87,67))}
+            imageFile.outputStream().use{preview.compress(Bitmap.CompressFormat.PNG,100,it)};preview.recycle()
+            val channel=runBlocking {
+                vm.chat.rename("Fictional channel owner")
+                val id=vm.chat.create("Fictional briefing","INVITE","ANNOUNCEMENT","INVITE_PLUS_APPROVAL")
+                vm.chat.send(id,obj("text" to "Fictional coordination: meet at the public entrance."))
+                vm.chat.attach(id,Uri.fromFile(imageFile),"image/png","Fictional field photo.png")
+                id
+            }
+            vm.refreshLocal()
+            ui.waitUntil(15000){vm.state.value.chatMessages.any{it.getJSONObject("envelope").getJSONObject("body").getString("conversationId")==channel&&it.getJSONObject("payload").has("attachment")}}
+            ui.setContent { if(shown.value){val state by vm.state.collectAsState();SaathiTheme{ConversationScreen(vm,state,channel,{_,_->},{},{},{},androidx.compose.ui.Modifier.fillMaxSize())}} }
+            ui.onNodeWithText("Fictional coordination: meet at the public entrance.").assertIsDisplayed()
+            ui.onNodeWithText("Fictional field photo.png").assertIsDisplayed()
+            listOf("0 replies","Thanks","Lock thread","Hide","Report","Export verified attachment","Sync encrypted attachment","Create Help Request").forEach{ui.onNodeWithText(it).assertDoesNotExist()}
+            ui.onRoot().captureToImage().asAndroidBitmap().let{capture->File(context.cacheDir,"chat-simple-message.png").outputStream().use{capture.compress(Bitmap.CompressFormat.PNG,100,it)}}
+            val textMessageId=vm.state.value.chatMessages.first{it.getJSONObject("payload").optString("text").contains("Fictional coordination")}.getString("id")
+            ui.onNodeWithTag("message-actions-$textMessageId").performClick()
+            listOf("Copy message","Reply in thread","Thank sender","Lock replies","Hide message").forEach{ui.onNodeWithText(it).assertIsDisplayed()}
+            ui.onRoot().captureToImage().asAndroidBitmap().let{capture->File(context.cacheDir,"chat-simple-actions.png").outputStream().use{capture.compress(Bitmap.CompressFormat.PNG,100,it)}}
+            ui.onNodeWithText("Copy message").performClick()
+            val attachmentMessageId=vm.state.value.chatMessages.first{it.getJSONObject("payload").has("attachment")}.getString("id")
+            ui.onNodeWithTag("message-actions-$attachmentMessageId").performClick()
+            listOf("Save attachment","Check for updates").forEach{ui.onNodeWithText(it).assertIsDisplayed()}
+        } finally {
+            ui.runOnIdle{shown.value=false;viewModels.clear()}
+            SecureStore(context,storageScope).use{it.clearPrivate()};context.deleteDatabase("saathi-$storageScope.db");imageFile.delete()
+        }
+    }
+
     @Test fun channelSettingsRemainInteractiveDuringIncomingRefreshBurst() {
         val instrumentation=InstrumentationRegistry.getInstrumentation()
         val context=instrumentation.targetContext
@@ -42,12 +81,43 @@ class ChatReadUiTest {
             repeat(100){vm.refreshLocal()}
             ui.onNodeWithContentDescription("Conversation settings").performClick()
             ui.onNodeWithText("Channel settings").assertIsDisplayed()
+            ui.onNodeWithText("Create private-channel join link").assertIsDisplayed()
             ui.onNodeWithText("Done").performClick()
             ui.onNodeWithText("Channel settings").assertDoesNotExist()
             assertNull(vm.state.value.notice)
         } finally {
             ui.runOnIdle{shown.value=false;viewModels.clear()}
             SecureStore(context,storageScope).use{it.clearPrivate()};context.deleteDatabase("saathi-$storageScope.db")
+        }
+    }
+
+    @Test fun privateChannelJoinLinkCreatesPendingRequestWithoutExposingChannelKeys() {
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val ownerScope="test-chat-link-owner-${UUID.randomUUID()}";val visitorScope="test-chat-link-visitor-${UUID.randomUUID()}"
+        lateinit var owner:SaathiViewModel;lateinit var visitor:SaathiViewModel
+        val ownerStore=ViewModelStore();val visitorStore=ViewModelStore()
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            owner=SaathiViewModel(context.applicationContext as Application,ownerScope,startServices=false);ownerStore.put("owner",owner)
+            visitor=SaathiViewModel(context.applicationContext as Application,visitorScope,startServices=false);visitorStore.put("visitor",visitor)
+        }
+        try {
+            val channel=runBlocking {
+                owner.chat.rename("Fictional channel owner")
+                visitor.chat.rename("Fictional invited participant")
+                owner.chat.create("Fictional private room","INVITE","DISCUSSION","INVITE_AUTO")
+            }
+            val link=runBlocking{owner.chat.createJoinLink(channel)}
+            val invitation=owner.chat.decodeInvite(link);val body=invitation.getJSONObject("body")
+            assertEquals("*",body.getString("recipientId"));assertFalse(body.has("policy"));assertFalse(body.has("keys"))
+            assertEquals(channel,runBlocking{visitor.chat.acceptInvite(link)})
+            val request=visitor.repository.store.get("chat-joins",channel)!!.getJSONObject("request").getJSONObject("body")
+            assertEquals("CHAT_ADMISSION",request.getJSONObject("invitation").getJSONObject("body").getString("kind"))
+            assertFalse(visitor.chat.conversations().first{it.getString("id")==channel}.optBoolean("joined"))
+            assertNull(visitor.chat.current(channel))
+            assertThrows(IllegalArgumentException::class.java){runBlocking{visitor.chat.acceptInvite(link)}}
+        } finally {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync{ownerStore.clear();visitorStore.clear()}
+            listOf(ownerScope,visitorScope).forEach{scope->SecureStore(context,scope).use{it.clearPrivate()};context.deleteDatabase("saathi-$scope.db")}
         }
     }
 
