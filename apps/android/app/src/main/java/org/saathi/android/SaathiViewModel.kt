@@ -159,7 +159,9 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         chat.onIncoming={batchChatNotice(it)}
         File(application.cacheDir,"voice").apply { mkdirs();listFiles()?.forEach { it.delete() } }
         session.onChange = { refreshLocal() }; session.onError = { notice(it) }
-        session.onFile = { offer -> mutable.update { it.copy(fileOffer = offer) } }
+        // No "receive this file?" prompt: offers already passed PeerSession's checks (chat media only from the DM partner or
+        // a current channel member); acceptFile still enforces storage space, battery and size limits.
+        session.onFile = { offer -> viewModelScope.launch { runCatching { session.acceptFile(offer) }.onFailure { notice(it.message ?: "This file could not be received. Saved work is safe.") } } }
         session.onCall = { video -> if (!state.value.calling && state.value.incomingCall == null) { stopWalkie(); mutable.update { it.copy(incomingCall = video) }; startRingTimeout() } }
         session.onWalkieFrame = { kind, packet ->
             val profile = chat.peer
