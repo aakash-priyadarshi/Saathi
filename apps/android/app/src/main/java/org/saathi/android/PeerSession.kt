@@ -45,6 +45,11 @@ class PeerSession(private val context: Context, private val repository: Reposito
     private val transmitted = mutableSetOf<String>()
     private val requested = mutableSetOf<String>()
     private val offered = mutableSetOf<String>()
+    /** Offers not yet acknowledged on this connection, with when they were made (receivers take two files at most). */
+    private val awaiting = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    fun offerInFlight() = awaiting.values.any { System.currentTimeMillis() - it < 60_000 }
+    /** A file this phone offered was received in full; the next waiting attachment can be offered. */
+    var onFileAcknowledged: suspend () -> Unit = {}
     private val accepted = mutableSetOf<String>()
     private val sendingFiles = mutableMapOf<String, Job>()
     private val requestedMissing = mutableMapOf<String, Int>()
@@ -70,7 +75,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
     var publicFileAllowed:(String,String)->Boolean={_,_->false}
     var onPublicFileComplete:suspend(String)->Unit={}
     init {
-        scope.launch { for (item in incoming) if (item.generation == generation) runCatching { receive(item.frame, item.generation) }.onFailure { onError(it.message ?: "This nearby update could not be saved.") } }
+        scope.launch { for (item in incoming) if (item.generation == generation) runCatching { receive(item.frame, item.generation) }.onFailure { android.util.Log.w("Swarm", "frame ${item.frame.optString("kind")} rejected: ${it.message}"); onError(it.message ?: "This nearby update could not be saved.") } }
         scope.launch {
             for (signal in wake) while (true) {
                 val item = synchronized(queue) { queue.poll() } ?: break
@@ -93,7 +98,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
     fun reset() {
         onChatReset()
         chatAssembler.clear(); remoteChatChunks = false; remoteWalkieTalkie = false
-        generation++; callInProgress = false; confirmed = false; remoteMedia = false; remoteLarge = false; remoteMaximumFrameBytes = 24000; shared.clear(); transmitted.clear(); requested.clear(); offered.clear(); accepted.clear(); fragments.clear()
+        generation++; callInProgress = false; confirmed = false; remoteMedia = false; remoteLarge = false; remoteMaximumFrameBytes = 24000; shared.clear(); transmitted.clear(); requested.clear(); offered.clear(); awaiting.clear(); accepted.clear(); fragments.clear()
         sendingFiles.values.forEach { it.cancel() }; sendingFiles.clear()
         synchronized(queue) { while (queue.isNotEmpty()) queue.poll()?.result?.completeExceptionally(IllegalStateException("Connection changed. Saved work is safe.")) }
         onChange()
@@ -205,8 +210,14 @@ class PeerSession(private val context: Context, private val repository: Reposito
                 val id = frame.getJSONObject("value").getString("id"); UUID.fromString(id)
                 repository.store.get("messages", id)?.takeIf { it.optString("direction") == "OUT" && it.optString("peer") == transport!!.session }?.let { it.put("deliveredAt", Instant.now().toString()); repository.store.put("messages", id, it) }
                 if (id in transmitted) repository.store.get("events", id)?.let { it.put("sharedAt", Instant.now().toString()); repository.store.put("events", id, it) }
-                if (id in offered) repository.store.get("attachments", id)?.let { it.put("deliveredAt", Instant.now().toString()); repository.store.put("attachments", id, it) }
+                if (id in offered) repository.store.get("attachments", id)?.let { file ->
+                    file.put("deliveredAt", Instant.now().toString())
+                    // Remember who holds it, so it is not offered to that person again after a reconnect.
+                    currentPeerIdentity()?.let { person -> val to = file.optJSONArray("deliveredTo") ?: JSONArray(); if (person !in to.strings()) to.put(person); file.put("deliveredTo", to) }
+                    repository.store.put("attachments", id, file)
+                }
                 onChange()
+                if (awaiting.remove(id) != null) onFileAcknowledged()
             }
             "INVENTORY" -> {
                 val ids = frame.getJSONArray("value").strings(); require(ids.size <= 500); ids.forEach { UUID.fromString(it) }
@@ -254,7 +265,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
                 val value = frame.getJSONObject("value"); value.exact("id", "name", "mime", "size", "hash"); UUID.fromString(value.getString("id"))
                 require(value.getString("name").length in 1..100 && value.getString("hash").matches(Regex("[a-f0-9]{64}")))
                 require(value.getLong("size") in 1..maximumFile().toLong() && (value.getString("mime") in allowedMime || value.getString("mime")=="application/octet-stream" && chatFileAllowed(value.getString("id"),value.getString("hash"))))
-                onFile(value)
+                android.util.Log.i("Swarm", "file offer ${value.getString("id").take(8)} ${value.getString("mime")} ${value.getLong("size")}"); onFile(value)
             }
             "FILE_ACCEPT" -> {
                 if (transport?.supportsFiles != true) return
@@ -369,7 +380,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
         require(file.optBoolean("complete")) { "Receive the whole file before sharing it." }
         file.remove("waitingForStrongerTransport")
         repository.store.put("attachments", file.getString("id"), file)
-        offered.add(file.getString("id"))
+        offered.add(file.getString("id")); awaiting[file.getString("id")] = System.currentTimeMillis()
         send("FILE_OFFER", obj("id" to file.getString("id"), "name" to file.getString("name"), "mime" to file.getString("mime"), "size" to file.getInt("size"), "hash" to file.getString("hash")))
     }
     suspend fun acceptFile(offer: JSONObject) {

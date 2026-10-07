@@ -631,6 +631,17 @@ class ChatRepository(private val context: Context, private val repository: Repos
             store.get("chat-receipts", "$id:$person:DELIVERED") == null && store.get("chat-receipts", "$id:$person:READ") == null
         }
     } }
+    /** Offers this phone's attachments that the connected person has not received yet, one at a time, so a clip or
+     *  photo sent while the link was down still arrives after reconnecting. */
+    suspend fun offerUndelivered()=withContext(Dispatchers.IO){lock.withLock{offerUndeliveredUnlocked()}}
+    private suspend fun offerUndeliveredUnlocked(){
+        val person=peer?.let{ChatProtocol.participant(it)}?:return
+        if(!session.confirmed || session.offerInFlight())return
+        val next=messages().filter{it.optBoolean("owned")}.sortedBy{it.getString("receivedAt")}
+            .mapNotNull{m->m.getJSONObject("payload").optJSONObject("attachment")?.let{a->store.get("attachments",a.getString("id"))}}
+            .firstOrNull{f->f.optBoolean("complete") && person !in (f.optJSONArray("deliveredTo")?.strings()?:emptyList()) && fileAllowed(f.getString("id"),f.getString("hash"))}?:return
+        runCatching{session.offerSaved(next)}
+    }
     private suspend fun announceUnlocked() {
         if(!session.confirmed)return
         renewOwned()
@@ -651,6 +662,7 @@ class ChatRepository(private val context: Context, private val repository: Repos
         for(a in store.all("chat-actions")){val e=a.getJSONObject("envelope");val b=e.getJSONObject("body");if(b.getString("action")=="REJECT_JOIN" && b.getString("targetId")==person && ChatProtocol.participant(b.getJSONObject("actor"))==self() && Instant.parse(b.getString("expiresAt"))>now())session.send("CHAT_ADMISSION_REJECTION",e)}
         val inventory=messages().filter { eligible(it,person) }.map { obj("id" to it.getString("id"),"conversationId" to it.getJSONObject("envelope").getJSONObject("body").getString("conversationId")) }
         session.send("CHAT_INVENTORY",JSONArray(inventory.take(500)))
+        offerUndeliveredUnlocked()
     }
     suspend fun receive(frame:JSONObject, generation:Long=session.connectionGeneration)=withContext(Dispatchers.IO) { lock.withLock {
         if(generation!=session.connectionGeneration || !session.confirmed)return@withLock

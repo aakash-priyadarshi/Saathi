@@ -164,13 +164,14 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         }
         session.onChatReset = { deliveryRetry?.cancel(); stopWalkie(false); chat.reset() }; chat.onChange = { refreshLocal(); scheduleNearbyDeliveryRetries() }; chat.onInvite = { receiveInvite(it) }
         session.onCommunityFrame={frame,generation->if(BuildConfig.CHAT_ENABLED)community.frame(frame,generation)};community.onChange={refreshLocal()};session.publicFileAllowed={id,hash->community.fileAllowed(id,hash)};session.onPublicFileComplete={community.completeFile(it)}
+        session.onFileAcknowledged = { runCatching { chat.offerUndelivered() } }
         session.chatFileAllowed = { id,hash -> chat.fileAllowed(id,hash) }; session.onChatFileComplete = { chat.completeFile(it) }
         chat.onIncoming={batchChatNotice(it)}
         File(application.cacheDir,"voice").apply { mkdirs();listFiles()?.forEach { it.delete() } }
         session.onChange = { refreshLocal() }; session.onError = { notice(it) }
         // No "receive this file?" prompt: offers already passed PeerSession's checks (chat media only from the DM partner or
         // a current channel member); acceptFile still enforces storage space, battery and size limits.
-        session.onFile = { offer -> viewModelScope.launch { runCatching { session.acceptFile(offer) }.onFailure { notice(it.message ?: "This file could not be received. Saved work is safe.") } } }
+        session.onFile = { offer -> viewModelScope.launch { runCatching { session.acceptFile(offer) }.onFailure { android.util.Log.w("Swarm", "file accept failed: ${it.message}"); notice(it.message ?: "This file could not be received. Saved work is safe.") } } }
         session.onCall = { video -> if (!state.value.calling && state.value.incomingCall == null) { stopWalkie(); mutable.update { it.copy(incomingCall = video) }; startRingTimeout() } }
         session.onWalkieFrame = { kind, packet ->
             val profile = chat.peer
