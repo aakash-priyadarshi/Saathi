@@ -480,5 +480,7 @@ import SwarmCore
         for u in store.all("chat-link-uses") where time(u["expiresAt"]) <= t { store.remove("chat-link-uses", u["id"] as? String ?? "") }
         let ids = Set(store.all("chat-messages").compactMap { $0["id"] as? String })
         for r in store.all("chat-receipts") where !ids.contains(body(r["receipt"] as? JSON ?? [:])["messageId"] as? String ?? "") { store.remove("chat-receipts", r["id"] as? String ?? "") }
+        // Expired messages are never accepted again, so their delete-for-me markers can go.
+        for d in store.all("chat-deleted") where !ids.contains(d["id"] as? String ?? "") { store.remove("chat-deleted", d["id"] as? String ?? "") }
     }
 }

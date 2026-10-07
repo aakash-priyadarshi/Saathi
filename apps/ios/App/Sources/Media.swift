@@ -63,7 +63,8 @@ extension ChatEngine {
     func fileAllowed(_ id: String, cipherHash: String) -> Bool {
         guard let person = peerID, session.confirmed, !blocked(person) else { return false }
         return messages().contains { record in
-            guard let a = attachment(of: record), a["id"] as? String == id, a["cipherHash"] as? String == cipherHash else { return false }
+            guard let a = attachment(of: record), a["id"] as? String == id, a["cipherHash"] as? String == cipherHash,
+                  store.get("chat-deleted", record["id"] as? String ?? "") == nil else { return false }
             let b = envelopeBody(record)
             if !J.isNull(b, "recipientId") {
                 let other = record["owned"] as? Bool == true ? b["recipientId"] as? String : ChatRules.participant(b["author"] as? JSON ?? [:])

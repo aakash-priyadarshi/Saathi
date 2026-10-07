@@ -125,7 +125,7 @@ class ChatRepository(private val context: Context, private val repository: Repos
         if(!session.confirmed || blocked(person))return false
         return messages().any { record->
             val a=record.getJSONObject("payload").optJSONObject("attachment");val b=record.getJSONObject("envelope").getJSONObject("body")
-            a?.optString("id")==id && a.optString("cipherHash")==hash && if(!b.isNull("recipientId")) {
+            a?.optString("id")==id && a.optString("cipherHash")==hash && store.get("chat-deleted",record.getString("id"))==null && if(!b.isNull("recipientId")) {
                 val other=if(record.optBoolean("owned"))b.getString("recipientId") else ChatProtocol.participant(b.getJSONObject("author"));other==person
             }else{val p=current(b.getString("conversationId"));p!=null && live(p) && !pendingMembership(p) && ChatProtocol.member(p,person)}
         }
@@ -585,11 +585,12 @@ class ChatRepository(private val context: Context, private val repository: Repos
     } }
     /** Delete for me: hidden on this phone only (re-synced copies stay hidden); its media file is removed. */
     suspend fun deleteForMe(messageId:String)=withContext(Dispatchers.IO){lock.withLock{
-        val record=store.get("chat-messages",messageId)?:return@withLock
-        save("chat-deleted",messageId,obj("id" to messageId))
-        record.getJSONObject("payload").optJSONObject("attachment")?.let{session.removeFile(it.getString("id"))}
-        onChange()
+        hide(store.get("chat-messages",messageId)?:return@withLock);onChange()
     }}
+    private suspend fun hide(record:JSONObject){
+        save("chat-deleted",record.getString("id"),obj("id" to record.getString("id")))
+        record.getJSONObject("payload").optJSONObject("attachment")?.let{session.removeFile(it.getString("id"))}
+    }
     /** Delete for everyone: a signed SYSTEM message naming the author's own message; every phone hides it. */
     suspend fun deleteForEveryone(messageId:String)=withContext(Dispatchers.IO){lock.withLock{
         val record=store.get("chat-messages",messageId)?:error("Message is unavailable.")
@@ -615,7 +616,13 @@ class ChatRepository(private val context: Context, private val repository: Repos
     suspend fun report(messageId:String,reason:String)=withContext(Dispatchers.IO) { lock.withLock { require(reason in listOf("ABUSE","SPAM","SAFETY","OTHER") && store.get("chat-messages",messageId)!=null);require(store.all("chat-reports").size<100){"Report queue is full. Connect to send pending reports."};val id=UUID.randomUUID().toString();save("chat-reports",id,obj("id" to id,"messageId" to messageId,"reason" to reason));onChange() } }
     suspend fun reportPerson(personId:String,reason:String)=withContext(Dispatchers.IO){lock.withLock{require(reason in listOf("ABUSE","SPAM","SAFETY","OTHER") && personId!=self() && store.get("chat-contacts",personId)!=null);require(store.all("chat-reports").size<100){"Report queue is full. Connect to send pending reports."};val id=UUID.randomUUID().toString();save("chat-reports",id,obj("id" to id,"personId" to personId,"reason" to reason));onChange()}}
     fun reports(channelId:String)=store.all("chat-report-inbox").filter{report->report.getString("channelId")==channelId && !actions(channelId).any{a->val b=a.getJSONObject("envelope").getJSONObject("body");b.getString("action")=="REVIEW_REPORT" && b.getString("targetId")==report.getString("messageId") && b.getString("issuedAt")>=report.getString("createdAt")}}
-    suspend fun clearConversation(id:String)=withContext(Dispatchers.IO) { lock.withLock { require(store.get("chat-conversations",id)?.optBoolean("joined")==false || id.startsWith("dm:")); messages().filter { it.getJSONObject("envelope").getJSONObject("body").getString("conversationId")==id }.forEach { store.remove("chat-messages",it.getString("id")) }; onChange() } }
+    /** Clear chat: every message is deleted for me (re-synced copies stay hidden) with its media, and its pins drop.
+     *  Delete chat also hides the conversation from Chats until a new message arrives; a group is not left. */
+    suspend fun clearConversation(id:String,delete:Boolean=false)=withContext(Dispatchers.IO) { lock.withLock {
+        messages().filter { it.getJSONObject("envelope").getJSONObject("body").getString("conversationId")==id }.forEach { hide(it) }; store.remove("chat-pins",id)
+        if(delete){store.remove("chat-pinned",id);store.get("chat-conversations",id)?.let{save("chat-conversations",id,it.put("deletedLocally",true))}}
+        onChange()
+    } }
     suspend fun announce()=withContext(Dispatchers.IO) { lock.withLock { announceUnlocked() } }
     /** Retransmit recent messages missing a receipt from this peer, with stable IDs for deduplication. */
     suspend fun retryPendingNearbyDelivery(): Boolean = withContext(Dispatchers.IO) { lock.withLock {
@@ -781,6 +788,8 @@ class ChatRepository(private val context: Context, private val repository: Repos
         val attachmentIds=messages.mapNotNull{it.getJSONObject("payload").optJSONObject("attachment")?.optString("id")}.toSet()
         expired.mapNotNull{it.getJSONObject("payload").optJSONObject("attachment")?.optString("id")}.filter{it !in attachmentIds}.forEach{session.removeFile(it)}
         store.all("chat-receipts").filter{it.getJSONObject("receipt").getJSONObject("body").getString("messageId") !in ids}.forEach{store.remove("chat-receipts",it.getString("id"))}
+        // Expired messages are never accepted again, so their delete-for-me markers can go.
+        store.all("chat-deleted").filter{it.getString("id") !in ids}.forEach{store.remove("chat-deleted",it.getString("id"))}
         val retained=messages.mapNotNull{val b=it.getJSONObject("envelope").getJSONObject("body");if(b.isNull("policyHash"))null else b.getString("policyHash")}.toSet()+policies().map{Protocol.hash(it)}+store.all("chat-actions").map{it.getJSONObject("envelope").getJSONObject("body").getString("policyHash")}
         store.all("chat-policy-history").filter{it.getString("id") !in retained}.forEach{store.remove("chat-policy-history",it.getString("id"));store.remove("chat-keys",it.getString("id"));store.remove("chat-server-policies",it.getString("id"))}
     }

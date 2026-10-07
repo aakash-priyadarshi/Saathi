@@ -77,11 +77,11 @@ class ChatReadUiTest {
             ui.onNodeWithTag("chat-photo-$attachmentMessageId").performClick()
             ui.onNodeWithContentDescription("Close photo preview").assertIsDisplayed()
             ui.onNodeWithContentDescription("Close photo preview").performClick()
-            // Message actions open on long press (Reply, Copy, Forward, Save, Report, Delete), the same list as iPhone.
+            // Message actions open on long press (Reply, Copy, Forward, Save, Pin, Report, Delete), the same list as iPhone.
             val textMessageId=vm.state.value.chatMessages.first{it.getJSONObject("payload").optString("text").contains("Fictional coordination")}.getString("id")
             ui.onNodeWithTag("chat-transcript").performScrollToNode(hasTestTag("message-$textMessageId"))
             ui.onNodeWithTag("message-$textMessageId").performTouchInput{longClick()}
-            listOf("Reply","Copy","Forward","Delete").forEach{ui.onNode(hasText(it) and hasAnyAncestor(isPopup())).assertIsDisplayed()}
+            listOf("Reply","Copy","Forward","Pin","Delete").forEach{ui.onNode(hasText(it) and hasAnyAncestor(isPopup())).assertIsDisplayed()}
             ui.onRoot().captureToImage().asAndroidBitmap().let{saveReviewCapture(context,"chat-simple-actions.png",it)}
             ui.onNode(hasText("Copy") and hasAnyAncestor(isPopup())).performClick()
             ui.onNodeWithTag("chat-transcript").performScrollToNode(hasTestTag("message-$attachmentMessageId"))

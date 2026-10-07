@@ -49,6 +49,30 @@ extension ChatEngine {
         if let id = attachment(of: record)?["id"] as? String { media.remove(id) }
         changed()
     }
+    /// Pinned messages still shown, oldest first: deleted or cleared ones drop out. Pins stay on this phone (Android `chat-pins`).
+    func pins(_ conversationID: String) -> [JSON] {
+        let ids = store.get("chat-pins", conversationID)?["messages"] as? [String] ?? [], gone = deletedForEveryone(in: conversationID)
+        return shown(in: conversationID).filter { let id = $0["id"] as? String ?? ""; return ids.contains(id) && !gone.contains(id) }
+    }
+    /// Pin or unpin one message; a chat keeps at most 3 pins.
+    func togglePin(_ messageID: String, in conversationID: String) throws {
+        var ids = pins(conversationID).compactMap { $0["id"] as? String }
+        if let at = ids.firstIndex(of: messageID) { ids.remove(at: at) } else { try J.req(ids.count < 3, "Up to 3 pinned messages. Unpin one first."); ids.append(messageID) }
+        try save("chat-pins", conversationID, ["id": conversationID, "messages": ids]); changed()
+    }
+    /// Pinned chats stay on top of Chats, most recently pinned first.
+    func togglePinChat(_ conversationID: String) throws {
+        if store.get("chat-pinned", conversationID) != nil { store.remove("chat-pinned", conversationID) } else { try save("chat-pinned", conversationID, ["id": conversationID, "at": Instant.string(now())]) }
+        changed()
+    }
+    /// Delete chat: clears it and hides it from Chats until a new message arrives. A group is not left.
+    func deleteChat(_ conversationID: String) throws {
+        try clear(conversationID); store.remove("chat-pinned", conversationID)
+        if var c = conversation(conversationID) { c["deletedLocally"] = true; try save("chat-conversations", conversationID, c) }
+        changed()
+    }
+    /// A deleted chat stays out of Chats until a new message arrives.
+    func listed(_ c: JSON) -> Bool { c["deletedLocally"] as? Bool != true || !shown(in: c["id"] as? String ?? "").isEmpty }
     /// Delete for everyone: a signed SYSTEM message naming the author's own message; every phone hides it.
     func deleteForEveryone(_ messageID: String) async throws {
         guard let record = store.get("chat-messages", messageID), record["owned"] as? Bool == true else { throw ChatRuleError("Only the sender can delete a message for everyone.") }
@@ -81,12 +105,9 @@ extension ChatEngine {
         guard var c = conversation(conversationID) else { return }
         c["muted"] = !(c["muted"] as? Bool ?? false); try save("chat-conversations", conversationID, c); changed()
     }
-    /// Removes a direct conversation's messages from this phone only.
-    func clear(_ conversationID: String) {
-        for m in messages(in: conversationID) {
-            if let id = attachment(of: m)?["id"] as? String { media.remove(id) }
-            store.remove("chat-messages", m["id"] as? String ?? "")
-        }
-        changed()
+    /// Removes a conversation's messages and media from this phone only. Each is deleted for me, so re-synced copies stay hidden.
+    func clear(_ conversationID: String) throws {
+        for m in messages(in: conversationID) { try deleteForMe(m["id"] as? String ?? "") }
+        store.remove("chat-pins", conversationID); changed()
     }
 }

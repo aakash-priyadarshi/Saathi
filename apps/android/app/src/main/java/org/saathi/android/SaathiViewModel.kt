@@ -37,6 +37,7 @@ data class AppState(
     val chatPolicies:List<JSONObject> = emptyList(),val chatBlocks:Set<String> = emptySet(),
     val chatJoinInbox:List<JSONObject> = emptyList(),val chatReportInbox:List<JSONObject> = emptyList(),
     val chatDeleted:Set<String> = emptySet(), val transfers:Map<String,Float> = emptyMap(),
+    val chatPins:Map<String,List<String>> = emptyMap(), val pinnedChats:Map<String,String> = emptyMap(),
     val relayReservedBytes:Long = 0,
     val gatewayStatus:String = "No recent Swarm internet gateway is known.",
     val hotspot: SwarmHotspot.Network? = null,
@@ -255,6 +256,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
                 val policies=chat.policies();val blocks=store.all("chat-blocks").map{it.getString("id")}.toSet()
                 val joins=store.all("chat-join-inbox");val reportInbox=store.all("chat-report-inbox")
                 val deleted=store.all("chat-deleted").map{it.getString("id")}.toSet();val transfers=HashMap(session.progress)
+                val pins=store.all("chat-pins").associate{it.getString("id") to it.getJSONArray("messages").strings()};val pinnedChats=store.all("chat-pinned").associate{it.getString("id") to it.getString("at")}
                 val reserved=store.get("relay-usage",java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString())?.optLong("bytes")?:0
                 val events=repository.events();val messages=store.all("messages");val files=store.all("attachments");val drafts=store.all("drafts")
                 val donations=store.all("donations");val operations=store.all("operations");val preparation=repository.preparation;val account=store.get("account","user")
@@ -262,7 +264,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
                 val localWifiAddress=LocalNetworkAdvice.hasWifiAddress()
                 mutable.update { it.copy(requests=requests,completed=completed,posts=posts,savedAt=savedAt,authenticated=authenticated,
                     chatProfile=profile,chatContacts=contacts,conversations=conversations,chatMessages=chatMessages,chatPeer=peer,nearbyChannels=channels,
-                    chatActions=actions,localHelp=help,participantReports=reports,chatPolicies=policies,chatBlocks=blocks,chatJoinInbox=joins,chatReportInbox=reportInbox,chatDeleted=deleted,transfers=transfers,relayReservedBytes=reserved,
+                    chatActions=actions,localHelp=help,participantReports=reports,chatPolicies=policies,chatBlocks=blocks,chatJoinInbox=joins,chatReportInbox=reportInbox,chatDeleted=deleted,transfers=transfers,chatPins=pins,pinnedChats=pinnedChats,relayReservedBytes=reserved,
                     events=events,messages=messages,files=files,drafts=drafts,donations=donations,operations=operations,preparation=preparation,account=account,confirmed=confirmed,media=media,walkieAvailable=media&&session.remoteWalkieTalkie,needsEnabled=repository.needsEnabled,localWifiAddress=localWifiAddress,gatewayStatus=community.gatewayStatus()) }
             } catch (_: Exception) { notice("Saved information could not be unlocked. Do not clear app storage if you need to recover work.") }
     }
@@ -340,6 +342,10 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     fun attachChat(id:String,uri:Uri,threadRootId:String?=null)=chatAction { chat.attach(id,uri,threadRootId=threadRootId);runCatching {chat.sync()} }
     fun shareChatAttachment(id:String)=chatAction { chat.offerAttachment(id) }
     fun clearChat(id:String)=chatAction {chat.clearConversation(id)}
+    fun deleteChat(id:String)=chatAction {chat.clearConversation(id,true)}
+    /** Pins stay on this phone: up to 3 messages per chat, and any number of chats (newest pin first). */
+    fun pinChatMessage(id:String,messageId:String)=chatAction {val next=togglePin(state.value.pins(id).map{it.getString("id")},messageId);withContext(Dispatchers.IO){repository.store.put("chat-pins",id,obj("id" to id,"messages" to org.json.JSONArray(next)))}}
+    fun pinChat(id:String)=chatAction {withContext(Dispatchers.IO){if(id in state.value.pinnedChats)repository.store.remove("chat-pinned",id) else repository.store.put("chat-pinned",id,obj("id" to id,"at" to java.time.Instant.now().toString()))}}
     fun sendNearbyInvite(link:String)=chatAction {require(chat.peer!=null);session.send("CHAT_INVITE",link);notice("Invitation sent nearby. The recipient decides whether to join.")}
     private var attachmentSync:Job?=null
     fun syncChatAttachment(id:String){
