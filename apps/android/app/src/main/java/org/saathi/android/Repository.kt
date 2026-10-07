@@ -34,6 +34,9 @@ class Repository(private val context: Context, storageScope: String = BuildConfi
     val environment get() = BuildConfig.ENVIRONMENT
     val preparation get() = store.get("account", "preparation")
     val featureFlags get() = configuration?.getJSONObject("body")?.getJSONObject("features")
+    /** Offline-first: a feature is on unless current, verified service information turns it off. Missing or expired
+     *  information (fresh install, no internet, past expiry) no longer disables nearby features; the remote switch still works. */
+    fun featureEnabled(name: String) = featureFlags?.optBoolean(name, true) != false
     fun events() = store.all("events")
     fun snapshot(bucket: String): List<JSONObject> {
         val ids = store.get("public", "$bucket-order")?.optJSONArray("ids")?.strings() ?: emptyList()

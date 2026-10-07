@@ -26,7 +26,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
     @Volatile var lastRemotePlatform = ""; private set
     private val chatAssembler = ChatFrameAssembler()
     @Volatile private var remoteLarge = false
-    val maximumFileBytes get() = if (remoteLarge && repository.featureFlags?.optBoolean("largeFiles") == true) MAX_FILE else 1048576
+    val maximumFileBytes get() = if (remoteLarge && repository.featureEnabled("largeFiles")) MAX_FILE else 1048576
     private data class Received(val generation: Long, val frame: JSONObject)
     private val incoming = Channel<Received>(64)
     @Volatile private var generation = 0L
@@ -123,9 +123,9 @@ class PeerSession(private val context: Context, private val repository: Reposito
     }
     suspend fun announce() {
         val current = transport
-        send("HELLO", obj("protocol" to 1, "maxFrame" to (current?.maximumFrameBytes ?: 0), "media" to (current?.mediaAvailable == true && repository.featureFlags?.optBoolean("localCalls") == true), "files" to (current?.supportsFiles == true)))
+        send("HELLO", obj("protocol" to 1, "maxFrame" to (current?.maximumFrameBytes ?: 0), "media" to (current?.mediaAvailable == true && repository.featureEnabled("localCalls")), "files" to (current?.supportsFiles == true)))
         // Protocol extension is ignored by version-1 browsers; their 1 MiB limit remains unchanged.
-        send("NATIVE_CAPS", obj("largeFiles" to (current?.supportsFiles == true && repository.featureFlags?.optBoolean("largeFiles") == true), "chatChunks" to true, "walkieTalkie" to (current?.mediaAvailable == true)))
+        send("NATIVE_CAPS", obj("largeFiles" to (current?.supportsFiles == true && repository.featureEnabled("largeFiles")), "chatChunks" to true, "walkieTalkie" to (current?.mediaAvailable == true)))
         onChatConnected()
     }
     suspend fun confirm() { require(transport?.connected == true); confirmed = true; announce(); onChange() }
@@ -169,7 +169,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
             require(value.getInt("protocol") == 1 && value.getInt("maxFrame") in 512..24000)
             remoteMaximumFrameBytes = value.getInt("maxFrame")
             remoteMedia = value.getBoolean("media") && transport?.mediaAvailable == true
-            remoteLarge = value.getBoolean("files") && repository.featureFlags?.optBoolean("largeFiles") == true
+            remoteLarge = value.getBoolean("files") && repository.featureEnabled("largeFiles")
             onChange(); return
         }
         if (kind == "NATIVE_CAPS") {
@@ -181,7 +181,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
         if (!peerIdentityVerified && kind != "CHAT_PROFILE") return
         if (!confirmed || transport?.connected != true) return
         if (kind.startsWith("PTT_")) {
-            require(remoteWalkieTalkie && remoteMedia && transport?.mediaAvailable == true && repository.featureFlags?.optBoolean("localCalls") == true)
+            require(remoteWalkieTalkie && remoteMedia && transport?.mediaAvailable == true && repository.featureEnabled("localCalls"))
             onWalkieFrame(kind, frame.getJSONObject("value")); return
         }
         if (kind.startsWith("CHAT_")) {
@@ -242,7 +242,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
                 }
             }
             "RECEIPT" -> { repository.acceptReceipt(frame.getJSONObject("value")); onChange() }
-            "CALL" -> { require(transport?.mediaAvailable == true && remoteMedia && repository.featureFlags?.optBoolean("localCalls") == true); onCall(frame.getJSONObject("value").getBoolean("video")) }
+            "CALL" -> { require(transport?.mediaAvailable == true && remoteMedia && repository.featureEnabled("localCalls")); onCall(frame.getJSONObject("value").getBoolean("video")) }
             "CALL_ACCEPT" -> onAccepted()
             "CALL_END" -> onEnded()
             "FILE_OFFER" -> {
@@ -308,7 +308,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
     private fun maximumFile() = maximumFileBytes
     private suspend fun fileReady(size: Long) {
         require(confirmed && !callInProgress) { "Confirm the nearby person and end any call before sharing a file." }
-        if (size > 1048576 && repository.featureFlags?.optBoolean("largeFiles") == true) withTimeoutOrNull(3000) { while (!remoteLarge && transport?.connected == true) delay(50) }
+        if (size > 1048576 && repository.featureEnabled("largeFiles")) withTimeoutOrNull(3000) { while (!remoteLarge && transport?.connected == true) delay(50) }
         require(size <= maximumFile()) { "This connection supports files up to ${maximumFile() / 1048576} MB. Choose a smaller file or reconnect to another native Swarm app." }
     }
     private fun checkSpace(size: Int) {

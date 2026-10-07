@@ -259,7 +259,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
                 val reserved=store.get("relay-usage",java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString())?.optLong("bytes")?:0
                 val events=repository.events();val messages=store.all("messages");val files=store.all("attachments");val drafts=store.all("drafts")
                 val donations=store.all("donations");val operations=store.all("operations");val preparation=repository.preparation;val account=store.get("account","user")
-                val confirmed=session.confirmed;val media=confirmed&&session.remoteMedia&&session.transport?.mediaAvailable==true&&repository.featureFlags?.optBoolean("localCalls")==true
+                val confirmed=session.confirmed;val media=confirmed&&session.remoteMedia&&session.transport?.mediaAvailable==true&&repository.featureEnabled("localCalls")
                 val localWifiAddress=LocalNetworkAdvice.hasWifiAddress()
                 mutable.update { it.copy(requests=requests,completed=completed,posts=posts,savedAt=savedAt,authenticated=authenticated,
                     chatProfile=profile,chatContacts=contacts,conversations=conversations,chatMessages=chatMessages,chatPeer=peer,nearbyChannels=channels,
@@ -373,15 +373,11 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     private fun activate(transport: PeerTransport, preservePeerIdentity: Boolean = false) { if (!preservePeerIdentity) session.clearPeerRequirement(); session.transport?.disconnect(); session.reset(); session.transport = transport; mutable.update { it.copy(invitation = "", localCode = "", pairCode = null, peers = emptyMap(), media = false, connected = false, callActive = false, calling = false) } }
     fun scan(advertise: Boolean,automatic:Boolean=false) = action {
         require(preferences().optBoolean("nearbyVisible",true)){"Enable Nearby visibility in More before searching."}
-        if (repository.featureFlags?.optBoolean("nearby") != true) {
+        if (!repository.featureEnabled("nearby")) {
             runCatching { repository.refreshConfiguration(); repository.api("/public/config") }
         }
-        require(repository.featureFlags?.optBoolean("nearby") == true) {
-            if (repository.configuration == null)
-                "Connect to the internet once to verify Nearby services. Bluetooth pairing remains available."
-            else
-                "Nearby discovery is not enabled in the verified service configuration. Local pairing remains available when configured."
-        }
+        // Only current, verified service information that switches Nearby off can block it; no internet is needed.
+        require(repository.featureEnabled("nearby")) { "Nearby discovery is switched off in Swarm's verified service settings. Local pairing remains available when configured." }
         activate(nearby); nearby.scan(advertise,automatic,chat.profile().getJSONObject("body").getString("name"))
     }
     fun scanBle(advertise: Boolean) = action { require(preferences().optBoolean("nearbyVisible",true)){"Enable Nearby visibility in More before searching."}; activate(ble); ble.start(advertise) }
@@ -435,7 +431,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     private fun autoSearch() {
         if (!BuildConfig.CHAT_ENABLED || !appInForeground || state.value.connected || state.value.busy || !nearby.available || nearby.active) return
         if (session.transport === ble && ble.connected) return
-        if (!preferences().optBoolean("nearbyVisible", true) || repository.featureFlags?.optBoolean("nearby") != true || !nearbyPermitted()) return
+        if (!preferences().optBoolean("nearbyVisible", true) || !repository.featureEnabled("nearby") || !nearbyPermitted()) return
         viewModelScope.launch {
             runCatching { activate(nearby); nearby.scan(false, true, chat.profile().getJSONObject("body").getString("name")) }
         }
