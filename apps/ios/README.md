@@ -16,7 +16,20 @@ Run the Swift package and protocol-vector tests, add and build the native app ta
 
 ## iPhone app status and device results (7 October 2026)
 
-`apps/ios/App` (XcodeGen, `xcodegen generate`) builds **CJP Swarm** (`org.cjp.swarm.staging`), which speaks the Android QA protocol (`org.saathi.nearby.v1.staging`). It implements signed identity, Nearby pairing with compared codes, end-to-end encrypted DMs, open/invite channel membership and posting (as a member), invites/admissions, receipts and inventory/need store-and-forward. Not yet: creating/administering channels, attachments, server sync, walkie-talkie, background operation.
+`apps/ios/App` (XcodeGen, `xcodegen generate`) builds **CJP Swarm** (`org.cjp.swarm.staging`), which speaks the Android QA protocol (`org.saathi.nearby.v1.staging`) and matches the Android app screen for screen (Chats, Nearby, More; Group info; contact info).
+
+Implemented and interoperating with Android:
+
+- **Identity and pairing:** signed identity in the Keychain; the code is compared on the first pairing only, known people reconnect automatically (identity checked against the saved contact), auto-connect retries every 35 seconds.
+- **Chats:** end-to-end encrypted DMs, receipts, inventory/need store-and-forward; long-press Reply, Copy, Forward, Save, Report, Delete for me / for everyone; Telegram-style reply threads with jump-to-quote; contact info (mute, block, report, clear).
+- **Groups:** create (free chat, admins post with member replies, view only), make/remove admins, roles, remove/ban with confirmation, approval of join requests (removed members need approval), personal invitations (QR, link, send nearby) and single-use join links, reports to review and recent admin changes.
+- **Media:** photos (1280 px), videos (720p, metadata removed), files (text, audio, MP4), hold-to-talk voice clips that play automatically in the open chat; items up to 100 MB; attachments a peer missed are re-offered after reconnecting.
+- **Online:** signed CHAT_SYNC every 20 seconds while open, encrypted attachment upload/download, endpoints from the verified signed service configuration (`ServiceConfig` in SwarmCore).
+- **Background:** Bluetooth background modes keep the link and search running; local notifications for new messages (no server push).
+
+Build: `cd apps/ios/App && xcodegen generate`, then build the `Swarm` scheme with your own Apple team (`DEVELOPMENT_TEAM=...`). Tests: `swift test --package-path apps/ios` (SwarmCore, protocol vectors, service config) and the TypeScript interop check `SWARM_INTEROP_OUT=/tmp/x.json swift test --package-path apps/ios --filter InteropExportTests && node apps/ios/scripts/ios-interop.mjs /tmp/x.json`. Simulator review: launch with `-SwarmDemo 1 [-SwarmTab chats|nearby|more] [-SwarmOpen dm|channel|owned|info]` (DEBUG only; the simulator cannot run Nearby because it has no Bluetooth).
+
+Still open: TestFlight distribution, the Hotspot Configuration and Wi-Fi Aware entitlements (all need a paid Apple Developer team), live walkie-talkie and calls (Android-only), server push.
 
 Measured with an iPhone 17 Pro Max (iOS 27.2) and a Pixel 8 (Android 17 beta, Swarm QA 0.1.1):
 
