@@ -1,6 +1,9 @@
 import Foundation
 import SwarmCore
 import UIKit
+import AVFoundation
+import CoreTransferable
+import UniformTypeIdentifiers
 
 /// Encrypted attachment parts and verified photos on disk (Data Protection), like Android's `attachments/` folder.
 @MainActor final class MediaFiles {
@@ -49,7 +52,8 @@ enum Photo {
 
 extension ChatEngine {
     static let chunk = 8192
-    static let maxIncomingCipher = 32 * 1024 * 1024
+    /// iPhone decrypts attachments in memory, so it takes up to 100 MB; larger ones stay on Android phones.
+    static let maxIncomingCipher = 105 * 1024 * 1024
 
     /// The signed attachment of a held message, if any.
     func attachment(of record: JSON) -> JSON? { (record["payload"] as? JSON)?["attachment"] as? JSON }
@@ -76,8 +80,11 @@ extension ChatEngine {
     }
     /// Encrypts, saves and sends any small attachment (photos and voice messages) as V1.
     func sendMedia(_ conversationID: String, plain: Data, name: String, mime: String, format: String, forwarded: Bool = false, threadRootID: String? = nil) async throws {
+        try J.req(plain.count <= 100 * 1024 * 1024, "Choose something under 100 MB to send from iPhone.")
         let id = UUID().uuidString.lowercased(), key = Data((0..<32).map { _ in UInt8.random(in: 0...255) })
-        let cipher = try AttachmentCrypto.encryptV1(plain, key: key, id: id), cipherHash = ChatCrypto.sha256Hex(cipher)
+        // Small items use V1 (readable by every Android build); videos and files use Android's streaming V2.
+        let cipher = format == "PHOTO" || format == "VOICE" ? try AttachmentCrypto.encryptV1(plain, key: key, id: id) : try AttachmentCrypto.encryptV2(plain, key: key, id: id)
+        let cipherHash = ChatCrypto.sha256Hex(cipher)
         try media.saveCipher(id, cipher); try media.savePlain(id, plain)
         try store.put("attachments", id, ["id": id, "size": cipher.count, "hash": cipherHash, "direction": "OUT", "complete": true, "deliveredTo": [String]()])
         let attachment: JSON = ["id": id, "name": name, "mime": mime, "size": plain.count, "hash": ChatCrypto.sha256Hex(plain),
@@ -205,4 +212,57 @@ struct Transfers {
     var progress: [String: Double] = [:]
     /// Offers not yet acknowledged on this connection, with when they were made.
     var awaiting: [String: Date] = [:]
+}
+
+/// Videos are re-encoded to 720p MP4 without metadata (location, device) before sending, as on Android.
+enum Video {
+    static func prepare(_ source: URL) async throws -> Data {
+        let asset = AVURLAsset(url: source)
+        guard let export = AVAssetExportSession(asset: asset, presetName: AVAssetExportPreset1280x720) else { throw ChatRuleError("This video could not be prepared.") }
+        let out = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
+        defer { try? FileManager.default.removeItem(at: out) }
+        export.outputURL = out; export.outputFileType = .mp4; export.shouldOptimizeForNetworkUse = true
+        export.metadata = []; export.metadataItemFilter = .forSharing()
+        await withCheckedContinuation { done in export.exportAsynchronously { done.resume() } }
+        guard export.status == .completed else { throw ChatRuleError("This video could not be prepared.") }
+        return try Data(contentsOf: out)
+    }
+}
+
+/// A picked video, copied out of the photo library so it can be compressed.
+struct PickedMovie: Transferable {
+    let url: URL
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(contentType: .movie) { SentTransferredFile($0.url) } importing: { received in
+            let copy = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "." + received.file.pathExtension)
+            try FileManager.default.copyItem(at: received.file, to: copy)
+            return PickedMovie(url: copy)
+        }
+    }
+}
+
+extension ChatEngine {
+    func sendVideo(_ conversationID: String, source: URL, threadRootID: String? = nil) async throws {
+        defer { try? FileManager.default.removeItem(at: source) }
+        try await sendMedia(conversationID, plain: try await Video.prepare(source), name: "Video.mp4", mime: "video/mp4", format: "VIDEO", threadRootID: threadRootID)
+    }
+    /// A file from the Files app, in the formats Android accepts.
+    func sendFile(_ conversationID: String, url: URL, threadRootID: String? = nil) async throws {
+        let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
+        let type = UTType(filenameExtension: url.pathExtension)
+        let (mime, format): (String, String) = type?.conforms(to: .plainText) == true ? ("text/plain", "FILE")
+            : type?.conforms(to: .mp3) == true ? ("audio/mpeg", "VOICE") : type?.conforms(to: .mpeg4Audio) == true ? ("audio/mp4", "VOICE")
+            : type?.conforms(to: .mpeg4Movie) == true ? ("video/mp4", "VIDEO") : type?.conforms(to: .jpeg) == true ? ("image/jpeg", "PHOTO")
+            : type?.conforms(to: .png) == true ? ("image/png", "PHOTO") : ("", "")
+        try J.req(!mime.isEmpty, "Swarm sends text, audio, MP4 video and photos.")
+        try await sendMedia(conversationID, plain: try Data(contentsOf: url), name: String(url.lastPathComponent.prefix(100)), mime: mime, format: format, threadRootID: threadRootID)
+    }
+    /// A decrypted copy with the right extension, for the system viewer (video, audio, text).
+    func viewable(_ attachment: JSON) -> URL? {
+        guard let id = attachment["id"] as? String, let plain = media.plain(id) else { return nil }
+        let ext = ["video/mp4": "mp4", "video/webm": "webm", "text/plain": "txt", "audio/mpeg": "mp3", "audio/mp4": "m4a", "image/png": "png"][attachment["mime"] as? String ?? ""] ?? "jpg"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(id).\(ext)")
+        if !FileManager.default.fileExists(atPath: url.path) { try? plain.write(to: url, options: [.atomic, .completeFileProtection]) }
+        return url
+    }
 }

@@ -90,7 +90,7 @@ struct SwarmApp: App {
             // Online sync while Swarm is open (Android checks every 30 seconds); offline it simply fails quietly.
             Task { [weak chat] in
                 while let chat {
-                    if UIApplication.shared.applicationState == .active { do { try await chat.sync() } catch { NSLog("Swarm: sync error %@", String(describing: error)) } }
+                    if UIApplication.shared.applicationState == .active { do { try await chat.sync(); await chat.serverMedia() } catch { NSLog("Swarm: sync error %@", String(describing: error)) } }
                     try? await Task.sleep(nanoseconds: 20_000_000_000)
                 }
             }

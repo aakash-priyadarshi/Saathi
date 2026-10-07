@@ -22,6 +22,29 @@ extension ChatEngine {
         return try verify(cached)
     }
 
+    /// One signed POST to the Swarm API named by the verified service config (Android `Repository.api`).
+    func postSigned(_ path: String, _ body: JSON, limit: Int = 4 * 1024 * 1024) async throws -> JSON {
+        let config = try await serviceConfig(), configBody = config["body"] as? JSON ?? [:]
+        guard let endpoint = ServiceConfig.apiEndpoints(config).first,
+              let url = URL(string: (endpoint.hasSuffix("/") ? String(endpoint.dropLast()) : endpoint) + "/api/v1" + path),
+              let webOrigin = configBody["webOrigin"] as? String else { throw ChatRuleError("Swarm's service information is incomplete.") }
+        var request = URLRequest(url: url, timeoutInterval: 60)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(webOrigin, forHTTPHeaderField: "Origin") // the server only accepts writes from its own origin
+        request.setValue(UUID().uuidString.lowercased(), forHTTPHeaderField: "Idempotency-Key")
+        request.setValue(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0", forHTTPHeaderField: "X-Swarm-App-Version")
+        request.httpBody = try JSONSerialization.data(withJSONObject: try me.sign(body))
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+        guard (200...201).contains(status), data.count <= limit, let r = try JSONSerialization.jsonObject(with: data) as? JSON, r["v"] as? Int == 1 else {
+            NSLog("Swarm: %@ failed status=%d %@", path, status, String(decoding: data.prefix(300), as: UTF8.self))
+            throw ChatRuleError("Swarm could not be reached. Messages stay saved and travel nearby.")
+        }
+        return r
+    }
+
     func sync() async throws {
         guard hasProfile else { return }
         prune(); renewOwned()
@@ -74,23 +97,7 @@ extension ChatEngine {
         }
         for a in unsavedActions { if let envelope = a["envelope"] as? JSON, time(body(envelope)["expiresAt"]) > t { add("actions", envelope, 8) } }
 
-        let config = try await serviceConfig(), configBody = config["body"] as? JSON ?? [:]
-        guard let endpoint = ServiceConfig.apiEndpoints(config).first, let url = URL(string: (endpoint.hasSuffix("/") ? String(endpoint.dropLast()) : endpoint) + "/api/v1/chat/sync"),
-              let webOrigin = configBody["webOrigin"] as? String else { throw ChatRuleError("Swarm's service information is incomplete.") }
-        var request = URLRequest(url: url, timeoutInterval: 30)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue(webOrigin, forHTTPHeaderField: "Origin") // the server only accepts writes from its own origin
-        request.setValue(UUID().uuidString.lowercased(), forHTTPHeaderField: "Idempotency-Key")
-        request.setValue(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0", forHTTPHeaderField: "X-Swarm-App-Version")
-        request.httpBody = try JSONSerialization.data(withJSONObject: try me.sign(req))
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 || (response as? HTTPURLResponse)?.statusCode == 201,
-              data.count <= 2 * 1024 * 1024, let r = try JSONSerialization.jsonObject(with: data) as? JSON, r["v"] as? Int == 1 else {
-            NSLog("Swarm: sync failed status=%d %@", (response as? HTTPURLResponse)?.statusCode ?? -1, String(decoding: data.prefix(300), as: UTF8.self))
-            throw ChatRuleError("Swarm could not be reached. Messages stay saved and travel nearby.")
-        }
+        let r = try await postSigned("/chat/sync", req)
         NSLog("Swarm: sync ok accepted=%d messages=%d policies=%d", (r["accepted"] as? [Any])?.count ?? 0, (r["messages"] as? [Any])?.count ?? 0, (r["policies"] as? [Any])?.count ?? 0)
         let strs = { (k: String) in (r[k] as? [String]) ?? [] }, objs = { (k: String) in (r[k] as? [JSON]) ?? [] }
         for p in (req["peers"] as? [JSON]) ?? [] { let id = ChatRules.participant(p); try? save("chat-server-contacts", id, ["id": id, "hash": hash(p)]) }

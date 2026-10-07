@@ -1,4 +1,5 @@
 import PhotosUI
+import QuickLook
 import SwiftUI
 import SwarmCore
 
@@ -104,7 +105,7 @@ struct ChatsView: View {
     }
     func preview(_ r: JSON) -> String {
         if let text = (r["payload"] as? JSON)?["text"] as? String { return text }
-        return chat.attachment(of: r).map { let m = $0["mime"] as? String ?? ""; return m.hasPrefix("image/") ? "Photo" : m.hasPrefix("audio/") ? "Voice message" : "Attachment" } ?? "Message"
+        return chat.attachment(of: r).map { let m = $0["mime"] as? String ?? ""; return m.hasPrefix("image/") ? "Photo" : m.hasPrefix("audio/") ? "Voice message" : m.hasPrefix("video/") ? "Video" : "File" } ?? "Message"
     }
 }
 
@@ -146,6 +147,9 @@ struct ConversationView: View {
     @State private var holding = false
     @State private var heardVoice: String?
     @State private var thread: String?
+    @State private var picking = false
+    @State private var importing = false
+    @State private var previewURL: URL?
     @Environment(\.scenePhase) private var phase
 
     var body: some View {
@@ -206,6 +210,7 @@ struct ConversationView: View {
                 Button { viewing = nil } label: { Image(systemName: "xmark.circle.fill").font(.title).foregroundStyle(.white) }.padding().accessibilityLabel("Close photo")
             }
         }
+        .quickLookPreview($previewURL)
         .sheet(item: Binding(get: { forwarding.map(IdentifiedString.init) }, set: { forwarding = $0?.id })) { item in
             ForwardSheet(chat: chat) { targets in
                 forwarding = nil
@@ -293,18 +298,33 @@ struct ConversationView: View {
                     }
                 }
                 HStack(alignment: .bottom, spacing: 10) {
-                    PhotosPicker(selection: $photoItem, matching: .images) {
-                        Image(systemName: "photo").font(.system(size: 18, weight: .semibold)).foregroundStyle(Palette.primary)
+                    Menu {
+                        Button { picking = true } label: { Label("Photo or video", systemImage: "photo.on.rectangle") }
+                        Button { importing = true } label: { Label("File", systemImage: "doc") }
+                    } label: {
+                        Image(systemName: "paperclip").font(.system(size: 18, weight: .semibold)).foregroundStyle(Palette.primary)
                             .frame(width: 40, height: 40).background(Palette.primaryContainer, in: Circle())
                     }
-                    .accessibilityLabel("Send a photo")
+                    .accessibilityLabel("Send a photo, video or file")
+                    .photosPicker(isPresented: $picking, selection: $photoItem, matching: .any(of: [.images, .videos]))
+                    .fileImporter(isPresented: $importing, allowedContentTypes: [.plainText, .mp3, .mpeg4Audio, .mpeg4Movie, .jpeg, .png]) { result in
+                        guard case .success(let url) = result else { return }
+                        Task { do { try await chat.sendFile(id, url: url, threadRootID: threadRoot) } catch { chat.notice = error.localizedDescription } }
+                    }
                     .onChange(of: photoItem) { item in
                         guard let item else { return }
                         photoItem = nil
                         Task {
                             do {
-                                guard let data = try await item.loadTransferable(type: Data.self), let image = UIImage(data: data) else { throw ChatRuleError("This photo could not be opened.") }
-                                try await chat.sendPhoto(id, image: image, threadRootID: threadRoot)
+                                // Videos are compressed to 720p first; photos to 1280 px (both without metadata).
+                                if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) }) {
+                                    guard let movie = try await item.loadTransferable(type: PickedMovie.self) else { throw ChatRuleError("This video could not be opened.") }
+                                    chat.notice = "Preparing the video…"
+                                    try await chat.sendVideo(id, source: movie.url, threadRootID: threadRoot)
+                                } else {
+                                    guard let data = try await item.loadTransferable(type: Data.self), let image = UIImage(data: data) else { throw ChatRuleError("This photo could not be opened.") }
+                                    try await chat.sendPhoto(id, image: image, threadRootID: threadRoot)
+                                }
                             } catch { chat.notice = error.localizedDescription }
                         }
                     }
@@ -384,6 +404,13 @@ struct ConversationView: View {
                         Label(player.playing == attachmentID ? "Playing… tap to stop" : "Voice message", systemImage: player.playing == attachmentID ? "stop.circle.fill" : "play.circle.fill")
                             .font(Type.bodyMedium).foregroundStyle(Palette.primary)
                     }.buttonStyle(.plain)
+                } else if let attachment, chat.voice(attachmentID) != nil {
+                    // Videos, audio files and text open in the system viewer.
+                    let mime = attachment["mime"] as? String ?? "", size = attachment["size"] as? Int ?? 0
+                    Button { previewURL = chat.viewable(attachment) } label: {
+                        Label("\(mime.hasPrefix("video/") ? "Video" : (attachment["name"] as? String ?? "File")) · \(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))",
+                              systemImage: mime.hasPrefix("video/") ? "play.rectangle.fill" : "doc.fill").font(Type.bodyMedium).foregroundStyle(Palette.primary)
+                    }.buttonStyle(.plain)
                 } else if attachment != nil {
                     let progress = chat.transfers.progress[attachmentID]
                     HStack(spacing: 8) {
@@ -391,7 +418,9 @@ struct ConversationView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(progress.map { "\(isPhoto ? "Photo" : "Attachment") · \(Int($0 * 100))%" }
                                  ?? (isPhoto ? (mine ? "Photo" : "Photo · arrives when the sender is nearby")
-                                     : (attachment?["mime"] as? String ?? "").hasPrefix("audio/") ? "Voice message · arrives when the sender is nearby" : "Attachment · open it on Android for now"))
+                                     : (attachment?["mime"] as? String ?? "").hasPrefix("audio/") ? "Voice message · arrives when the sender is nearby"
+                                     : (attachment?["size"] as? Int ?? 0) > 100 * 1024 * 1024 ? "Over 100 MB · open it on an Android phone"
+                                     : (attachment?["mime"] as? String ?? "").hasPrefix("video/") ? "Video · arrives when the sender is nearby" : "File · arrives when the sender is nearby"))
                                 .font(Type.bodyMedium).foregroundStyle(Palette.ink)
                             if let progress { ProgressView(value: progress).tint(Palette.primary).frame(width: 160) }
                         }
