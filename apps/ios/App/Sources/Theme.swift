@@ -45,14 +45,13 @@ enum Type {
     static let labelSmall = manrope(11, "Medium", relativeTo: .caption2)
 }
 
-/// SWARM with "by CJP" (full) or SWARM alone (compact conversation bar).
+/// The SWARM by CJP lockup (bug and wordmark, as on Android), sized to the old two-line text so the bar keeps its height.
 struct Masthead: View {
     var compact = false
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("SWARM").font(compact ? Type.titleMedium : Type.titleLarge).foregroundStyle(Palette.ink)
-            if !compact { Text("by CJP").font(Type.bodySmall).foregroundStyle(Palette.muted) }
-        }.accessibilityElement(children: .combine).accessibilityLabel("SWARM by CJP")
+        Image("SwarmLockup").resizable().scaledToFit().frame(height: compact ? 28 : 40)
+            .clipShape(RoundedRectangle(cornerRadius: compact ? 6 : 8))
+            .accessibilityLabel("SWARM by CJP")
     }
 }
 

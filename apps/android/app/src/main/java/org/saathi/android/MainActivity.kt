@@ -12,6 +12,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -118,15 +120,14 @@ private val tabs = listOf(Triple("Chats",Icons.Outlined.ChatBubbleOutline,"Conve
         val inConversation = conversation != null && form == null && detail == null
         Row {
             if (wide) NavigationRail(Modifier.fillMaxHeight().width(104.dp).statusBarsPadding(), containerColor = MaterialTheme.colorScheme.surface) {
-                Icon(Icons.Outlined.Groups, BuildConfig.BRAND_NAME, Modifier.padding(vertical = 24.dp), tint = MaterialTheme.colorScheme.primary)
+                Image(painterResource(R.drawable.swarm_mark), BuildConfig.BRAND_NAME, Modifier.padding(vertical = 24.dp).size(40.dp).clip(RoundedCornerShape(8.dp)))
                 visibleTabs.forEach { (name, icon, description) -> NavigationRailItem(page == name, { page = name; detail = null; form = null;conversation=null }, { Icon(icon, description) }, label = { Text(name) }) }
             }
             Scaffold(modifier = Modifier.weight(1f), containerColor = MaterialTheme.colorScheme.background,
-                topBar = { TopAppBar(title = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Icon(Icons.Outlined.Groups, null, tint = MaterialTheme.colorScheme.primary)
-                    if(inConversation) Text(BuildConfig.BRAND_DISPLAY, style = MaterialTheme.typography.titleMedium)
-                    else Column { Text(BuildConfig.BRAND_DISPLAY, style = MaterialTheme.typography.titleLarge); Text(BuildConfig.BRAND_BYLINE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                } }, navigationIcon = { if (detail != null || form != null || conversation!=null || page in listOf("Team","Saved","Connection")) IconButton(onClick = navigateBack) { Icon(Icons.Outlined.ArrowBack, "Back") } },
+                // The SWARM by CJP lockup, 40 dp so the bar keeps its height; a conversation shows its own bar instead (like WhatsApp).
+                topBar = { if (!inConversation) TopAppBar(title = {
+                    Image(painterResource(R.drawable.swarm_header), "${BuildConfig.BRAND_DISPLAY} ${BuildConfig.BRAND_BYLINE}", Modifier.height(40.dp).clip(RoundedCornerShape(8.dp)))
+                }, navigationIcon = { if (detail != null || form != null || conversation!=null || page in listOf("Team","Saved","Connection")) IconButton(onClick = navigateBack) { Icon(Icons.Outlined.ArrowBack, "Back") } },
                     // Hidden for the Oct 2026 build: Team sign in / My team top-bar action.
                     // actions = { if(!inConversation) TextButton(onClick = { page = "Team"; detail = null; form = null;conversation=null }) { Text(if (state.preparation == null) "Team sign in" else "My team") } },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)) },
@@ -138,7 +139,7 @@ private val tabs = listOf(Triple("Chats",Icons.Outlined.ChatBubbleOutline,"Conve
                         "staging" -> "STAGING · QA services"
                         else -> null
                     }
-                    environmentLabel?.let { label -> Surface(color = MaterialTheme.colorScheme.errorContainer) { Text(label, Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onErrorContainer) } }
+                    if (!inConversation) environmentLabel?.let { label -> Surface(color = MaterialTheme.colorScheme.errorContainer) { Text(label, Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onErrorContainer) } }
                     if(!inConversation) ConnectionStatus(state)
                     if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                     state.notice?.let { notice -> Surface(color = MaterialTheme.colorScheme.surfaceVariant) { Row(Modifier.fillMaxWidth().padding(start = 20.dp), verticalAlignment = Alignment.CenterVertically) { Text(notice, Modifier.weight(1f).padding(vertical = 10.dp), style = MaterialTheme.typography.bodySmall); IconButton(onClick = { vm.notice(null) }) { Icon(Icons.Outlined.Close, "Dismiss message") } } } }
@@ -147,7 +148,7 @@ private val tabs = listOf(Triple("Chats",Icons.Outlined.ChatBubbleOutline,"Conve
                         when {
                             form != null -> DraftForm(vm, form!!, { form = null }, content)
                             detail != null -> RequestDetail(vm, JSONObject(detail!!), { form = "update:" + detail!! }, content,{need->vm.discuss(obj("type" to "NEED","id" to need.getString("publicId"),"title" to need.getString("title")),openChat)})
-                            conversation!=null -> ConversationScreen(vm,state,conversation!!,askCall,askRecord,{message->if(state.needsEnabled)vm.needFromChat(message){form=it}else vm.notice("Public relief needs are temporarily paused.")},{id->if(!state.needsEnabled)vm.notice("Public relief needs are temporarily paused.")else state.requests.plus(state.completed).firstOrNull{it.optString("publicId")==id}?.let{detail=it.toString()}?:vm.notice("Refresh Needs to check this reference’s latest public status.")},content)
+                            conversation!=null -> ConversationScreen(vm,state,conversation!!,askCall,askRecord,{message->if(state.needsEnabled)vm.needFromChat(message){form=it}else vm.notice("Public relief needs are temporarily paused.")},{id->if(!state.needsEnabled)vm.notice("Public relief needs are temporarily paused.")else state.requests.plus(state.completed).firstOrNull{it.optString("publicId")==id}?.let{detail=it.toString()}?:vm.notice("Refresh Needs to check this reference’s latest public status.")},content,back=navigateBack)
                             // Hidden for the Oct 2026 build: Needs and Updates pages.
                             // page == "Needs" && state.needsEnabled -> NeedsHub(vm,state,{detail=it.toString()},wide,content,{form=it})
                             // page == "Needs" -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Notice("Relief needs are paused", "Connect to the internet later to check when this feature is available again.", Icons.Outlined.VolunteerActivism) }

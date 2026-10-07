@@ -154,6 +154,7 @@ struct ConversationView: View {
     @ObservedObject var chat: ChatEngine
     @ObservedObject var nearby: Nearby
     let id: String
+    @Environment(\.dismiss) private var dismiss
     @State private var draft = ""
     @State private var photoItem: PhotosPickerItem?
     @State private var viewing: UIImage?
@@ -187,8 +188,14 @@ struct ConversationView: View {
             : all.filter { ($0["id"] as? String) == thread || info.roots[$0["id"] as? String ?? ""] == thread }
         let canPost = thread != nil ? info.canReplyThreads : conversation?["joined"] as? Bool == true && (!channel || chat.capabilities(id)?["canPostTopLevel"] == true)
         VStack(spacing: 0) {
-            NavigationLink { InfoView(chat: chat, nearby: nearby, id: id) } label: { header(title: title, channel: channel, conversation: conversation) }
-                .buttonStyle(.plain).accessibilityHint(channel ? "Opens group members and settings" : "Opens this person's options")
+            // Like WhatsApp: the chat's own bar replaces the app header, with back beside the picture; tap the name for info.
+            HStack(spacing: 0) {
+                Button { dismiss() } label: { Image(systemName: "chevron.left").font(.title3.weight(.semibold)).foregroundStyle(Palette.primary).frame(width: 40, height: 44) }
+                    .accessibilityLabel("Back")
+                NavigationLink { InfoView(chat: chat, nearby: nearby, id: id) } label: { header(title: title, channel: channel, conversation: conversation) }
+                    .buttonStyle(.plain).accessibilityHint(channel ? "Opens group members and settings" : "Opens this person's options")
+            }.padding(.leading, 4).background(Palette.background)
+            Divider().overlay(Palette.outline)
             if let thread {
                 HStack(spacing: 8) {
                     Button { self.thread = nil; replyTo = nil } label: { Image(systemName: "chevron.left").font(.headline) }.accessibilityLabel("Back to chat")
@@ -236,8 +243,7 @@ struct ConversationView: View {
             composer(conversation, canPost: canPost, channel: channel, threadRoot: info.announce ? thread : nil, info: info)
         }
         .background(Palette.background.ignoresSafeArea())
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .principal) { Masthead(compact: true) } }
+        .toolbar(.hidden, for: .navigationBar) // the chat's own bar (above) replaces it
         .toolbar(.hidden, for: .tabBar) // Android hides the bottom destinations inside a conversation
         .task(id: messages.count) { await chat.read(id) }
         // Hold-to-talk: a clip that arrives while this chat is open plays by itself, like a walkie-talkie.
@@ -295,18 +301,17 @@ struct ConversationView: View {
             : conversation?["joined"] as? Bool == false ? "Left or removed · Saved history"
             : here ? (channel ? "Connected to a member nearby · posts deliver now" : "Connected nearby · messages deliver now")
             : (channel ? "\(members) member\(members == 1 ? "" : "s") · posts travel when you meet a member" : "Saved on this phone · delivers when you meet")
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                Avatar(name: title, channel: channel, locked: chat.isPrivate(conversation?["id"] as? String ?? ""))
-                Text(title).font(Type.titleLarge).foregroundStyle(Palette.ink).lineLimit(2)
-                Spacer(minLength: 0)
-                Image(systemName: "info.circle").foregroundStyle(Palette.primary)
+        return HStack(spacing: 10) {
+            Avatar(name: title, channel: channel, locked: chat.isPrivate(conversation?["id"] as? String ?? ""), size: 38)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(Type.titleMedium).foregroundStyle(Palette.ink).lineLimit(1)
+                HStack(spacing: 5) {
+                    Circle().fill(here ? Palette.primary : Palette.muted.opacity(0.5)).frame(width: 7, height: 7)
+                    Text(status).font(Type.labelSmall).foregroundStyle(Palette.muted).lineLimit(1)
+                }
             }
-            HStack(spacing: 6) {
-                Circle().fill(here ? Palette.primary : Palette.muted.opacity(0.5)).frame(width: 8, height: 8)
-                Text(status).font(Type.bodySmall).foregroundStyle(Palette.muted)
-            }
-        }.padding(.horizontal, 16).padding(.vertical, 12).frame(maxWidth: .infinity, alignment: .leading).background(Palette.background).contentShape(Rectangle())
+            Spacer(minLength: 0)
+        }.padding(.trailing, 16).padding(.vertical, 6).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
     }
 
     struct Threads { let roots: [String: String]; let counts: [String: Int]; let announce: Bool; let canReplyThreads: Bool }

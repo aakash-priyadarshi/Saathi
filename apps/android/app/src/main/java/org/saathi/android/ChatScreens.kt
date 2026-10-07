@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.zxing.BarcodeFormat
@@ -78,8 +79,8 @@ fun chatStatus(message:JSONObject)=when {
     else->"Saved · Waiting for connection"
 }
 /** First letter for people; a lock for private (invite-only) groups and # for open ones, as on iPhone. */
-@Composable private fun Avatar(name:String,channel:Boolean=false,locked:Boolean=false) {
-    Surface(Modifier.size(44.dp),shape=CircleShape,color=MaterialTheme.colorScheme.primaryContainer) {
+@Composable private fun Avatar(name:String,channel:Boolean=false,locked:Boolean=false,size:Dp=44.dp) {
+    Surface(Modifier.size(size),shape=CircleShape,color=MaterialTheme.colorScheme.primaryContainer) {
         Box(contentAlignment=Alignment.Center) {if(channel)Icon(if(locked)Icons.Outlined.Lock else Icons.Outlined.Tag,if(locked)"Private group" else null,Modifier.size(22.dp)) else Text(name.take(1).uppercase(),style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)}
     }
 }
@@ -213,7 +214,7 @@ fun AppState.shownMessages(conversationId:String)=chatMessages.filter{it.body().
     .sortedWith(compareBy<JSONObject>{it.body().getString("createdAt")}.thenBy{it.getString("id")})
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun ConversationScreen(vm:SaathiViewModel,state:AppState,id:String,call:(Boolean,Boolean)->Unit,record:()->Unit,createNeed:(JSONObject)->Unit,openNeed:(String)->Unit,modifier:Modifier,onVisibleMessages:suspend (List<String>)->Unit={vm.readChat(id,it)}) {
+@Composable fun ConversationScreen(vm:SaathiViewModel,state:AppState,id:String,call:(Boolean,Boolean)->Unit,record:()->Unit,createNeed:(JSONObject)->Unit,openNeed:(String)->Unit,modifier:Modifier,onVisibleMessages:suspend (List<String>)->Unit={vm.readChat(id,it)},back:(()->Unit)?=null) {
     val conversation=state.conversations.firstOrNull {it.getString("id")==id}
     if(conversation==null){EmptyState("Conversation unavailable","Return to Chats and try again.",Icons.Outlined.ChatBubbleOutline);return}
     val channel=conversation.getString("type")=="CHANNEL"
@@ -264,19 +265,22 @@ fun AppState.shownMessages(conversationId:String)=chatMessages.filter{it.body().
     var heardVoice by remember(id){mutableStateOf(newestVoice)}
     LaunchedEffect(newestVoice){if(newestVoice!=null&&newestVoice!=heardVoice){heardVoice=newestVoice;if(!state.recording)vm.playVoice(newestVoice)}}
     Column(modifier){
-        // Header as on iPhone: tap for group info (or the person's info), with what "delivered" means right now.
-        Column(Modifier.fillMaxWidth().clickable(onClickLabel=if(channel)"Group info" else "Contact info"){info=true}.semantics{contentDescription=if(channel)"Group info" else "Contact info"}.padding(horizontal=16.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
-            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){
-                Avatar(conversation.getString("title"),channel,state.isPrivate(id))
-                Text(conversation.getString("title"),Modifier.weight(1f),style=MaterialTheme.typography.titleLarge,maxLines=2,overflow=TextOverflow.Ellipsis)
-                if(callReady){IconButton(onClick={call(false,false)},enabled=!state.calling&&state.walkieConversation==null){Icon(Icons.Outlined.Call,"Nearby voice call")};IconButton(onClick={call(true,false)},enabled=!state.calling&&state.walkieConversation==null){Icon(Icons.Outlined.Videocam,"Nearby video call")}}
-                Icon(Icons.Outlined.Info,null,tint=MaterialTheme.colorScheme.primary)
+        // Like WhatsApp (and iPhone): the chat's own bar replaces the app header, with back beside the picture; tap for info.
+        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start=4.dp,end=4.dp,top=2.dp,bottom=2.dp),verticalAlignment=Alignment.CenterVertically){
+            if(back!=null)IconButton(onClick=back){Icon(Icons.Outlined.ArrowBack,"Back")}
+            Row(Modifier.weight(1f).clickable(onClickLabel=if(channel)"Group info" else "Contact info"){info=true}.semantics{contentDescription=if(channel)"Group info" else "Contact info"}.padding(vertical=4.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)){
+                Avatar(conversation.getString("title"),channel,state.isPrivate(id),40.dp)
+                Column(Modifier.weight(1f)){
+                    Text(conversation.getString("title"),style=MaterialTheme.typography.titleMedium,maxLines=1,overflow=TextOverflow.Ellipsis)
+                    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)){
+                        Box(Modifier.size(7.dp).background(if(here)MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha=.5f),CircleShape))
+                        Text(admissionState(conversation)?:if(conversation.optBoolean("pendingJoin"))"Waiting for the channel owner to add you" else if(!conversation.optBoolean("joined"))"Left or removed · Saved history" else if(here)(if(channel)"Connected to a member nearby · posts deliver now" else "Connected nearby · messages deliver now") else if(channel)"${members.size} member${if(members.size==1)"" else "s"} · posts travel when you meet a member" else "Saved on this phone · delivers when you meet",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
+                    }
+                }
             }
-            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)){
-                Box(Modifier.size(8.dp).background(if(here)MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha=.5f),CircleShape))
-                Text(admissionState(conversation)?:if(conversation.optBoolean("pendingJoin"))"Waiting for the channel owner to add you" else if(!conversation.optBoolean("joined"))"Left or removed · Saved history" else if(here)(if(channel)"Connected to a member nearby · posts deliver now" else "Connected nearby · messages deliver now") else if(channel)"${members.size} member${if(members.size==1)"" else "s"} · posts travel when you meet a member" else "Saved on this phone · delivers when you meet",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            if(callReady){IconButton(onClick={call(false,false)},enabled=!state.calling&&state.walkieConversation==null){Icon(Icons.Outlined.Call,"Nearby voice call")};IconButton(onClick={call(true,false)},enabled=!state.calling&&state.walkieConversation==null){Icon(Icons.Outlined.Videocam,"Nearby video call")}}
         }
+        HorizontalDivider()
         if(state.calling)CallPanel(vm,state)
         if(thread!=null)Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha=.5f)).padding(horizontal=4.dp),verticalAlignment=Alignment.CenterVertically){
             IconButton(onClick={thread=null}){Icon(Icons.Outlined.ArrowBack,"Back to chat")}
