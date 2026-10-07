@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -124,9 +125,9 @@ private val tabs = listOf(Triple("Chats",Icons.Outlined.ChatBubbleOutline,"Conve
                 visibleTabs.forEach { (name, icon, description) -> NavigationRailItem(page == name, { page = name; detail = null; form = null;conversation=null }, { Icon(icon, description) }, label = { Text(name) }) }
             }
             Scaffold(modifier = Modifier.weight(1f), containerColor = MaterialTheme.colorScheme.background,
-                // The SWARM by CJP lockup, 40 dp so the bar keeps its height; a conversation shows its own bar instead (like WhatsApp).
+                // The SWARM by CJP lockup (transparent; cream in dark mode, ink in light), 40 dp so the bar keeps its height; a conversation shows its own bar instead (like WhatsApp).
                 topBar = { if (!inConversation) TopAppBar(title = {
-                    Image(painterResource(R.drawable.swarm_header), "${BuildConfig.BRAND_DISPLAY} ${BuildConfig.BRAND_BYLINE}", Modifier.height(40.dp).clip(RoundedCornerShape(8.dp)))
+                    Image(painterResource(if (MaterialTheme.colorScheme.background.luminance() < .5f) R.drawable.swarm_header_dark else R.drawable.swarm_header), "${BuildConfig.BRAND_DISPLAY} ${BuildConfig.BRAND_BYLINE}", Modifier.height(40.dp))
                 }, navigationIcon = { if (detail != null || form != null || conversation!=null || page in listOf("Team","Saved","Connection")) IconButton(onClick = navigateBack) { Icon(Icons.Outlined.ArrowBack, "Back") } },
                     // Hidden for the Oct 2026 build: Team sign in / My team top-bar action.
                     // actions = { if(!inConversation) TextButton(onClick = { page = "Team"; detail = null; form = null;conversation=null }) { Text(if (state.preparation == null) "Team sign in" else "My team") } },

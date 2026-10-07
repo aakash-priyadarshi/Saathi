@@ -45,12 +45,12 @@ enum Type {
     static let labelSmall = manrope(11, "Medium", relativeTo: .caption2)
 }
 
-/// The SWARM by CJP lockup (bug and wordmark, as on Android), sized to the old two-line text so the bar keeps its height.
+/// The SWARM by CJP lockup on a transparent background (cream in dark mode, ink in light mode; as on Android), sized to
+/// the old two-line text so the bar keeps its height.
 struct Masthead: View {
     var compact = false
     var body: some View {
         Image("SwarmLockup").resizable().scaledToFit().frame(height: compact ? 28 : 40)
-            .clipShape(RoundedRectangle(cornerRadius: compact ? 6 : 8))
             .accessibilityLabel("SWARM by CJP")
     }
 }

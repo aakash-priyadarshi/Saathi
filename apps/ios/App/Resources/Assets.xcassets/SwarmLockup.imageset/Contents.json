@@ -1,4 +1,7 @@
 {
-  "images" : [ { "filename" : "swarm_lockup.png", "idiom" : "universal" } ],
+  "images" : [
+    { "filename" : "swarm_lockup_light.png", "idiom" : "universal" },
+    { "appearances" : [ { "appearance" : "luminosity", "value" : "dark" } ], "filename" : "swarm_lockup_dark.png", "idiom" : "universal" }
+  ],
   "info" : { "author" : "xcode", "version" : 1 }
 }
