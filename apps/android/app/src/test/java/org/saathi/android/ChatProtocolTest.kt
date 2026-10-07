@@ -47,5 +47,9 @@ class ChatProtocolTest {
         assertThrows(Exception::class.java){ChatProtocol.payload(obj("text" to "x".repeat(4001)))}
         assertThrows(Exception::class.java){ChatProtocol.payload(obj("reference" to obj("type" to "ADMIN_ACTION","id" to "x","title" to "Fake authority")))}
         assertThrows(Exception::class.java){ChatProtocol.payload(obj("text" to "Test","unexpected" to true))}
+        // Chat attachments share the 250 MB media limit.
+        fun video(size:Long)=obj("attachment" to obj("id" to "2e2e35ca-2bab-4b96-b016-0f3c8621b6d6","name" to "clip.mp4","mime" to "video/mp4","size" to size,"hash" to "a".repeat(64),"cipherHash" to "b".repeat(64),"key" to Protocol.b64(ByteArray(32))))
+        assertEquals(FieldMedia.MAX_BYTES,ChatProtocol.payload(video(FieldMedia.MAX_BYTES),"VIDEO").getJSONObject("attachment").getLong("size"))
+        assertThrows(Exception::class.java){ChatProtocol.payload(video(FieldMedia.MAX_BYTES+1),"VIDEO")}
     }
 }
