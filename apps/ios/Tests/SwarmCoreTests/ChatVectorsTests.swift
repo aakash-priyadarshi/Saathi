@@ -78,3 +78,66 @@ final class ChatVectorsTests: XCTestCase {
         XCTAssertThrowsError(try Canonical.data(["n": 1.5]))
     }
 }
+
+/// Android `ChatProtocol` rules, ported to Swift, accept the shared vectors and reject tampering.
+final class ChatRulesTests: XCTestCase {
+    private var v: [String: Any] = [:]
+    private var now = Date()
+    override func setUpWithError() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("android/app/src/test/resources/chat-vectors.json")
+        v = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        now = try Instant.parse(XCTUnwrap(v["now"] as? String))
+    }
+    private func o(_ k: String) -> JSON { v[k] as! JSON }
+
+    func testVectorsPassTheSameRulesAsAndroid() throws {
+        try ChatRules.message(o("dm"), policy: nil, now: now)
+        try ChatRules.policy(o("privateChannel"), now: now)
+        try ChatRules.message(o("privateMessage"), policy: o("privateChannel"), now: now)
+        try ChatRules.policy(o("openChannel"), now: now)
+        try ChatRules.message(o("openMessage"), policy: o("openChannel"), now: now)
+        XCTAssertTrue(ChatRules.member(o("privateChannel"), ChatRules.participant(((o("privateMessage")["body"] as! JSON)["author"] as! JSON))))
+    }
+    func testTamperingAndWrongContextAreRejected() throws {
+        var forged = o("dm"); var body = forged["body"] as! JSON; body["sequence"] = 2; forged["body"] = body
+        XCTAssertThrowsError(try ChatRules.message(forged, policy: nil, now: now))
+        XCTAssertThrowsError(try ChatRules.message(o("privateMessage"), policy: o("openChannel"), now: now), "wrong channel policy")
+        XCTAssertThrowsError(try ChatRules.policy(o("privateChannel"), now: now.addingTimeInterval(7 * 3600)), "expired policy")
+    }
+    func testEncryptionRoundTripsAndKeepsTheExactHeader() throws {
+        let priv = o("recipientPrivateJwk")
+        let pub: JSON = ["kty": "EC", "crv": "P-256", "x": priv["x"]!, "y": priv["y"]!]
+        let jwe = try ChatCrypto.encrypt(["text": "Gate 2 is closed"], publicKey: pub, kid: "dm:a:b:c")
+        try ChatRules.jweHeader(jwe, algorithm: "ECDH-ES", kid: "dm:a:b:c")
+        XCTAssertEqual(try ChatCrypto.decrypt(jwe, privateKey: priv, kid: "dm:a:b:c")["text"] as? String, "Gate 2 is closed")
+        let key = Data((0..<32).map { UInt8($0) })
+        let dir = try ChatCrypto.encrypt(["text": "x"], symmetricKey: key, kid: "channel:k")
+        try ChatRules.jweHeader(dir, algorithm: "dir", kid: "channel:k")
+        XCTAssertEqual(try ChatCrypto.decrypt(dir, symmetricKey: key, kid: "channel:k")["text"] as? String, "x")
+        XCTAssertThrowsError(try ChatCrypto.decrypt(dir, symmetricKey: Data(count: 32), kid: "channel:k"))
+    }
+    func testInstantsMatchJavaAndJavaScript() throws {
+        let d = try Instant.parse("2026-10-07T07:04:57.123456789Z")
+        XCTAssertEqual(Instant.string(d), "2026-10-07T07:04:57.123Z")
+        XCTAssertEqual(try Instant.parse("2026-10-07T07:04:57Z").timeIntervalSince1970, 1791356697)
+        XCTAssertThrowsError(try Instant.parse("2026-10-07 07:04:57Z"))
+    }
+}
+
+/// Writes iPhone-made documents for `scripts/ios-interop.mjs`, which checks them with @saathi/protocol.
+final class InteropExportTests: XCTestCase {
+    func testExportDocumentsForTypeScriptValidation() throws {
+        guard let out = ProcessInfo.processInfo.environment["SWARM_INTEROP_OUT"] else { throw XCTSkip("Set SWARM_INTEROP_OUT to export.") }
+        let me = ChatIdentity(), peer = ChatIdentity()
+        let profile = try ChatDocuments.profile(me, name: "iPhone Rohan"), peerProfile = try ChatDocuments.profile(peer, name: "Android peer")
+        let conversation = try ChatCrypto.directConversationID(me.participantID, peer.participantID)
+        let dm = try ChatDocuments.message(me, profile: profile, conversationID: conversation, recipient: peerProfile, sequence: 1,
+                                           payload: ["text": "Water at Gate 2 ✅ — पानी"], format: "TEXT")
+        let receipt = try ChatDocuments.receipt(peer, profile: peerProfile, for: dm, status: "DELIVERED")
+        let join = try ChatDocuments.join(me, profile: profile, channelID: UUID().uuidString.lowercased(), action: "JOIN")
+        let doc: JSON = ["profile": profile, "peerProfile": peerProfile, "dm": dm, "receipt": receipt, "join": join,
+                         "peerEncryptionPrivateJwk": peer.encryptionPrivateJWK]
+        try JSONSerialization.data(withJSONObject: doc).write(to: URL(fileURLWithPath: out))
+    }
+}

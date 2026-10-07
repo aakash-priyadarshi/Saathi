@@ -103,6 +103,33 @@ public enum ChatCrypto {
         return "dm:" + sha256Hex(try Canonical.data(["SWARM_DM_V1"] + [a, b].sorted()))
     }
 
+    /// Encrypts canonical(value) as a compact chat JWE: ECDH-ES (direct key agreement, empty apu/apv) to a public
+    /// P-256 JWK, or `dir` with a 32-byte key. Header is exactly alg, enc, typ, kid (+ epk), as Android/TypeScript require.
+    public static func encrypt(_ value: [String: Any], publicKey: [String: Any]? = nil, symmetricKey: Data? = nil, kid: String) throws -> String {
+        var header: [String: Any] = ["enc": "A256GCM", "typ": "SWARM_CHAT_V1", "kid": kid]
+        let cek: CryptoKit.SymmetricKey
+        if let symmetricKey {
+            guard symmetricKey.count == 32 else { throw ChatCryptoError.invalidKey }
+            header["alg"] = "dir"; cek = CryptoKit.SymmetricKey(data: symmetricKey)
+        } else {
+            guard let jwk = publicKey else { throw ChatCryptoError.invalidKey }
+            let recipient = try P256.KeyAgreement.PublicKey(x963Representation: signingKey(jwk).x963Representation)
+            let ephemeral = P256.KeyAgreement.PrivateKey()
+            let z = try ephemeral.sharedSecretFromKeyAgreement(with: recipient).withUnsafeBytes { Data($0) }
+            // RFC 7518 §4.6.2 Concat KDF, one SHA-256 round: AlgorithmID = "A256GCM", empty PartyU/VInfo, keydatalen 256.
+            func be32(_ n: Int) -> Data { withUnsafeBytes(of: UInt32(n).bigEndian) { Data($0) } }
+            let alg = Data("A256GCM".utf8)
+            let info = be32(1) + z + be32(alg.count) + alg + be32(0) + be32(0) + be32(256)
+            cek = CryptoKit.SymmetricKey(data: Data(SHA256.hash(data: info)))
+            let x963 = ephemeral.publicKey.x963Representation
+            header["alg"] = "ECDH-ES"
+            header["epk"] = ["kty": "EC", "crv": "P-256", "x": base64url(x963[1..<33]), "y": base64url(x963[33..<65])]
+        }
+        let protected = base64url(try Canonical.data(header))
+        let sealed = try AES.GCM.seal(Canonical.data(value), using: cek, nonce: AES.GCM.Nonce(), authenticating: Data(protected.utf8))
+        return [protected, "", base64url(Data(sealed.nonce)), base64url(sealed.ciphertext), base64url(sealed.tag)].joined(separator: ".")
+    }
+
     /// Decrypts a chat JWE (ECDH-ES with a private JWK, or `dir` with a 32-byte key), enforcing the same
     /// header rules as Android/TypeScript: exact fields, A256GCM, typ SWARM_CHAT_V1 and the expected kid.
     public static func decrypt(_ compact: String, privateKey: [String: Any]? = nil, symmetricKey: Data? = nil, kid: String) throws -> [String: Any] {
