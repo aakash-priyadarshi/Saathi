@@ -109,11 +109,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           apk='dist/app-staging.apk'
-          public_apk='dist/CJP-Swarm-Android-QA.apk'
+          public_apk='dist/CJP-Swarm-Android.apk'
           test -s "$apk"
           cp "$apk" "$public_apk"
           sha256sum "$public_apk" > "$public_apk.sha256"
           gh release create "$GITHUB_REF_NAME" "$public_apk" "$public_apk.sha256" \
-            --title "CJP Swarm Android QA $GITHUB_REF_NAME" \
-            --prerelease \
-            --notes "Public staging build for testers. Package: org.saathi.android.qa. Uses the staging service and test data; not for production. This version adds a correctly themed dark chat surface with brighter contrasting outgoing/incoming bubbles, verified on an Android emulator, alongside inline photo thumbnails with an enlargement preview, compact direction-colored light-mode message bubbles, a compact-screen-safe message-actions sheet and approval-gated private-channel join links. Verify the APK with the attached SHA-256 file."
+            --title "CJP Swarm for Android ${GITHUB_REF_NAME#android-v}" \
+            --latest \
+            --notes "CJP Swarm for Android. Package org.saathi.android.qa, so it installs over earlier test builds and keeps their chats. Verify the APK with the attached SHA-256 file."

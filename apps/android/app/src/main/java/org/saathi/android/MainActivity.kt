@@ -137,7 +137,6 @@ private val tabs = listOf(Triple("Chats",Icons.Outlined.ChatBubbleOutline,"Conve
                 Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
                     val environmentLabel = when (BuildConfig.ENVIRONMENT) {
                         "development" -> "DEVELOPMENT · Local services"
-                        "staging" -> "STAGING · QA services"
                         else -> null
                     }
                     if (!inConversation) environmentLabel?.let { label -> Surface(color = MaterialTheme.colorScheme.errorContainer) { Text(label, Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onErrorContainer) } }
