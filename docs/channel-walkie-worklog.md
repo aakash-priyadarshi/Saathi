@@ -62,6 +62,14 @@ also exposed a delayed-success race: API results now respect the browser's
 offline state. Desktop/mobile cold-offline tests explicitly inject a late
 successful response and verify online reservation controls remain hidden.
 
+The final browser relay check exposed a second preparation race: the background
+connection check could be interrupted before receipt verification keys were
+saved. Explicit offline preparation now awaits validated key storage before
+showing its ready notice. The two-hop regression blocks the carrier's background
+configuration check, then verifies that a signed publication receipt still
+returns through that offline carrier. It failed before the fix and passed after
+the fix on desktop and mobile, alongside both cold-offline checks.
+
 ## Deployment
 
 The changed API must be updated alongside the web image for online 200-member
@@ -81,3 +89,8 @@ Lightsail browser SSH session. Both API and web containers reported healthy,
 and the image revision matched `80aa554c30b6daaa76aa38d727b0c9b3416c0565`.
 The public configuration route returned HTTP 200 through both the web origin
 and the separate API origin. Dynamic signed API configuration remains unchanged.
+
+The delayed-response fix image `b28034b3f0e0e4f3e9e6bc4d79b1856353329174`
+was subsequently applied; both containers were healthy and both API routes
+returned HTTP 200. The receipt-preparation correction uses the same deployment
+procedure after its image is published.

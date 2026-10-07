@@ -14,7 +14,7 @@ import {
   type SavedEvent,
   type Preparation,
 } from '../lib/offline/store';
-import { preparePublishing, syncEvents } from '../lib/offline/sync';
+import { pinReceiptKey, preparePublishing, syncEvents } from '../lib/offline/sync';
 import { formatDate } from '../lib/api';
 import { api, write } from '../lib/api';
 import { changed } from '../lib/offline/store';
@@ -136,6 +136,9 @@ export function ConnectivityPage() {
       registration.active?.postMessage('PREPARE', [channel.port2]);
     });
     if (!reply.ok) throw new Error('Offline opening could not be prepared.');
+    // A carrier must be able to verify returned confirmations without internet.
+    // Do not rely on the background connection check finishing before navigation.
+    await pinReceiptKey();
     const persistent = await navigator.storage?.persist?.();
     await setSetting('offline-prepared', new Date().toISOString());
     setNotice(
@@ -279,9 +282,9 @@ export function ConnectivityPage() {
       <section className="offline-preparation">
         <h2>Prepare before you lose internet</h2>
         <p>
-          Open Swarm once while connected. Save the app for offline opening, then prepare
-          publishing if you are an approved volunteer. Removing Swarm or clearing browser data
-          removes local work and keys.
+          Open Swarm once while connected. Save the app for offline opening, then prepare publishing
+          if you are an approved volunteer. Removing Swarm or clearing browser data removes local
+          work and keys.
         </p>
         <div className="connect-actions">
           <button

@@ -41,6 +41,12 @@ on foreground return, reports whether local Wi-Fi pairing has an address.
 USB tethering does not count. This is a hint, not a connectivity guarantee:
 client isolation and incompatible networks can still prevent pairing.
 
+Prepare each app online before field use so its signed feature configuration
+is cached. Browser users should also select “Save app for offline opening”; this
+waits for receipt verification keys as well as the app shell. The isolated
+native radio fixture enabled transport features locally, so it qualifies the
+radio path rather than first-run HTTPS configuration provisioning.
+
 If no local Wi-Fi address exists, the app suggests one consenting participant
 enable a hotspot and others join, with system settings buttons. It never silently
 enables a hotspot, changes saved networks or asks users to host merely to send a

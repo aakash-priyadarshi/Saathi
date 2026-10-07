@@ -392,6 +392,9 @@ test('two-hop relay publishes once while the author is absent and carries a sign
       .fill(process.env.SEED_PASSWORD ?? 'Saathi-demo-2026!');
     await a.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(a).toHaveURL('/dashboard');
+    // Offline preparation must pin confirmation keys itself, even when the
+    // background connection check never reaches its separate key request.
+    await cb.route('**/api/v1/public/config', (route) => route.abort());
     await Promise.all([prepareApp(a), prepareApp(b), prepareApp(c)]);
     await a.getByRole('button', { name: 'Prepare volunteer publishing' }).click();
     await expect(
