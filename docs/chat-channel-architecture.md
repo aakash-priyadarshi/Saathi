@@ -73,3 +73,11 @@ Previous transport tests remain evidence at their recorded scope. Three Android 
 | Existing security/offline regressions                              | 26 unit, 45 PostgreSQL, 14 browser and nine native JVM cases passed; retained physical Wi-Fi/call/relay passed at its recorded artifact hash            |
 
 Completion here means a usable, tested development/QA communication extension. The unverified rows and independent security/hosted-release gates remain explicit; they are not filled in from code existence or earlier transport evidence.
+
+## Replies, forwarding, deletion, threads and group types
+
+Message payloads may carry `replyTo` (the UUID of a message in the same conversation) and `forwarded: true`. A reply belongs to the thread of the top-level message it transitively answers; clients show "N replies" and a thread view. In announcement-mode channels a member's reply also sets the signed `threadRootId`, so it is authorized by `canReplyInThreads` and stays inside the post's thread; free-chat channels and DMs use `replyTo` alone and also show replies inline.
+
+Delete for everyone is a signed `SYSTEM` message whose payload is exactly `{ "deletes": "<message UUID>" }`. Receivers hide the target only when the marker's author is the target's author, and drop its media. A channel moderator removes someone else's post with the existing `HIDE_MESSAGE` action. Delete for me is local only and survives resynchronization. Older clients reject the new payload fields, so a release that sends them must reach every phone.
+
+Group types reuse channel settings without new fields: free chat is `DISCUSSION`; admins-post-members-reply is `ANNOUNCEMENT`; view only is `ANNOUNCEMENT` with `settings.capabilities.MEMBER` denying top-level posts, thread replies, thread creation and media. Join links are `CHAT_ADMISSION` documents with `recipientId: "*"`; the requester signs the join, a manager approves it, the owner's phone reserves the link for its first requester and the API rejects a second participant.
