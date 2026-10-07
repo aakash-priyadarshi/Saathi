@@ -144,7 +144,11 @@ object ChatProtocol {
     }
     fun payload(payload: JSONObject,format:String?=null): JSONObject {
         require(Protocol.canonical(payload).size<=12000)
-        require(payload.keys().asSequence().all { it in listOf("text","attachment","reference","mentions") })
+        require(payload.keys().asSequence().all { it in listOf("text","attachment","reference","mentions","replyTo","forwarded","deletes") })
+        // Delete for everyone: a SYSTEM message carrying only the id of the author's earlier message.
+        if(payload.has("deletes")){require(payload.length()==1 && (format==null || format=="SYSTEM"));uuid(payload.getString("deletes"));return payload}
+        if(payload.has("replyTo"))uuid(payload.getString("replyTo"))
+        if(payload.has("forwarded"))require(payload.get("forwarded")==true)
         if(payload.has("text")) text(payload,"text",4000)
         if(payload.has("mentions")) { val ids=payload.getJSONArray("mentions").strings(); require(ids.size<=8 && ids.distinct().size==ids.size); ids.forEach { id(it) } }
         if(payload.has("reference")) { val r=payload.getJSONObject("reference"); r.exact("type","id","title"); require(r.getString("type") in listOf("NEED","UPDATE")); text(r,"id",80); text(r,"title",120) }

@@ -129,7 +129,7 @@ class ChatRepository(private val context: Context, private val repository: Repos
             }else{val p=current(b.getString("conversationId"));p!=null && live(p) && !pendingMembership(p) && ChatProtocol.member(p,person)}
         }
     }
-    suspend fun attach(conversationId:String,source:Uri,mimeOverride:String?=null,nameOverride:String?=null,threadRootId:String?=null)=withContext(Dispatchers.IO){
+    suspend fun attach(conversationId:String,source:Uri,mimeOverride:String?=null,nameOverride:String?=null,threadRootId:String?=null,forwarded:Boolean=false)=withContext(Dispatchers.IO){
         val sourceMime=mimeOverride?:context.contentResolver.getType(source)?:error("Choose a photo, audio, video or text file.")
         require(sourceMime in listOf("image/jpeg","image/png","image/webp","audio/mp4","audio/mpeg","video/mp4","video/webm","text/plain"))
         val name=nameOverride?:context.contentResolver.query(source,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)?.use { require(it.moveToFirst());it.getString(0) }?: "Attachment"
@@ -149,7 +149,7 @@ class ChatRepository(private val context: Context, private val repository: Repos
         val attachment=obj("id" to id,"name" to (if(compressed!=null)name.substringBeforeLast('.')+".mp4" else name).take(100),"mime" to mime,"size" to plainSize,"hash" to plainHash,"cipherHash" to file.getString("hash"),"key" to Protocol.b64(key))
         val format=if(mime.startsWith("image/"))"PHOTO" else if(mime.startsWith("video/"))"VIDEO" else if(mime.startsWith("audio/"))"VOICE" else "FILE"
         try {
-            val messageId=sendUnlocked(conversationId,obj("attachment" to attachment),format,threadRootId)
+            val messageId=sendUnlocked(conversationId,obj("attachment" to attachment).apply{if(forwarded)put("forwarded",true)},format,threadRootId)
             val envelope=store.get("chat-messages",messageId)!!.getJSONObject("envelope")
             val manifest=signed(obj("v" to 1,"kind" to "CHAT_ATTACHMENT","id" to id,"messageId" to messageId,"messageHash" to Protocol.hash(envelope),"author" to profile(),"size" to file.getInt("size"),"cipherHash" to file.getString("hash"),"expiresAt" to envelope.getJSONObject("body").getString("expiresAt")))
             save("chat-manifests",messageId,obj("id" to messageId,"manifest" to manifest))
@@ -548,7 +548,10 @@ class ChatRepository(private val context: Context, private val repository: Repos
         ChatProtocol.payload(payload,b.getString("format")); remember(b.getJSONObject("author"))
         if(p==null && store.get("chat-conversations",b.getString("conversationId"))==null)save("chat-conversations",b.getString("conversationId"),obj("id" to b.getString("conversationId"),"type" to "DIRECT","peerId" to author,"title" to b.getJSONObject("author").getJSONObject("body").getString("name"),"muted" to false,"joined" to true,"lastRead" to Instant.EPOCH.toString()))
         val record=obj("id" to id,"envelope" to envelope,"payload" to payload,"owned" to false,"hops" to hops,"receivedAt" to now().toString(),"serverSaved" to server)
-        save("chat-messages",id,record); sendReceipt(record,"DELIVERED"); onIncoming(id);onChange()
+        save("chat-messages",id,record); sendReceipt(record,"DELIVERED")
+        // Delete for everyone: drop the deleted message's media when its author asked.
+        payload.optString("deletes").ifEmpty{null}?.let{target->store.get("chat-messages",target)?.takeIf{ChatProtocol.participant(it.getJSONObject("envelope").getJSONObject("body").getJSONObject("author"))==author}?.getJSONObject("payload")?.optJSONObject("attachment")?.let{session.removeFile(it.getString("id"))}}
+        onIncoming(id);onChange()
     }
     private suspend fun sendReceipt(record:JSONObject,status:String) {
         val r=receipt(record,status); val b=r.getJSONObject("body"); val id=b.getString("messageId")+":"+self()+":"+status
@@ -570,6 +573,33 @@ class ChatRepository(private val context: Context, private val repository: Repos
         try{for(record in visible){currentCoroutineContext().ensureActive();sendReceipt(record,"READ");record.put("readLocally",true);save("chat-messages",record.getString("id"),record);changed=true}}
         finally{if(changed)onChange()}
     } }
+    /** Delete for me: hidden on this phone only (re-synced copies stay hidden); its media file is removed. */
+    suspend fun deleteForMe(messageId:String)=withContext(Dispatchers.IO){lock.withLock{
+        val record=store.get("chat-messages",messageId)?:return@withLock
+        save("chat-deleted",messageId,obj("id" to messageId))
+        record.getJSONObject("payload").optJSONObject("attachment")?.let{session.removeFile(it.getString("id"))}
+        onChange()
+    }}
+    /** Delete for everyone: a signed SYSTEM message naming the author's own message; every phone hides it. */
+    suspend fun deleteForEveryone(messageId:String)=withContext(Dispatchers.IO){lock.withLock{
+        val record=store.get("chat-messages",messageId)?:error("Message is unavailable.")
+        require(record.optBoolean("owned")){"Only the sender can delete a message for everyone."}
+        val b=record.getJSONObject("envelope").getJSONObject("body")
+        sendUnlocked(b.getString("conversationId"),obj("deletes" to messageId),"SYSTEM",b.optString("threadRootId").ifEmpty{null})
+        record.getJSONObject("payload").optJSONObject("attachment")?.let{session.removeFile(it.getString("id"))}
+        onChange()
+    }}
+    /** Forward text or a verified attachment to other chats, marked as forwarded. */
+    suspend fun forward(messageId:String,targets:List<String>)=withContext(Dispatchers.IO){
+        val record=store.get("chat-messages",messageId)?:error("Message is unavailable.")
+        val payload=record.getJSONObject("payload");val attachment=payload.optJSONObject("attachment")
+        if(attachment==null){targets.forEach{send(it,obj("text" to payload.getString("text"),"forwarded" to true))};return@withContext}
+        val copy=java.io.File(java.io.File(context.cacheDir,"chat-processing").apply{mkdirs()},UUID.randomUUID().toString())
+        try{
+            copy.outputStream().use{decryptTo(messageId,it)}
+            targets.forEach{attach(it,Uri.fromFile(copy),attachment.getString("mime"),attachment.getString("name"),forwarded=true)}
+        }finally{copy.delete()}
+    }
     suspend fun mute(id:String)=withContext(Dispatchers.IO) { lock.withLock { val c=store.get("chat-conversations",id)!!;c.put("muted",!c.optBoolean("muted"));save("chat-conversations",id,c);onChange() } }
     suspend fun block(id:String)=withContext(Dispatchers.IO) { lock.withLock { if(blocked(id))store.remove("chat-blocks",id) else save("chat-blocks",id,obj("id" to id));onChange() } }
     suspend fun report(messageId:String,reason:String)=withContext(Dispatchers.IO) { lock.withLock { require(reason in listOf("ABUSE","SPAM","SAFETY","OTHER") && store.get("chat-messages",messageId)!=null);require(store.all("chat-reports").size<100){"Report queue is full. Connect to send pending reports."};val id=UUID.randomUUID().toString();save("chat-reports",id,obj("id" to id,"messageId" to messageId,"reason" to reason));onChange() } }

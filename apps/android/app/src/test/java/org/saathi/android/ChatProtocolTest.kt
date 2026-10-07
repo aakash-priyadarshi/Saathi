@@ -42,6 +42,15 @@ class ChatProtocolTest {
         assertThrows(Exception::class.java){ChatProtocol.message(message,null,time)}
         assertThrows(Exception::class.java){ChatProtocol.message(v.getJSONObject("privateMessage"),v.getJSONObject("openChannel"),time)}
     }
+    @Test fun replyForwardAndDeleteForEveryonePayloads(){
+        val id="7d0b4c0e-3c8b-4c1e-9a43-0b0f6b1f2f11"
+        ChatProtocol.payload(obj("text" to "Yes","replyTo" to id,"forwarded" to true),"TEXT")
+        ChatProtocol.payload(obj("deletes" to id),"SYSTEM")
+        assertThrows(Exception::class.java){ChatProtocol.payload(obj("deletes" to id),"TEXT")}
+        assertThrows(Exception::class.java){ChatProtocol.payload(obj("deletes" to id,"text" to "x"),"SYSTEM")}
+        assertThrows(Exception::class.java){ChatProtocol.payload(obj("text" to "x","replyTo" to "not-a-uuid"))}
+        assertThrows(Exception::class.java){ChatProtocol.payload(obj("text" to "x","forwarded" to false))}
+    }
     @Test fun payloadValidationBoundsMediaMentionsAndReferences(){
         assertEquals("Hello",ChatProtocol.payload(obj("text" to "Hello")).getString("text"))
         assertThrows(Exception::class.java){ChatProtocol.payload(obj("text" to "x".repeat(4001)))}

@@ -49,17 +49,17 @@ class ChatReadUiTest {
             ui.waitUntil(15000){vm.state.value.chatMessages.any{it.getJSONObject("envelope").getJSONObject("body").getString("conversationId")==channel&&it.getJSONObject("payload").has("attachment")}}
             ui.setContent { if(shown.value){val state by vm.state.collectAsState();SaathiTheme{ConversationScreen(vm,state,channel,{_,_->},{},{},{},androidx.compose.ui.Modifier.fillMaxSize())}} }
             ui.onNodeWithText("Fictional coordination: meet at the public entrance.").assertIsDisplayed()
-            ui.onNodeWithText("Fictional field photo.png").assertIsDisplayed()
+            ui.waitUntil(15000){ui.onAllNodesWithContentDescription("Private chat photo").fetchSemanticsNodes().isNotEmpty()}
             listOf("0 replies","Thanks","Lock thread","Hide","Report","Export verified attachment","Sync encrypted attachment","Create Help Request").forEach{ui.onNodeWithText(it).assertDoesNotExist()}
             ui.onRoot().captureToImage().asAndroidBitmap().let{capture->File(context.cacheDir,"chat-simple-message.png").outputStream().use{capture.compress(Bitmap.CompressFormat.PNG,100,it)}}
             val textMessageId=vm.state.value.chatMessages.first{it.getJSONObject("payload").optString("text").contains("Fictional coordination")}.getString("id")
-            ui.onNodeWithTag("message-actions-$textMessageId").performClick()
-            listOf("Copy message","Reply in thread","Thank sender","Lock replies","Hide message").forEach{ui.onNodeWithText(it).assertIsDisplayed()}
+            ui.onNodeWithTag("message-$textMessageId").performTouchInput{longClick()}
+            listOf("Reply","Copy","Forward","Delete").forEach{ui.onNodeWithText(it).assertIsDisplayed()}
             ui.onRoot().captureToImage().asAndroidBitmap().let{capture->File(context.cacheDir,"chat-simple-actions.png").outputStream().use{capture.compress(Bitmap.CompressFormat.PNG,100,it)}}
-            ui.onNodeWithText("Copy message").performClick()
+            ui.onNodeWithText("Copy").performClick()
             val attachmentMessageId=vm.state.value.chatMessages.first{it.getJSONObject("payload").has("attachment")}.getString("id")
-            ui.onNodeWithTag("message-actions-$attachmentMessageId").performClick()
-            listOf("Save attachment","Check for updates").forEach{ui.onNodeWithText(it).assertIsDisplayed()}
+            ui.onNodeWithTag("message-$attachmentMessageId").performTouchInput{longClick()}
+            listOf("Forward","Save","Delete").forEach{ui.onNodeWithText(it).assertIsDisplayed()}
         } finally {
             ui.runOnIdle{shown.value=false;viewModels.clear()}
             SecureStore(context,storageScope).use{it.clearPrivate()};context.deleteDatabase("saathi-$storageScope.db");imageFile.delete()
@@ -79,11 +79,13 @@ class ChatReadUiTest {
             ui.setContent{if(shown.value){val state by vm.state.collectAsState();SaathiTheme{ConversationScreen(vm,state,channel,{_,_->},{},{},{},Modifier.fillMaxSize())}}}
             // Real frame/file callbacks can arrive faster than hardware Keystore reads finish.
             repeat(100){vm.refreshLocal()}
-            ui.onNodeWithContentDescription("Conversation settings").performClick()
-            ui.onNodeWithText("Channel settings").assertIsDisplayed()
-            ui.onNodeWithText("Create private-channel join link").assertIsDisplayed()
+            ui.onNodeWithContentDescription("Group info").performClick()
+            ui.onNodeWithText("Group info").assertIsDisplayed()
+            ui.onNodeWithText("Add people").performClick()
+            ui.onNodeWithText("Create join link").assertIsDisplayed()
             ui.onNodeWithText("Done").performClick()
-            ui.onNodeWithText("Channel settings").assertDoesNotExist()
+            ui.onNodeWithContentDescription("Back").performClick()
+            ui.onNodeWithText("Group info").assertDoesNotExist()
             assertNull(vm.state.value.notice)
         } finally {
             ui.runOnIdle{shown.value=false;viewModels.clear()}

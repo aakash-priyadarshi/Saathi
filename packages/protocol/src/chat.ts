@@ -343,6 +343,10 @@ export const chatPayloadSchema = z
       })
       .strict()
       .optional(),
+    replyTo: z.string().uuid().optional(),
+    forwarded: z.literal(true).optional(),
+    /** Delete for everyone: a SYSTEM message carrying only the id of the author's earlier message. */
+    deletes: z.string().uuid().optional(),
     attachment: z
       .object({
         id: z.string().uuid(),
@@ -366,9 +370,13 @@ export const chatPayloadSchema = z
       .optional(),
   })
   .strict()
-  .refine((p) => !!(p.text || p.reference || p.attachment));
+  .refine((p) => (p.deletes ? Object.keys(p).length === 1 : !!(p.text || p.reference || p.attachment)));
 export function validChatPayload(value: unknown, format: ChatMessage['body']['format']) {
   const payload = chatPayloadSchema.parse(value);
+  if (payload.deletes) {
+    if (format !== 'SYSTEM') throw new Error('Invalid chat payload.');
+    return payload;
+  }
   if (
     bytes(payload).length > 12000 ||
     (['TEXT', 'SYSTEM'].includes(format) && !payload.text) ||

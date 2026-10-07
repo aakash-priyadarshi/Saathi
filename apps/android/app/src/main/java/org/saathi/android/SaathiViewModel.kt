@@ -36,6 +36,7 @@ data class AppState(
     val localHelp:List<JSONObject> = emptyList(),val participantReports:List<JSONObject> = emptyList(),
     val chatPolicies:List<JSONObject> = emptyList(),val chatBlocks:Set<String> = emptySet(),
     val chatJoinInbox:List<JSONObject> = emptyList(),val chatReportInbox:List<JSONObject> = emptyList(),
+    val chatDeleted:Set<String> = emptySet(), val transfers:Map<String,Float> = emptyMap(),
     val relayReservedBytes:Long = 0,
     val gatewayStatus:String = "No recent Swarm internet gateway is known.",
     val hotspot: SwarmHotspot.Network? = null,
@@ -123,7 +124,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         synchronized(incomingChats){incomingChats.add(id)}
         if(chatNotice?.isActive==true)return
         chatNotice=viewModelScope.launch{delay(1200);val ids=synchronized(incomingChats){incomingChats.toList().also{incomingChats.clear()}};withContext(Dispatchers.IO){
-            val fresh=ids.mapNotNull{repository.store.get("chat-messages",it)}.filter{m->val c=repository.store.get("chat-conversations",m.getJSONObject("envelope").getJSONObject("body").getString("conversationId"));c!=null&&!c.optBoolean("muted")&&!m.optBoolean("readLocally")}
+            val fresh=ids.mapNotNull{repository.store.get("chat-messages",it)}.filter{m->val c=repository.store.get("chat-conversations",m.getJSONObject("envelope").getJSONObject("body").getString("conversationId"));c!=null&&!c.optBoolean("muted")&&!m.optBoolean("readLocally")&&!m.getJSONObject("payload").has("deletes")}
             if(fresh.isNotEmpty())notice("${fresh.size} new message${if(fresh.size==1)"" else "s"} received${if(fresh.any{it.getJSONObject("payload").optJSONArray("mentions")?.strings()?.contains(ChatProtocol.participant(chat.profile()))==true})" · You were mentioned" else ""}.")
         }}
     }
@@ -258,6 +259,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
                 val actions=store.all("chat-actions");val help=community.helps();val reports=community.reports()
                 val policies=chat.policies();val blocks=store.all("chat-blocks").map{it.getString("id")}.toSet()
                 val joins=store.all("chat-join-inbox");val reportInbox=store.all("chat-report-inbox")
+                val deleted=store.all("chat-deleted").map{it.getString("id")}.toSet();val transfers=HashMap(session.progress)
                 val reserved=store.get("relay-usage",java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString())?.optLong("bytes")?:0
                 val events=repository.events();val messages=store.all("messages");val files=store.all("attachments");val drafts=store.all("drafts")
                 val donations=store.all("donations");val operations=store.all("operations");val preparation=repository.preparation;val account=store.get("account","user")
@@ -265,7 +267,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
                 val localWifiAddress=LocalNetworkAdvice.hasWifiAddress()
                 mutable.update { it.copy(requests=requests,completed=completed,posts=posts,savedAt=savedAt,authenticated=authenticated,
                     chatProfile=profile,chatContacts=contacts,conversations=conversations,chatMessages=chatMessages,chatPeer=peer,nearbyChannels=channels,
-                    chatActions=actions,localHelp=help,participantReports=reports,chatPolicies=policies,chatBlocks=blocks,chatJoinInbox=joins,chatReportInbox=reportInbox,relayReservedBytes=reserved,
+                    chatActions=actions,localHelp=help,participantReports=reports,chatPolicies=policies,chatBlocks=blocks,chatJoinInbox=joins,chatReportInbox=reportInbox,chatDeleted=deleted,transfers=transfers,relayReservedBytes=reserved,
                     events=events,messages=messages,files=files,drafts=drafts,donations=donations,operations=operations,preparation=preparation,account=account,confirmed=confirmed,media=media,walkieAvailable=media&&session.remoteWalkieTalkie,needsEnabled=repository.needsEnabled,localWifiAddress=localWifiAddress,gatewayStatus=community.gatewayStatus()) }
             } catch (_: Exception) { notice("Saved information could not be unlocked. Do not clear app storage if you need to recover work.") }
     }
@@ -317,8 +319,11 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     fun joinInvite(link:String,open:(String)->Unit)=chatAction { open(chat.acceptInvite(link));runCatching {chat.sync()} }
     fun invitePerson(id:String,person:JSONObject,show:(String)->Unit)=chatAction { show(chat.invite(id,person));runCatching {chat.sync()} }
     fun createChannelJoinLink(id:String,show:(String)->Unit)=chatAction { show(chat.createJoinLink(id)) }
-    fun chatSend(id:String,text:String,mentions:List<String> = emptyList(),threadRootId:String?=null,saved:()->Unit={})=chatAction { val payload=obj("text" to text);if(mentions.isNotEmpty())payload.put("mentions",org.json.JSONArray(mentions));chat.send(id,payload,threadRootId=threadRootId);saved();runCatching {chat.sync()} }
-    fun moderateChannel(id:String,action:String,target:String,role:String?=null,reaction:String?=null)=chatAction {chat.moderate(id,action,target,role,reaction);runCatching{chat.sync()};notice("Channel action saved. Check its confirmation in channel settings.")}
+    fun chatSend(id:String,text:String,replyTo:String?=null,saved:()->Unit={})=chatAction { val payload=obj("text" to text);if(replyTo!=null)payload.put("replyTo",replyTo);chat.send(id,payload);saved();runCatching {chat.sync()} }
+    fun forwardChat(messageId:String,targets:List<String>)=chatAction { chat.forward(messageId,targets);runCatching {chat.sync()};notice("Forwarded to ${targets.size} chat${if(targets.size==1)"" else "s"}.") }
+    fun deleteChatForMe(messageId:String)=chatAction { chat.deleteForMe(messageId) }
+    fun deleteChatForEveryone(messageId:String)=chatAction { chat.deleteForEveryone(messageId);runCatching {chat.sync()} }
+    fun moderateChannel(id:String,action:String,target:String,role:String?=null,reaction:String?=null)=chatAction {chat.moderate(id,action,target,role,reaction);runCatching{chat.sync()};notice("Saved. The change reaches the group as phones meet.")}
     fun configureChannel(id:String,mode:String,admission:String)=chatAction {chat.configure(id,mode,admission);runCatching{chat.sync()}}
     private val composerVersions=mutableMapOf<String,Long>()
     fun saveChatComposer(id:String,text:String) {
@@ -337,7 +342,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     fun reportChat(id:String,reason:String="ABUSE")=chatAction { chat.report(id,reason);runCatching {chat.sync()};notice("Report saved. It will reach the team when connected.") }
     fun reportPerson(id:String,reason:String)=chatAction{chat.reportPerson(id,reason);runCatching{chat.sync()};notice("Report saved for review. Sending waits for an online connection.")}
     fun syncChats()=chatAction { chat.sync();notice("Chats checked. Recipient confirmations determine delivery.") }
-    fun attachChat(id:String,uri:Uri,threadRootId:String?=null)=chatAction { chat.attach(id,uri,threadRootId=threadRootId);runCatching {chat.sync()} }
+    fun attachChat(id:String,uri:Uri)=chatAction { chat.attach(id,uri);runCatching {chat.sync()} }
     fun shareChatAttachment(id:String)=chatAction { chat.offerAttachment(id) }
     fun clearChat(id:String)=chatAction {chat.clearConversation(id)}
     fun sendNearbyInvite(link:String)=chatAction {require(chat.peer!=null);session.send("CHAT_INVITE",link);notice("Invitation sent nearby. The recipient decides whether to join.")}

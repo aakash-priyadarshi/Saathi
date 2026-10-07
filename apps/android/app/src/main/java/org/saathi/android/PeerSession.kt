@@ -48,6 +48,9 @@ class PeerSession(private val context: Context, private val repository: Reposito
     private val accepted = mutableSetOf<String>()
     private val sendingFiles = mutableMapOf<String, Job>()
     private val requestedMissing = mutableMapOf<String, Int>()
+    /** Parts held for each incoming file, so the chat can show download progress (as on iPhone). */
+    private val heldParts = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    val progress = java.util.concurrent.ConcurrentHashMap<String, Float>()
     private val chunkDirectory = File(context.filesDir, "attachments").apply { mkdirs() }
     var onChange: () -> Unit = {}
     var onError: (String) -> Unit = {}
@@ -277,7 +280,12 @@ class PeerSession(private val context: Context, private val repository: Reposito
                 val file = repository.store.get("attachments", id) ?: return; val index = value.getInt("index"); require(index in 0 until chunks(file) && value.getString("data").length <= 11000)
                 val raw = Protocol.decode(value.getString("data")); require(raw.size == minOf(8192, file.getInt("size") - index * 8192))
                 // Saved parts are their own files; rewriting a 32,000-entry record per part would be quadratic.
-                writeChunk(id, index, raw); if (index % 64 == 0) onChange()
+                val fresh = !hasPart(id, index); writeChunk(id, index, raw)
+                if (fresh) {
+                    val held = (heldParts[id] ?: 0) + 1; heldParts[id] = held
+                    val before = ((progress[id] ?: 0f) * 100).toInt(); progress[id] = held.toFloat() / chunks(file)
+                    if ((progress[id]!! * 100).toInt() != before) onChange()
+                }
             }
             "FILE_DONE" -> {
                 if (transport?.supportsFiles != true) return
@@ -292,7 +300,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
                 requestedMissing.remove(id)
                 val hash = MessageDigest.getInstance("SHA-256"); for (index in 0 until chunks(file)) hash.update(readChunk(id, index))
                 require(hash.digest().joinToString("") { "%02x".format(it) } == file.getString("hash")) { "This file could not be verified." }
-                file.put("complete", true); repository.store.put("attachments", id, file); accepted.remove(id); send("ACK", obj("id" to id)); onChange()
+                file.put("complete", true); repository.store.put("attachments", id, file); accepted.remove(id); heldParts.remove(id); progress.remove(id); send("ACK", obj("id" to id)); onChange()
                 if(file.getString("mime")=="application/octet-stream")onChatFileComplete(id)
                 else onPublicFileComplete(id)
             }
@@ -370,7 +378,8 @@ class PeerSession(private val context: Context, private val repository: Reposito
         require(previous == null || (previous.optString("direction") == "IN" && previous.getString("hash") == offer.getString("hash") && previous.getInt("size") == offer.getInt("size")))
         val file = previous ?: JSONObject(offer.toString()).put("direction", "IN").put("complete", false)
         repository.store.put("attachments", id, file); accepted.add(id); requestedMissing.remove(id)
-        val missing = missingParts(id, file); send("FILE_ACCEPT", obj("id" to id, "missing" to JSONArray(missing.take(ACCEPT_BATCH)))); onChange()
+        val missing = missingParts(id, file); heldParts[id] = chunks(file) - missing.size; progress[id] = heldParts[id]!!.toFloat() / chunks(file)
+        send("FILE_ACCEPT", obj("id" to id, "missing" to JSONArray(missing.take(ACCEPT_BATCH)))); onChange()
     }
     suspend fun cancelFile(id: String) { accepted.remove(id); sendingFiles.remove(id)?.cancel(); send("FILE_CANCEL", obj("id" to id)); onChange() }
     /** Splits an encrypted chat file into saved parts while hashing, without loading it into memory. */
