@@ -32,7 +32,7 @@ struct SwarmApp: App {
             let chat = ChatEngine(store: store, me: try Keychain.identity(), session: session)
             self.chat = chat
             nearby.onFrame = { [session] in session.enqueue($0) }
-            nearby.onConnected = { [session] in Task { await session.confirm() } }
+            nearby.onConnected = { [session] in session.markConfirmed(); Task { await session.confirm() } }
             nearby.onDisconnected = { [session] in session.reset() }
             nearby.onError = { [weak chat] in chat?.notice = $0 }
             session.onConfirmed = { [weak chat] in await chat?.announce() }

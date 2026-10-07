@@ -397,6 +397,7 @@ import SwarmCore
                 break // CHAT_JOIN / CHAT_ACTION / attachments: channel administration and media come in later iPhone milestones.
             }
         } catch {
+            NSLog("Swarm: chat frame rejected: %@", String(describing: error))
             notice = (error as? LocalizedError)?.errorDescription ?? "A nearby chat update could not be saved."
         }
     }

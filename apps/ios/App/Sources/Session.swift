@@ -18,6 +18,8 @@ import SwarmCore
 
     init(nearby: Nearby) { self.nearby = nearby }
 
+    /// Marked synchronously on connect so frames handled right after are accepted.
+    func markConfirmed() { confirmed = true }
     func confirm() async {
         confirmed = true
         // Same fields Android sends; this transport carries files, not calls.
@@ -63,6 +65,7 @@ import SwarmCore
         do {
             try J.exact(frame, ["v", "kind", "id", "value"]); try J.req(try J.int(frame, "v") == 1)
             let kind = try J.str(frame, "kind")
+            NSLog("Swarm: received %@", kind)
             switch kind {
             case "HELLO":
                 let v = try J.obj(frame, "value"); try J.exact(v, ["protocol", "maxFrame", "media", "files"])
@@ -78,6 +81,7 @@ import SwarmCore
                 if confirmed && kind.hasPrefix("CHAT_") { await onChat(frame, at) }
             }
         } catch {
+            NSLog("Swarm: frame rejected: %@", String(describing: error))
             onError((error as? LocalizedError)?.errorDescription ?? "A nearby update could not be saved.")
         }
     }

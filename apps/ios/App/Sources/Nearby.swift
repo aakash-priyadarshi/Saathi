@@ -29,6 +29,8 @@ import SwarmCore
     private var names: [EndpointID: String] = [:]
     private var window: Task<Void, Never>?
     private var generation = 0
+    /// Frames that arrive between the peer's accept and our `.connected` callback (Android sends at once).
+    private var early: [Data] = []
 
     init() {
         manager.delegate = bridge; advertiser.delegate = bridge; discoverer.delegate = bridge
@@ -82,7 +84,7 @@ import SwarmCore
     }
     private func finish() {
         let was = connected != nil
-        connected = nil; connectedName = ""; pending = nil; pairCode = nil; decide = nil; peers = [:]; generation += 1
+        connected = nil; connectedName = ""; pending = nil; pairCode = nil; decide = nil; peers = [:]; generation += 1; early = []
         if was { status = "Nearby connection ended. Your messages are saved."; onDisconnected() }
     }
 
@@ -112,12 +114,15 @@ import SwarmCore
         case .connected:
             pending = nil; connected = id; connectedName = names[id] ?? "Nearby phone"; stopRadios()
             status = "Connected to \(connectedName)"; onConnected()
+            let held = early; early = []
+            for data in held { received(data, from: id) }
         case .disconnected, .rejected:
             if connected == id || pending == id { if connected == nil { pending = nil; pairCode = nil; decide = nil; status = "Pairing ended." } else { finish() } }
         }
     }
     func received(_ data: Data, from id: EndpointID) {
-        guard id == connected else { return }
+        if connected == nil && pending == id { if early.count < 64 { early.append(data) }; return }
+        guard id == connected else { NSLog("Swarm: dropped frame from unconnected endpoint"); return }
         guard data.count <= Self.maximumFrameBytes, let frame = try? JSONSerialization.jsonObject(with: data) as? JSON else {
             onError("A nearby message could not be read."); return
         }
