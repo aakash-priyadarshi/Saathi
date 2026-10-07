@@ -170,12 +170,7 @@ struct ConversationView: View {
             NavigationLink { InfoView(chat: chat, nearby: nearby, id: id) } label: { header(title: title, channel: channel, conversation: conversation) }
                 .buttonStyle(.plain).accessibilityHint(channel ? "Opens group members and settings" : "Opens this person's options")
             if let thread {
-                HStack(spacing: 8) {
-                    Button { self.thread = nil; replyTo = nil } label: { Image(systemName: "chevron.left").font(.headline) }.accessibilityLabel("Back to chat")
-                    let n = info.counts[thread] ?? 0
-                    Text("Thread · \(n) \(n == 1 ? "reply" : "replies")").font(Type.titleMedium).foregroundStyle(Palette.ink)
-                    Spacer()
-                }.padding(.horizontal, 16).padding(.vertical, 10).background(Palette.primaryContainer.opacity(0.5))
+                threadHeader(replyCount: info.counts[thread] ?? 0)
             }
             Divider().overlay(Palette.outline)
             ScrollViewReader { proxy in
@@ -241,6 +236,21 @@ struct ConversationView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { _ in Text("A report requests review; it does not remove copies from other phones.") }
+    }
+
+    private func threadHeader(replyCount: Int) -> some View {
+        let replyLabel = replyCount == 1 ? "reply" : "replies"
+        return HStack(spacing: 8) {
+            Button { thread = nil; replyTo = nil } label: { Image(systemName: "chevron.left").font(.headline) }
+                .accessibilityLabel("Back to chat")
+            Text("Thread · \(replyCount) \(replyLabel)")
+                .font(Type.titleMedium)
+                .foregroundStyle(Palette.ink)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Palette.primaryContainer.opacity(0.5))
     }
 
     private func jumpToMessage(_ target: String, proxy: ScrollViewProxy, visibleMessages: [JSON], allMessages: [JSON], roots: [String: String]) {
