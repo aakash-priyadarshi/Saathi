@@ -153,6 +153,9 @@ private fun AppState.moderationFlag(id:String,target:String,on:String,off:String
     val latest=channelActions(id).lastOrNull{it.getJSONObject("envelope").getJSONObject("body").let{b->b.getString("targetId")==target && b.getString("action") in listOf(on,off)}}
     return latest?.getJSONObject("envelope")?.getJSONObject("body")?.getString("action")?.let{it==on} ?: (channelPolicy(id)?.getJSONObject("body")?.optJSONObject("moderation")?.optJSONArray(key)?.strings()?.contains(target)==true)
 }
+private fun AppState.channelReports(id:String)=chatReportInbox.filter{report->report.getString("channelId")==id && !channelActions(id).any{a->val b=a.getJSONObject("envelope").getJSONObject("body");b.getString("action")=="REVIEW_REPORT" && b.getString("targetId")==report.getString("messageId") && b.getString("issuedAt")>=report.getString("createdAt")}}
+private val actionLabels=mapOf("SET_ROLE" to "changed the role of","REMOVE" to "removed","BAN" to "banned","UNBAN" to "unbanned","APPROVE_JOIN" to "approved","REJECT_JOIN" to "declined",
+    "HIDE_MESSAGE" to "removed a message","RESTORE_MESSAGE" to "restored a message","REVIEW_REPORT" to "reviewed a report","LOCK_THREAD" to "locked replies","UNLOCK_THREAD" to "unlocked replies")
 private fun AppState.messageHidden(id:String,message:String)=moderationFlag(id,message,"HIDE_MESSAGE","RESTORE_MESSAGE","hiddenMessages")
 
 private fun JSONObject.body()=getJSONObject("envelope").getJSONObject("body")
@@ -426,6 +429,25 @@ private fun roleLabel(role:String)=when(role){"OWNER"->"Group creator";"ADMIN"->
                     GroupType.labels.forEach{(value,label)->Row(Modifier.fillMaxWidth().clickable(enabled=!state.busy&&type!=value){vm.configureChannel(id,value,admission)},verticalAlignment=Alignment.CenterVertically){RadioButton(type==value,{vm.configureChannel(id,value,admission)},enabled=!state.busy);Text(label)}}
                     Row(verticalAlignment=Alignment.CenterVertically){Text("Admins approve new members",Modifier.weight(1f));Switch(admission in listOf("APPROVAL_ONLY","INVITE_PLUS_APPROVAL"),{vm.configureChannel(id,type,if(open)if(it)"APPROVAL_ONLY" else "OPEN" else if(it)"INVITE_PLUS_APPROVAL" else "INVITE_AUTO")},enabled=!state.busy)}
                 }
+            }
+            // Moderators: reports to review (they arrive when online) and recent changes by admins, with their status.
+            if(caps?.optBoolean("canModerate")==true){
+                val reports=state.channelReports(id)
+                item{Text("Reports to review · ${reports.size}",style=MaterialTheme.typography.titleLarge)}
+                if(reports.isEmpty())item{Text("Reports from members arrive when Swarm is online.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+                items(reports,key={it.getString("id")}){r->val held=state.chatMessages.firstOrNull{it.getString("id")==r.getString("messageId")}
+                    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                        Column(Modifier.weight(1f)){Text(r.getString("reason").lowercase().replaceFirstChar{it.uppercase()},style=MaterialTheme.typography.titleMedium);Text(held?.let{chatPreview(it)}?:"Message not on this phone",style=MaterialTheme.typography.bodySmall,maxLines=2,overflow=TextOverflow.Ellipsis,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+                        if(held!=null&&!state.messageHidden(id,r.getString("messageId")))OutlinedButton(onClick={vm.moderateChannel(id,"HIDE_MESSAGE",r.getString("messageId"))},enabled=!state.busy){Text("Remove")}
+                        Button(onClick={vm.moderateChannel(id,"REVIEW_REPORT",r.getString("messageId"))},enabled=!state.busy&&held!=null){Text("Reviewed")}
+                    }}
+                val recent=state.chatActions.filter{it.getJSONObject("envelope").getJSONObject("body").getString("channelId")==id&&it.getJSONObject("envelope").getJSONObject("body").getString("action") !in listOf("REACT","UNREACT")}
+                    .sortedByDescending{it.getJSONObject("envelope").getJSONObject("body").getString("issuedAt")}.take(12)
+                if(recent.isNotEmpty()){item{Text("Recent changes",style=MaterialTheme.typography.titleLarge)}
+                    items(recent,key={it.getString("id")}){row->val a=row.getJSONObject("envelope").getJSONObject("body")
+                        val actor=a.getJSONObject("actor").getJSONObject("body").getString("name");val target=members.firstOrNull{ChatProtocol.participant(it.getJSONObject("profile"))==a.getString("targetId")}?.getJSONObject("profile")?.getJSONObject("body")?.getString("name")
+                        val what=(actionLabels[a.getString("action")]?:a.getString("action").lowercase())+(if(a.getString("action") in ChannelGovernance.membershipActions&&target!=null)" $target" else "")+(if(a.getString("action")=="SET_ROLE")" → "+roleLabel(a.optString("role")) else "")
+                        Text("$actor $what · "+timeLabel(a.getString("issuedAt"))+" · "+if(row.optBoolean("rejected"))"Not accepted" else if(row.optBoolean("serverSaved"))"Confirmed" else "Waiting to reach the group creator",style=MaterialTheme.typography.bodySmall)}}
             }
             item{Text("Removed people can't rejoin on their own; only an admin can add them back. Changes reach other phones as people meet.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
             if(state.conversations.firstOrNull{it.getString("id")==id}?.optBoolean("joined")==true)item{TextButton(onClick={confirm=(if(owner)"DELETE" else "LEAVE") to ""}){Text(if(owner)"Delete group" else "Leave group",color=MaterialTheme.colorScheme.error)}}
