@@ -67,15 +67,16 @@ struct Heading: View {
     }
 }
 
-/// 44 pt tonal avatar: first letter for people, # for channels.
+/// 44 pt tonal avatar: first letter for people; a lock for private (invite-only) groups and # for open ones (as on Android).
 struct Avatar: View {
     let name: String
     var channel = false
+    var locked = false
     var size: CGFloat = 44
     var body: some View {
         ZStack {
             Circle().fill(Palette.primaryContainer)
-            if channel { Image(systemName: "number").font(.system(size: size * 0.42, weight: .semibold)).foregroundStyle(Palette.onPrimaryContainer) }
+            if channel { Image(systemName: locked ? "lock.fill" : "number").font(.system(size: size * 0.42, weight: .semibold)).foregroundStyle(Palette.onPrimaryContainer) }
             else { Text(name.prefix(1).uppercased()).font(Type.titleMedium).foregroundStyle(Palette.onPrimaryContainer) }
         }.frame(width: size, height: size).accessibilityHidden(true)
     }

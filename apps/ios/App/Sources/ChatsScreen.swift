@@ -14,7 +14,7 @@ struct ChatsView: View {
     @State private var deletingChat: Row?
     @State private var path: [String] = Demo.startConversation.map { [$0] } ?? []
 
-    struct Row: Identifiable { let id: String; let title: String; let preview: String; let channel: Bool; let unread: Int; let last: String; let status: String?; let pinnedAt: String? }
+    struct Row: Identifiable { let id: String; let title: String; let preview: String; let channel: Bool; var locked = false; let unread: Int; let last: String; let status: String?; let pinnedAt: String? }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -83,7 +83,7 @@ struct ChatsView: View {
     }
     func rowView(_ row: Row) -> some View {
         HStack(spacing: 12) {
-            Avatar(name: row.title, channel: row.channel)
+            Avatar(name: row.title, channel: row.channel, locked: row.locked)
             VStack(alignment: .leading, spacing: 5) {
                 Text((row.channel ? "# " : "") + row.title).font(Type.titleMedium).foregroundStyle(Palette.ink).lineLimit(1)
                 Text(row.preview).font(Type.bodySmall).foregroundStyle(Palette.muted).lineLimit(2)
@@ -111,7 +111,7 @@ struct ChatsView: View {
                 c["joinStatus"] as? String == "REJECTED" ? "Join request declined" :
                 c["joined"] as? Bool == false ? "Left or removed · Saved history" : nil
             return Row(id: id, title: c["title"] as? String ?? "Conversation", preview: state ?? last.map { chat.deletedForEveryone(in: id).contains($0["id"] as? String ?? "") ? "This message was deleted" : preview($0) } ?? "No messages yet",
-                       channel: c["type"] as? String == "CHANNEL", unread: chat.unread(id), last: lastBody?["createdAt"] as? String ?? "",
+                       channel: c["type"] as? String == "CHANNEL", locked: chat.isPrivate(id), unread: chat.unread(id), last: lastBody?["createdAt"] as? String ?? "",
                        status: last?["owned"] as? Bool == true ? deliveryState(last!) : nil, pinnedAt: chat.store.get("chat-pinned", id)?["at"] as? String)
         }.sorted { $0.last > $1.last }
         let q = search.trimmingCharacters(in: .whitespaces)
@@ -297,7 +297,7 @@ struct ConversationView: View {
             : (channel ? "\(members) member\(members == 1 ? "" : "s") · posts travel when you meet a member" : "Saved on this phone · delivers when you meet")
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
-                Avatar(name: title, channel: channel)
+                Avatar(name: title, channel: channel, locked: chat.isPrivate(conversation?["id"] as? String ?? ""))
                 Text(title).font(Type.titleLarge).foregroundStyle(Palette.ink).lineLimit(2)
                 Spacer(minLength: 0)
                 Image(systemName: "info.circle").foregroundStyle(Palette.primary)
@@ -555,7 +555,7 @@ struct ForwardSheet: View {
                         if let at = chosen.firstIndex(of: cid) { chosen.remove(at: at) } else if chosen.count < 5 { chosen.append(cid) }
                     } label: {
                         HStack(spacing: 12) {
-                            Avatar(name: title, channel: c["type"] as? String == "CHANNEL")
+                            Avatar(name: title, channel: c["type"] as? String == "CHANNEL", locked: chat.isPrivate(cid))
                             Text(title).font(Type.titleMedium).foregroundStyle(Palette.ink)
                             Spacer()
                             Image(systemName: chosen.contains(cid) ? "checkmark.circle.fill" : "circle").foregroundStyle(Palette.primary)
@@ -619,3 +619,8 @@ struct ContactInfoView: View {
 struct IdentifiedString: Identifiable { let id: String }
 
 struct IdentifiedImage: Identifiable { let image: UIImage; var id: ObjectIdentifier { ObjectIdentifier(image) } }
+
+extension ChatEngine {
+    /// Invite-only (encrypted) groups show a lock instead of #.
+    func isPrivate(_ id: String) -> Bool { current(id).map(body)?["visibility"] as? String == "INVITE" }
+}

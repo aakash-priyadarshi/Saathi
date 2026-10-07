@@ -77,9 +77,10 @@ fun chatStatus(message:JSONObject)=when {
     message.optBoolean("serverSaved")->"Uploaded · waiting for receipt"
     else->"Saved · Waiting for connection"
 }
-@Composable private fun Avatar(name:String,channel:Boolean=false) {
+/** First letter for people; a lock for private (invite-only) groups and # for open ones, as on iPhone. */
+@Composable private fun Avatar(name:String,channel:Boolean=false,locked:Boolean=false) {
     Surface(Modifier.size(44.dp),shape=CircleShape,color=MaterialTheme.colorScheme.primaryContainer) {
-        Box(contentAlignment=Alignment.Center) {if(channel)Icon(Icons.Outlined.Tag,null,Modifier.size(22.dp)) else Text(name.take(1).uppercase(),style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)}
+        Box(contentAlignment=Alignment.Center) {if(channel)Icon(if(locked)Icons.Outlined.Lock else Icons.Outlined.Tag,if(locked)"Private group" else null,Modifier.size(22.dp)) else Text(name.take(1).uppercase(),style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)}
     }
 }
 @Composable fun ChatsScreen(vm:SaathiViewModel,state:AppState,open:(String)->Unit,nearby:()->Unit,create:()->Unit,modifier:Modifier) {
@@ -102,7 +103,7 @@ fun chatStatus(message:JSONObject)=when {
                 val unread=messages.count {!it.optBoolean("owned")&&!it.optBoolean("readLocally")}
                 Column {
                     Row(Modifier.fillMaxWidth().combinedClickable(onClick={open(cid)},onLongClick={chatMenu=cid},onLongClickLabel="Chat options").padding(vertical=12.dp),horizontalArrangement=Arrangement.spacedBy(12.dp),verticalAlignment=Alignment.CenterVertically){
-                        Avatar(c.getString("title"),type=="CHANNEL")
+                        Avatar(c.getString("title"),type=="CHANNEL",state.isPrivate(cid))
                         Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(5.dp)){
                             Text((if(type=="CHANNEL")"# " else "")+c.getString("title"),style=MaterialTheme.typography.titleMedium,maxLines=1,overflow=TextOverflow.Ellipsis)
                             Text(admissionState(c)?:if(c.optBoolean("pendingJoin"))"Waiting for the channel owner" else if(!c.optBoolean("joined"))"Left or removed · Saved history" else if(last!=null&&last.getString("id") in state.deletedForEveryone())"This message was deleted" else chatPreview(last),style=MaterialTheme.typography.bodySmall,maxLines=2,overflow=TextOverflow.Ellipsis,color=MaterialTheme.colorScheme.onSurfaceVariant)
@@ -171,6 +172,7 @@ fun deleteChatText(channel:Boolean)="Deletes this chat's messages and downloaded
     reportPerson?.let{person->ReportReason({reason->vm.reportPerson(person,when(reason){"HARASSMENT"->"ABUSE";"UNSAFE"->"SAFETY";else->reason});reportPerson=null},{reportPerson=null})}
 }
 private fun AppState.channelPolicy(id:String)=chatPolicies.firstOrNull{it.getJSONObject("body").getString("id")==id}
+private fun AppState.isPrivate(id:String)=channelPolicy(id)?.getJSONObject("body")?.optString("visibility")=="INVITE"
 private fun AppState.channelCapabilities(id:String)=channelPolicy(id)?.let{policy->chatProfile?.let{ChannelGovernance.capabilities(policy,ChatProtocol.participant(it))}}
 private fun AppState.channelActions(id:String)=chatActions.filter{it.getJSONObject("envelope").getJSONObject("body").getString("channelId")==id && !it.optBoolean("rejected")}.sortedWith(compareBy<JSONObject>{it.getJSONObject("envelope").getJSONObject("body").getString("issuedAt")}.thenBy{it.getString("id")})
 private fun AppState.moderationFlag(id:String,target:String,on:String,off:String,key:String):Boolean {
@@ -265,7 +267,7 @@ fun AppState.shownMessages(conversationId:String)=chatMessages.filter{it.body().
         // Header as on iPhone: tap for group info (or the person's info), with what "delivered" means right now.
         Column(Modifier.fillMaxWidth().clickable(onClickLabel=if(channel)"Group info" else "Contact info"){info=true}.semantics{contentDescription=if(channel)"Group info" else "Contact info"}.padding(horizontal=16.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
             Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){
-                Avatar(conversation.getString("title"),channel)
+                Avatar(conversation.getString("title"),channel,state.isPrivate(id))
                 Text(conversation.getString("title"),Modifier.weight(1f),style=MaterialTheme.typography.titleLarge,maxLines=2,overflow=TextOverflow.Ellipsis)
                 if(callReady){IconButton(onClick={call(false,false)},enabled=!state.calling&&state.walkieConversation==null){Icon(Icons.Outlined.Call,"Nearby voice call")};IconButton(onClick={call(true,false)},enabled=!state.calling&&state.walkieConversation==null){Icon(Icons.Outlined.Videocam,"Nearby video call")}}
                 Icon(Icons.Outlined.Info,null,tint=MaterialTheme.colorScheme.primary)
@@ -427,7 +429,7 @@ private fun bubbleStatus(m:JSONObject)=when{m.optBoolean("attention")->"Needs at
     AlertDialog(onDismissRequest=close,title={Text("Forward to")},text={Column(Modifier.heightIn(max=420.dp).verticalScroll(rememberScrollState())){
         state.conversations.filter{it.optBoolean("joined")&&!it.optBoolean("pendingJoin")}.forEach{c->val cid=c.getString("id")
             Row(Modifier.fillMaxWidth().clickable{chosen=if(cid in chosen)chosen-cid else (chosen+cid).take(5)}.padding(vertical=6.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){
-                Avatar(c.getString("title"),c.getString("type")=="CHANNEL");Text(c.getString("title"),Modifier.weight(1f),maxLines=1,overflow=TextOverflow.Ellipsis);Checkbox(cid in chosen,null)
+                Avatar(c.getString("title"),c.getString("type")=="CHANNEL",state.isPrivate(cid));Text(c.getString("title"),Modifier.weight(1f),maxLines=1,overflow=TextOverflow.Ellipsis);Checkbox(cid in chosen,null)
             }}
         Text("Up to 5 chats at once.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
     }},confirmButton={TextButton(onClick={send(chosen)},enabled=chosen.isNotEmpty()){Text("Send")}},dismissButton={TextButton(onClick=close){Text("Cancel")}})
@@ -464,7 +466,7 @@ private fun roleLabel(role:String)=when(role){"OWNER"->"Group creator";"ADMIN"->
     Column(modifier){
         InfoTopBar("Group info",back)
         LazyColumn(contentPadding=PaddingValues(start=20.dp,end=20.dp,bottom=20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)){
-            item{Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){Avatar(pb?.optString("name")?:"",true);Column{Text(pb?.optString("name")?:"Group",style=MaterialTheme.typography.titleLarge);Text((if(pb?.optString("visibility")=="INVITE")"Invite only · encrypted" else "Open nearby · member-readable")+" · ${members.size} member${if(members.size==1)"" else "s"}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}}}
+            item{Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){Avatar(pb?.optString("name")?:"",true,pb?.optString("visibility")=="INVITE");Column{Text(pb?.optString("name")?:"Group",style=MaterialTheme.typography.titleLarge);Text((if(pb?.optString("visibility")=="INVITE")"Invite only · encrypted" else "Open nearby · member-readable")+" · ${members.size} member${if(members.size==1)"" else "s"}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}}}
             if(pending)item{Surface(shape=RoundedCornerShape(12.dp),color=MaterialTheme.colorScheme.secondaryContainer){Column(Modifier.fillMaxWidth().padding(16.dp)){Text("Membership is changing",style=MaterialTheme.typography.titleMedium);Text("An admin's change reaches the group creator's phone when you meet. Posting resumes with the new membership.",style=MaterialTheme.typography.bodySmall)}}}
             if(caps?.optBoolean("canInvite")==true)item{Button(onClick={inviting=true}){Icon(Icons.Outlined.PersonAdd,null);Spacer(Modifier.width(8.dp));Text("Add people")}}
             item{Text("Members",style=MaterialTheme.typography.titleLarge)}

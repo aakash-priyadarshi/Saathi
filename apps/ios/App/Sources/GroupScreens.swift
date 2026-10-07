@@ -68,7 +68,7 @@ struct GroupInfoView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 12) {
-                    Avatar(name: pb["name"] as? String ?? "", channel: true, size: 56)
+                    Avatar(name: pb["name"] as? String ?? "", channel: true, locked: pb["visibility"] as? String == "INVITE", size: 56)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(pb["name"] as? String ?? "Group").font(Type.titleLarge).foregroundStyle(Palette.ink)
                         Text((pb["visibility"] as? String == "INVITE" ? "Invite only · encrypted" : "Open nearby · member-readable") + " · \(members.count) member\(members.count == 1 ? "" : "s")")
