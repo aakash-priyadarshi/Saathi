@@ -22,6 +22,8 @@ class PeerSession(private val context: Context, private val repository: Reposito
     var remoteMedia = false; private set
     var remoteWalkieTalkie = false; private set
     @Volatile private var remoteChatChunks = false
+    /** "ios" when the last peer was an iPhone; kept across reset so a dropped iPhone is searched for on Nearby. */
+    @Volatile var lastRemotePlatform = ""; private set
     private val chatAssembler = ChatFrameAssembler()
     @Volatile private var remoteLarge = false
     val maximumFileBytes get() = if (remoteLarge && repository.featureFlags?.optBoolean("largeFiles") == true) MAX_FILE else 1048576
@@ -172,7 +174,7 @@ class PeerSession(private val context: Context, private val repository: Reposito
         }
         if (kind == "NATIVE_CAPS") {
             val caps = frame.getJSONObject("value")
-            remoteLarge = caps.optBoolean("largeFiles"); remoteChatChunks = caps.optBoolean("chatChunks")
+            remoteLarge = caps.optBoolean("largeFiles"); remoteChatChunks = caps.optBoolean("chatChunks"); lastRemotePlatform = caps.optString("platform")
             remoteWalkieTalkie = caps.optBoolean("walkieTalkie") && transport?.mediaAvailable == true
             onChange(); return
         }

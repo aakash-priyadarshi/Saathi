@@ -61,6 +61,8 @@ class NearbyTransport(context: Context, private val scope: CoroutineScope) : Pee
     var onConnectionLost: ((advertise: Boolean, automatic: Boolean) -> Unit)? = null
     private val peers = linkedMapOf<String, String>()
     private val service = "org.saathi.nearby.v1.${BuildConfig.ENVIRONMENT}"
+    /** Searching, pairing or connected: an automatic search must not replace any of these. */
+    val active get() = lifecycle != Lifecycle.IDLE && lifecycle != Lifecycle.STOPPING
     private enum class Lifecycle { IDLE, STARTING, ADVERTISING, DISCOVERING, CONNECTING, PAIRING, CONNECTED, STOPPING }
     private fun log(event: String, detail: String = "") {
         if (!BuildConfig.DEBUG) return
@@ -143,9 +145,9 @@ class NearbyTransport(context: Context, private val scope: CoroutineScope) : Pee
                             setLifecycle(Lifecycle.DISCOVERING)
                             log("discovery-started")
                         }
-                        onState(if (automatic) "Visible and looking nearby for one minute" else if (advertise) "Visible nearby as $temporaryName for one minute" else "Looking for nearby Swarm for one minute")
+                        // No time limit: the view model stops searching when Swarm leaves the foreground.
+                        onState(if (automatic) "Visible and looking nearby while Swarm is open" else if (advertise) "Visible nearby as $temporaryName while Swarm is open" else "Looking for nearby Swarm while Swarm is open")
                         window?.cancel()
-                        window = scope.launch { delay(60000); if (isCurrent(token)) { stopScan(); if (!connected && pending == null) { setLifecycle(Lifecycle.IDLE); onState("Search finished. Search again when another person is ready.") } } }
                         started = true
                         return@withLock
                     } catch (error: Exception) {

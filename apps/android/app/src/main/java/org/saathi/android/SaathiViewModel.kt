@@ -16,6 +16,9 @@ import org.json.JSONObject
 import org.webrtc.VideoTrack
 import android.media.MediaRecorder
 import android.os.Build
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
+import android.Manifest
 import java.io.File
 
 data class AppState(
@@ -173,11 +176,13 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
             if (nearby.connected) action { session.confirm() } else session.reset()
             refreshLocal()
         }
-        nearby.onPeers = { peers -> mutable.update { it.copy(peers = peers) } }
+        nearby.onPeers = { peers -> mutable.update { it.copy(peers = peers) }; autoConnect(peers) }
         nearby.onPair = { code -> mutable.update { it.copy(pairCode = code) } }
         nearby.onFrame = { session.incoming(it) }; nearby.onError = { notice(it) }
         nearby.onConnectionLost = { advertise, automatic ->
-            chat.peer?.let { session.requireSamePeer(ChatProtocol.participant(it)) }
+            // iPhones speak Nearby only (not Swarm's Android Bluetooth fallback), so search Nearby again for them.
+            if (session.lastRemotePlatform == "ios") viewModelScope.launch { delay(1500); autoSearch() }
+            else { chat.peer?.let { session.requireSamePeer(ChatProtocol.participant(it)) }
             viewModelScope.launch {
                 var waited = 0
                 while (state.value.busy && waited < 5000) { delay(100); waited += 100 }
@@ -190,7 +195,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
                     notice("Nearby connection changed. Looking for the same person by Bluetooth…")
                     ble.start(advertise = if (automatic) false else advertise, auto = automatic)
                 }
-            }
+            } }
         }
         ble.onState = { status ->
             mutable.update { it.copy(nearbyStatus = status, connected = ble.connected) }
@@ -416,6 +421,36 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         }
         healthCheck?.cancel()
         healthCheck = viewModelScope.launch { while (isActive) { delay(30000); refreshConnectionState() } }
+        autoSearch()
+    }
+    private fun nearbyPermitted(): Boolean {
+        val needed = buildList {
+            if (Build.VERSION.SDK_INT >= 31) addAll(listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE))
+            if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.NEARBY_WIFI_DEVICES) else add(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+        return needed.all { ContextCompat.checkSelfPermission(getApplication(), it) == PackageManager.PERMISSION_GRANTED }
+    }
+    /** Searches and stays visible while Swarm is open, once Nearby permissions were granted through the buttons. */
+    private fun autoSearch() {
+        if (!BuildConfig.CHAT_ENABLED || !appInForeground || state.value.connected || state.value.busy || !nearby.available || nearby.active) return
+        if (session.transport === ble && ble.connected) return
+        if (!preferences().optBoolean("nearbyVisible", true) || repository.featureFlags?.optBoolean("nearby") != true || !nearbyPermitted()) return
+        viewModelScope.launch {
+            runCatching { activate(nearby); nearby.scan(false, true, chat.profile().getJSONObject("body").getString("name")) }
+        }
+    }
+    private val autoAttempts = mutableMapOf<String, Long>()
+    /** People already met reconnect without a tap (the code check still follows). A random delay avoids both phones dialling at once. */
+    private fun autoConnect(peers: Map<String, String>) {
+        if (!BuildConfig.CHAT_ENABLED || state.value.connected || state.value.pairCode != null) return
+        val known = runCatching { chat.contacts().map { it.getJSONObject("profile").getJSONObject("body").getString("name") }.toSet() }.getOrDefault(emptySet())
+        val now = System.currentTimeMillis()
+        val target = peers.entries.firstOrNull { it.value in known && now - (autoAttempts[it.value] ?: 0L) > 30_000 } ?: return
+        autoAttempts[target.value] = now
+        viewModelScope.launch {
+            delay((2_000L..6_000L).random())
+            if (!state.value.connected && state.value.pairCode == null && state.value.peers.containsKey(target.key)) runCatching { nearby.connect(target.key) }
+        }
     }
     private fun checkRemoteFeatures() {
         if (reconnectCheck?.isActive == true) return
