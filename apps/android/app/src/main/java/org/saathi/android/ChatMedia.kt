@@ -19,6 +19,9 @@ import kotlinx.coroutines.Job
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
 import android.graphics.BitmapFactory
+import androidx.compose.foundation.background
+import androidx.compose.material.icons.filled.*
+import androidx.compose.foundation.verticalScroll
 
 @Composable fun CallPanel(vm:SaathiViewModel,state:AppState){
     Column(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
@@ -55,4 +58,46 @@ internal class VerifiedAudio(private val bytes:ByteArray):MediaDataSource(){
         BitmapFactory.decodeByteArray(bytes,0,bytes.size,options).also{bytes.fill(0)}
     }.getOrNull()}}
     preview?.let{Image(it.asImageBitmap(),"Private chat photo",Modifier.fillMaxWidth().heightIn(max=260.dp))}
+}
+
+/** Voice message bubble: play/pause, playback progress and length (as on iPhone). */
+@Composable fun VoiceBubble(vm:SaathiViewModel,messageId:String,tint:androidx.compose.ui.graphics.Color){
+    var player by remember{mutableStateOf<MediaPlayer?>(null)};var position by remember{mutableIntStateOf(0)};val scope=rememberCoroutineScope();val lifecycle=LocalLifecycleOwner.current
+    val length by produceState(0,messageId){value=withContext(Dispatchers.IO){runCatching{val r=android.media.MediaMetadataRetriever();try{r.setDataSource(VerifiedAudio(vm.chat.attachmentBytes(messageId)));r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toInt()?:0}finally{r.release()}}.getOrDefault(0)}}
+    fun stop(){runCatching{player?.stop()};player?.release();player=null;position=0}
+    DisposableEffect(lifecycle,messageId){val o=LifecycleEventObserver{_,e->if(e==Lifecycle.Event.ON_STOP)stop()};lifecycle.lifecycle.addObserver(o);onDispose{lifecycle.lifecycle.removeObserver(o);stop()}}
+    LaunchedEffect(player){while(player!=null){position=runCatching{player?.currentPosition?:0}.getOrDefault(0);kotlinx.coroutines.delay(100)}}
+    fun label(ms:Int)="%d:%02d".format(ms/60000,(ms/1000)%60)
+    Row(Modifier.widthIn(min=200.dp),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)){
+        FilledIconButton(onClick={if(player!=null)stop() else scope.launch{runCatching{val p=MediaPlayer();p.setDataSource(VerifiedAudio(vm.chat.attachmentBytes(messageId)));withContext(Dispatchers.IO){p.prepare()};p.setOnCompletionListener{stop()};player=p;p.start()}.onFailure{vm.notice("This voice message could not be played.")}}},Modifier.size(40.dp)){
+            androidx.compose.material3.Icon(if(player!=null)androidx.compose.material.icons.Icons.Filled.Stop else androidx.compose.material.icons.Icons.Filled.PlayArrow,if(player!=null)"Stop" else "Play voice message")
+        }
+        Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)){
+            LinearProgressIndicator({if(length>0)(position.toFloat()/length).coerceIn(0f,1f) else 0f},Modifier.fillMaxWidth(),color=tint,trackColor=tint.copy(alpha=.2f),drawStopIndicator={})
+            Text(if(player!=null)label(position) else if(length>0)label(length) else "Voice message",style=MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+/** A video waiting to be opened: a dark tile with a play button. */
+@Composable fun VideoTile(size:Long){
+    androidx.compose.foundation.layout.Box(Modifier.width(240.dp).aspectRatio(16f/9f).background(androidx.compose.ui.graphics.Color(0xFF1B1F1D),androidx.compose.foundation.shape.RoundedCornerShape(10.dp)),contentAlignment=androidx.compose.ui.Alignment.Center){
+        androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.PlayCircle,"Play video",Modifier.size(52.dp),tint=androidx.compose.ui.graphics.Color.White)
+        Text("Video · "+fileSize(size),Modifier.align(androidx.compose.ui.Alignment.BottomStart).padding(8.dp),style=MaterialTheme.typography.labelSmall,color=androidx.compose.ui.graphics.Color.White)
+    }
+}
+/** Opens a verified attachment inside Swarm (as iPhone's viewer does): video with controls, photo, or text. */
+@Composable fun MediaViewer(vm:SaathiViewModel,messageId:String,mime:String,close:()->Unit){
+    androidx.compose.ui.window.Dialog(onDismissRequest=close,properties=androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth=false)){
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)){
+            val file by produceState<java.io.File?>(null,messageId){value=runCatching{vm.chat.viewableFile(messageId)}.onFailure{vm.notice("This attachment could not be opened.");close()}.getOrNull()}
+            file?.let{f->when{
+                mime.startsWith("video/")->AndroidView({context->android.widget.VideoView(context).apply{val controls=android.widget.MediaController(context);controls.setAnchorView(this);setMediaController(controls);setVideoPath(f.path);setOnPreparedListener{start()}}},Modifier.fillMaxSize(),onRelease={it.stopPlayback()})
+                mime.startsWith("image/")->{val bitmap=remember(f){BitmapFactory.decodeFile(f.path)};bitmap?.let{Image(it.asImageBitmap(),"Photo",Modifier.fillMaxSize())}}
+                mime.startsWith("audio/")->androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().padding(24.dp),contentAlignment=androidx.compose.ui.Alignment.Center){Surface(shape=androidx.compose.foundation.shape.RoundedCornerShape(16.dp)){androidx.compose.foundation.layout.Box(Modifier.padding(16.dp)){VoiceBubble(vm,messageId,MaterialTheme.colorScheme.primary)}}}
+                else->{val text=remember(f){runCatching{f.readText().take(200_000)}.getOrDefault("")};Surface(Modifier.fillMaxSize()){Text(text,Modifier.padding(16.dp).padding(top=48.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()),style=MaterialTheme.typography.bodyMedium)}}
+            }}
+            if(file==null)CircularProgressIndicator(Modifier.align(androidx.compose.ui.Alignment.Center),color=androidx.compose.ui.graphics.Color.White)
+            IconButton(onClick=close,Modifier.align(androidx.compose.ui.Alignment.TopEnd).padding(8.dp)){androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Close,"Close",tint=if(mime.startsWith("text/"))MaterialTheme.colorScheme.onSurface else androidx.compose.ui.graphics.Color.White)}
+        }
+    }
 }

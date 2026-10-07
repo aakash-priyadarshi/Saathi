@@ -172,6 +172,15 @@ class ChatRepository(private val context: Context, private val repository: Repos
         val hash=session.openSaved(id).use{AttachmentCipher.decrypt(it,output,Protocol.decode(a.getString("key")),id,a.getLong("size"),file.getLong("size"))}
         require(hash==a.getString("hash")){"Private attachment verification failed."}
     }
+    /** A decrypted copy for the in-app viewer (video, photo, text), kept in the cache until the chat is closed. */
+    suspend fun viewableFile(messageId:String):java.io.File=withContext(Dispatchers.IO){
+        val a=store.get("chat-messages",messageId)?.getJSONObject("payload")?.getJSONObject("attachment")?:error("Message is unavailable.")
+        val ext=mapOf("video/mp4" to "mp4","video/webm" to "webm","text/plain" to "txt","audio/mpeg" to "mp3","audio/mp4" to "m4a","image/png" to "png","image/webp" to "webp")[a.getString("mime")]?:"jpg"
+        val file=java.io.File(java.io.File(context.cacheDir,"chat-view").apply{mkdirs()},a.getString("id")+"."+ext)
+        if(!file.exists()){val temporary=java.io.File(file.path+".part");try{temporary.outputStream().use{decryptTo(messageId,it)};check(temporary.renameTo(file))}finally{temporary.delete()}}
+        file
+    }
+    fun clearViewable()=java.io.File(context.cacheDir,"chat-view").deleteRecursively()
     /** Whole attachment in memory, for photo and voice previews only. */
     suspend fun attachmentBytes(messageId:String):ByteArray{
         val a=store.get("chat-messages",messageId)?.getJSONObject("payload")?.getJSONObject("attachment")?:error("Message is unavailable.")

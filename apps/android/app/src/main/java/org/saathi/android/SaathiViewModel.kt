@@ -96,7 +96,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         }
     }
     fun enterConversation(id: String) { if (visibleConversation != id) stopWalkie(); visibleConversation = id; SwarmAlerts.clear(getApplication(), id) }
-    fun leaveConversation(id: String) { if (visibleConversation == id) { visibleConversation = null; stopWalkie() } }
+    fun leaveConversation(id: String) { if (visibleConversation == id) { visibleConversation = null; stopWalkie() }; viewModelScope.launch(Dispatchers.IO) { chat.clearViewable() } }
     fun enableWalkie(id: String) = viewModelScope.launch {
         val generation = session.connectionGeneration
         runCatching {
