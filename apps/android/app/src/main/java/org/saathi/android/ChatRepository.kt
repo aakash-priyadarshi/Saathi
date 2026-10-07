@@ -74,17 +74,12 @@ class ChatRepository(private val context: Context, private val repository: Repos
     fun policies()=store.all("chat-policies").map { it.getJSONObject("policy") }
     fun blocked(id:String)=store.get("chat-blocks",id)!=null
     fun reset(){ peer=null; discovery=emptyList(); onChange() }
-    /** A reconnect that skipped the code turned out not to be anyone already met. */
-    var onUnknownPeer: (String) -> Unit = {}
+    /** Every Swarm phone that connects becomes a contact once its signed identity checks out. */
     fun verifyTransportPeer(profile: JSONObject): String {
         val verified = ChatProtocol.profile(profile,now())
         val participant = ChatProtocol.participant(verified)
-        if (session.transport?.codeSkipped == true && store.get("chat-contacts",participant) == null) {
-            session.transport?.disconnect(); onUnknownPeer(verified.getJSONObject("body").getString("name"))
-            error("Compare the code to pair with this person.")
-        }
         val previous = peer
-        require(previous == null || ChatProtocol.participant(previous) == participant) { "Nearby identity changed. Reconnect and compare the codes." }
+        require(previous == null || ChatProtocol.participant(previous) == participant) { "Nearby identity changed. Reconnect to continue." }
         session.verifyPeer(participant)
         remember(verified)
         peerGeneration=session.connectionGeneration;peer=verified

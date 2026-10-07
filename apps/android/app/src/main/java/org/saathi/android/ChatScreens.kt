@@ -139,13 +139,13 @@ fun chatStatus(message:JSONObject)=when {
             SwarmFormation(peer!=null);Text(if(peer!=null)"You're in a Swarm" else "No nearby Swarm yet",style=MaterialTheme.typography.titleLarge)
             Text(if(peer!=null)"1 person reachable nearby" else "Enable Nearby to find compatible people and channels around you.",style=MaterialTheme.typography.bodyMedium)
             if(peer==null)Button(onClick={discover(false)},enabled=!state.busy&&vm.nearby.available){Text("Search nearby")}
-            Text(if(peer!=null)"This connection may carry saved messages for shared channels." else "Your chosen display name appears to nearby devices while you search. Compare the code before connecting.",style=MaterialTheme.typography.bodySmall)
+            Text(if(peer!=null)"This connection may carry saved messages for shared channels." else "Your chosen display name appears to nearby devices while you search. Swarm phones connect automatically.",style=MaterialTheme.typography.bodySmall)
             Text("Android Nearby can connect directly with Wi-Fi and Bluetooth on. No internet, router or manual hotspot is needed for messages and saved media.",style=MaterialTheme.typography.bodySmall)
         }}}
         item {HotspotCard(vm,state)}
         item {Text("People",style=MaterialTheme.typography.titleLarge)}
         if(peer!=null)item {Column{Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){Avatar(peer.getJSONObject("body").getString("name"));Column(Modifier.weight(1f)){Text(peer.getJSONObject("body").getString("name"),style=MaterialTheme.typography.titleMedium);Text("Nearby participant",style=MaterialTheme.typography.bodySmall)};Button(onClick={vm.openChat(peer,open)},enabled=!state.busy){Text("Message")}};TextButton({reportPerson=ChatProtocol.participant(peer)}){Text("Report person")}}}
-        items(state.peers.entries.toList(),key={it.key}){item->ListItem(headlineContent={Text(item.value)},supportingContent={Text("Compare a code to meet this person")},leadingContent={Icon(Icons.Outlined.PersonOutline,null)},trailingContent={TextButton(onClick={vm.connect(item.key)},enabled=!state.busy){Text("Connect")}})}
+        items(state.peers.entries.toList(),key={it.key}){item->ListItem(headlineContent={Text(item.value)},supportingContent={Text("Connects automatically")},leadingContent={Icon(Icons.Outlined.PersonOutline,null)},trailingContent={TextButton(onClick={vm.connect(item.key)},enabled=!state.busy){Text("Connect")}})}
         if(peer==null && state.peers.isEmpty())item {Text(state.nearbyStatus,color=MaterialTheme.colorScheme.onSurfaceVariant)}
         item {HorizontalDivider();Row(verticalAlignment=Alignment.CenterVertically){Text("Channels nearby",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge);IconButton(onClick=create){Icon(Icons.Outlined.Add,"Create channel")}}}
         items(state.nearbyChannels,key={it.getString("id")}){channel->

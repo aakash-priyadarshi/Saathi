@@ -37,8 +37,6 @@ struct SwarmApp: App {
     let session: Session
     @Published private(set) var chat: ChatEngine?
     @Published private(set) var failure: String?
-    /// Names that failed the known-person check: they compare a code until Swarm restarts.
-    private var needsCode = Set<String>()
 
     init() {
         session = Session(nearby: nearby)
@@ -53,15 +51,7 @@ struct SwarmApp: App {
             nearby.onDisconnected = { [session] in session.reset() }
             nearby.onError = { [weak chat] in chat?.notice = $0 }
             nearby.displayName = { [weak chat] in chat?.name ?? "" }
-            nearby.knownNames = { [weak chat] in Set((chat?.contacts() ?? []).compactMap { (($0["profile"] as? JSON)?["body"] as? JSON)?["name"] as? String }) }
-            // Only the first pairing compares a code: people already met (and fellow group members) reconnect directly.
-            nearby.trusted = { [weak self, nearby] name in !(self?.needsCode.contains(name) ?? true) && nearby.knownNames().contains(name) }
-            chat.codeSkipped = { [nearby] in nearby.codeSkipped }
-            chat.onUnknownPeer = { [weak self, weak chat, nearby] name in
-                self?.needsCode.insert(name); nearby.disconnect()
-                chat?.notice = "\(name) is new to this phone. Compare the code to pair."
-                Task { try? await Task.sleep(nanoseconds: 2_000_000_000); nearby.resume() }
-            }
+            nearby.busy = { [weak chat] in chat?.transfers.awaiting.values.contains { Date().timeIntervalSince($0) < 60 } ?? false }
             session.onConfirmed = { [weak chat] in await chat?.announce() }
             // A phone notification for each new message that arrives while Swarm is not on screen.
             if !UserDefaults.standard.bool(forKey: "SwarmNoAlerts") { // debug runs skip the prompt (simulator sync tests)
@@ -167,10 +157,6 @@ struct RootView: View {
             Button("Join") { if let link = chat.receivedInvite { Task { do { try await chat.acceptInvite(link) } catch { chat.notice = error.localizedDescription } } } }
             Button("Not now", role: .cancel) {}
         } message: { Text("The nearby person invited you to a channel.") }
-        .alert("Compare the code", isPresented: Binding(get: { nearby.pairCode != nil }, set: { _ in })) {
-            Button("Codes match") { nearby.confirm(true) }
-            Button("Reject", role: .cancel) { nearby.confirm(false) }
-        } message: { Text("This iPhone shows \(nearby.pairCode ?? ""). Accept only if the other phone shows the same code.") }
     }
 }
 

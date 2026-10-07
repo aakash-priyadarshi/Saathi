@@ -69,17 +69,10 @@ import SwarmCore
             c["title"] = title; try save("chat-conversations", c["id"] as! String, c)
         }
     }
-    /// Set by the app: whether this link skipped the code, and what to do when that phone is not someone already met.
-    var codeSkipped: () -> Bool = { false }
-    var onUnknownPeer: (String) -> Void = { _ in }
     func verifyTransportPeer(_ person: JSON) throws -> String {
         try ChatRules.profile(person, now: now())
         let id = ChatRules.participant(person)
-        if codeSkipped() && store.get("chat-contacts", id) == nil {
-            onUnknownPeer(body(person)["name"] as? String ?? "This person")
-            throw ChatRuleError("Compare the code to pair with this person.")
-        }
-        if let previous = peer { try J.req(ChatRules.participant(previous) == id, "Nearby identity changed. Reconnect and compare the codes.") }
+        if let previous = peer { try J.req(ChatRules.participant(previous) == id, "Nearby identity changed. Reconnect to continue.") }
         try remember(person)
         heldPeer = person; peerGeneration = session.generation; changed()
         return id

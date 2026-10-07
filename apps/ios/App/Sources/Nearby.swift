@@ -12,7 +12,6 @@ import SwarmCore
 
     @Published private(set) var peers: [EndpointID: String] = [:]
     @Published private(set) var status = "Ready to connect nearby"
-    @Published private(set) var pairCode: String?
     @Published private(set) var connected: EndpointID?
     @Published private(set) var connectedName = ""
     @Published private(set) var searching = false
@@ -23,28 +22,28 @@ import SwarmCore
     var onConnected: () -> Void = {}
     var onDisconnected: () -> Void = {}
     var onError: (String) -> Void = { _ in }
-    /// Names of people this phone has already met; a found phone with one of them is connected automatically.
-    var knownNames: () -> Set<String> = { [] }
     var displayName: () -> String = { "" }
-    /// Names that may reconnect without the code (people already met, minus any that failed the identity check).
-    var trusted: (String) -> Bool = { _ in false }
-    /// This link skipped the code because the phone's name was known; the signed identity must match a contact.
-    private(set) var codeSkipped = false
+    /// A file offer is waiting for an answer: keep the link instead of moving on.
+    var busy: () -> Bool = { false }
     private var retry: Task<Void, Never>?
+    private var rotation: Task<Void, Never>?
+    /// When this link last carried a frame either way; a quiet link has exchanged everything.
+    private var lastActivity = Date()
+    /// When each phone (by advertised name) was last connected, so a moving crowd keeps meeting new phones.
+    private var lastMet: [String: Date] = [:]
 
     private let manager = ConnectionManager(serviceID: Nearby.service, strategy: .pointToPoint)
     private lazy var advertiser = Advertiser(connectionManager: manager)
     private lazy var discoverer = Discoverer(connectionManager: manager)
     private lazy var bridge = NearbyBridge(owner: self)
     private var pending: EndpointID?
-    private var decide: ((Bool) -> Void)?
     private var names: [EndpointID: String] = [:]
     private var refresh: Task<Void, Never>?
     private var generation = 0
     private var foreground = false
     private var lastFound = Date.distantPast
+    private var searchStarted = Date.distantPast
     private var attempted: [String: Date] = [:]
-    private var lastPeerName: String?
     /// Frames that arrive between the peer's accept and our `.connected` callback (Android sends at once).
     private var early: [Data] = []
 
@@ -88,7 +87,7 @@ import SwarmCore
         guard connected == nil else { return }
         stopRadios(); peers = [:]; generation += 1
         let token = generation, name = displayName(), info = Data(String(name.prefix(32)).utf8)
-        searching = true; lastFound = Date()
+        searching = true; lastFound = Date(); searchStarted = Date()
         let started: (Error?) -> Void = { [weak self] error in
             Task { @MainActor in
                 guard let self, self.generation == token, let error else { return }
@@ -97,7 +96,7 @@ import SwarmCore
         }
         discoverer.startDiscovery(completionHandler: started)
         advertiser.startAdvertising(using: info, completionHandler: started)
-        status = lastPeerName.map { "Looking for \($0) and other team members nearby…" } ?? "Searching nearby and visible as \(name)"
+        status = "Searching nearby and visible as \(name)"
         refresh = Task { [weak self] in
             while true {
                 try? await Task.sleep(nanoseconds: 120_000_000_000)
@@ -121,15 +120,9 @@ import SwarmCore
             }
         }
     }
-    /// The person compared both codes. Rejecting ends the attempt; nothing was exchanged.
-    func confirm(_ match: Bool) {
-        decide?(match); decide = nil; pairCode = nil
-        if !match { pending = nil; status = "Pairing declined. Still searching." }
-    }
     func stop() { stopRadios(); peers = [:]; generation += 1; status = "Stopped. Search again when the other person is ready." }
     func disconnect() {
         if let c = connected { manager.disconnect(from: c) }
-        lastPeerName = nil // a deliberate disconnect is not a dropped connection
         stopRadios(); finish(reconnect: false)
     }
     private func stopRadios() {
@@ -138,7 +131,9 @@ import SwarmCore
     }
     private func finish(reconnect: Bool = true) {
         let was = connected != nil
-        connected = nil; connectedName = ""; pending = nil; pairCode = nil; decide = nil; peers = [:]; generation += 1; early = []
+        if was { lastMet[connectedName] = Date() }
+        rotation?.cancel(); rotation = nil
+        connected = nil; connectedName = ""; pending = nil; peers = [:]; generation += 1; early = []
         guard was else { return }
         status = "Nearby connection ended. Your messages are saved."; onDisconnected()
         // A dropped link (walking apart, airplane mode, radio change) goes straight back to searching.
@@ -155,6 +150,7 @@ import SwarmCore
         guard let c = connected else { throw ChatRuleError("Connect nearby first.") }
         let data = try JSONSerialization.data(withJSONObject: frame)
         guard data.count <= Self.maximumFrameBytes else { throw ChatRuleError("This update is too large for the nearby connection.") }
+        lastActivity = Date()
         try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
             _ = manager.send(data, to: [c]) { error in if let error { done.resume(throwing: error) } else { done.resume() } }
         }
@@ -167,22 +163,36 @@ import SwarmCore
         peers[id] = name; names[id] = name; lastFound = Date()
         autoConnect()
     }
-    /// Someone already met (or the person just lost) reconnects without a tap or a code. Discovery reports a phone
-    /// once, so a failed attempt is retried every 35 seconds while it stays in range.
+    /// Swarm is internal, so any Swarm phone in range connects without a tap or code, least recently met first. A phone met in
+    /// the last two minutes waits 15 s so others nearby get a turn. Discovery reports a phone once, so this looks again every 10 s.
     private func autoConnect() {
         guard connected == nil, pending == nil else { return }
-        let known = knownNames()
-        if let (id, name) = peers.first(where: { ($0.value == lastPeerName || known.contains($0.value)) && Date().timeIntervalSince(attempted[$0.value] ?? .distantPast) > 30 }) {
-            attempted[name] = Date(); connect(id)
+        let now = Date()
+        if let (id, name) = peers.filter({ now.timeIntervalSince(attempted[$0.value] ?? .distantPast) > 30 }).min(by: { (lastMet[$0.value] ?? .distantPast) < (lastMet[$1.value] ?? .distantPast) }),
+           now.timeIntervalSince(lastMet[name] ?? .distantPast) > 120 || now.timeIntervalSince(lastFound) > 15 || now.timeIntervalSince(searchStarted) > 15 {
+            attempted[name] = now; connect(id)
         }
         retry?.cancel()
         retry = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 35_000_000_000)
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
             guard let self, !Task.isCancelled, self.connected == nil else { return }
             self.autoConnect()
         }
     }
-    /// Another phone is dialling this one: note its name for the code decision, and do not dial it back.
+    /// Point-to-point links hold one phone each, so a quiet link (25 s, everything exchanged) is let go to meet the next phone;
+    /// messages hop on from there.
+    private func rotateWhenIdle(_ id: EndpointID) {
+        rotation?.cancel()
+        rotation = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                guard let self, !Task.isCancelled, self.connected == id else { return }
+                if self.busy() || Date().timeIntervalSince(self.lastActivity) < 25 { continue }
+                self.manager.disconnect(from: id); self.finish(); return
+            }
+        }
+    }
+    /// Another phone is dialling this one: note its name, and do not dial it back.
     func incoming(_ id: EndpointID, _ info: Data) {
         guard connected == nil else { return }
         let raw = String(decoding: info.prefix(40), as: UTF8.self)
@@ -193,7 +203,7 @@ import SwarmCore
     private func expire(_ id: EndpointID) {
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 30_000_000_000)
-            guard let self, self.pending == id, self.connected == nil, self.pairCode == nil else { return }
+            guard let self, self.pending == id, self.connected == nil else { return }
             self.pending = nil; self.status = "No answer from \(self.names[id] ?? "that phone"). Still searching."
             self.autoConnect()
         }
@@ -201,26 +211,26 @@ import SwarmCore
     func lost(_ id: EndpointID) { peers[id] = nil }
     func verify(_ code: String, _ id: EndpointID, _ handler: @escaping (Bool) -> Void) {
         guard connected == nil, pending == nil || pending == id else { handler(false); return }
-        let name = names[id] ?? ""
-        codeSkipped = !name.isEmpty && trusted(name)
-        if codeSkipped { pending = id; status = "Reconnecting to \(name)…"; handler(true); return }
-        pending = id; pairCode = code; decide = handler; status = "Compare the code on both phones"
+        // Swarm is internal: every Swarm phone connects without a code. Its signed identity is checked when it arrives.
+        pending = id; status = "Connecting to \(names[id] ?? "phone")…"; handler(true)
     }
     func changed(_ state: ConnectionState, _ id: EndpointID) {
         switch state {
         case .connecting: if pending == nil { pending = id }
         case .connected:
-            pending = nil; connected = id; connectedName = names[id] ?? "Nearby phone"; lastPeerName = connectedName; stopRadios()
+            pending = nil; connected = id; connectedName = names[id] ?? "Nearby phone"; stopRadios()
+            lastActivity = Date(); rotateWhenIdle(id)
             status = "Connected to \(connectedName)"; onConnected()
             let held = early; early = []
             for data in held { received(data, from: id) }
         case .disconnected, .rejected:
-            if connected == id || pending == id { if connected == nil { pending = nil; pairCode = nil; decide = nil; status = searching ? "Pairing ended. Still searching." : "Pairing ended." } else { finish() } }
+            if connected == id || pending == id { if connected == nil { pending = nil; status = searching ? "Pairing ended. Still searching." : "Pairing ended." } else { finish() } }
         }
     }
     func received(_ data: Data, from id: EndpointID) {
         if connected == nil && pending == id { if early.count < 64 { early.append(data) }; return }
         guard id == connected else { NSLog("Swarm: dropped frame from unconnected endpoint"); return }
+        lastActivity = Date()
         guard data.count <= Self.maximumFrameBytes, let frame = try? JSONSerialization.jsonObject(with: data) as? JSON else {
             onError("A nearby message could not be read."); return
         }
@@ -238,7 +248,7 @@ final class NearbyBridge: ConnectionManagerDelegate, DiscovererDelegate, Adverti
     func discoverer(_ discoverer: Discoverer, didLose endpointID: EndpointID) { main { $0.lost(endpointID) } }
     func advertiser(_ advertiser: Advertiser, didReceiveConnectionRequestFrom endpointID: EndpointID, with context: Data,
                     connectionRequestHandler: @escaping (Bool) -> Void) {
-        connectionRequestHandler(true) // the code check (or the known-person check) follows before any data flows
+        connectionRequestHandler(true) // accepted without a code; the signed identity is checked before any data is used
         main { $0.incoming(endpointID, context) }
     }
     func connectionManager(_ connectionManager: ConnectionManager, didReceive verificationCode: String, from endpointID: EndpointID,

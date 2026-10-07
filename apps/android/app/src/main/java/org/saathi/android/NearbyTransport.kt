@@ -24,8 +24,6 @@ interface PeerTransport {
     val maximumFrameBytes: Int get() = 24000
     val supportsFiles: Boolean get() = true
     val capabilities: Set<TransportCapability> get() = TransportCapabilities.of(mediaAvailable, supportsFiles)
-    /** This link skipped the code comparison because the phone's name belongs to someone already met. */
-    val codeSkipped: Boolean get() = false
     suspend fun send(frame: JSONObject)
     fun disconnect()
 }
@@ -61,9 +59,10 @@ class NearbyTransport(context: Context, private val scope: CoroutineScope) : Pee
     var onFrame: (JSONObject) -> Unit = {}
     var onError: (String) -> Unit = {}
     var onConnectionLost: ((advertise: Boolean, automatic: Boolean) -> Unit)? = null
-    /** Names of people already met (contacts and fellow group members): only the first pairing compares a code. */
-    var trusted: (String) -> Boolean = { false }
-    override var codeSkipped = false; private set
+    /** When this link last carried a frame either way; a quiet link has exchanged everything. */
+    @Volatile var lastActivity = 0L; private set
+    /** The connected (or last connected) phone's advertised name. */
+    var peerName = ""; private set
     private val peers = linkedMapOf<String, String>()
     private val service = "org.saathi.nearby.v1.${BuildConfig.ENVIRONMENT}"
     /** Searching, pairing or connected: an automatic search must not replace any of these. */
@@ -84,6 +83,7 @@ class NearbyTransport(context: Context, private val scope: CoroutineScope) : Pee
         override fun onPayloadReceived(from: String, payload: Payload) {
             if (!isCurrent(token) || !connected || from != endpoint || payload.type != Payload.Type.BYTES) return
             val raw = payload.asBytes() ?: return
+            lastActivity = System.currentTimeMillis()
             if (raw.size > maximumFrameBytes) { onError("A nearby message exceeded the safe size limit."); return }
             runCatching { onFrame(JSONObject(String(raw, Charsets.UTF_8))) }.onFailure { onError("A nearby message could not be read.") }
         }
@@ -95,10 +95,8 @@ class NearbyTransport(context: Context, private val scope: CoroutineScope) : Pee
             if (!isCurrent(token)) return
             if (pending != null || connected || lifecycle == Lifecycle.PAIRING) { log("connection-rejected-busy", "peer=${endpointTag(id)}"); return }
             pending = id; accepting = false; setLifecycle(Lifecycle.PAIRING, "peer=${endpointTag(id)}")
-            // A known person reconnects without the code; their signed identity is checked as soon as it arrives.
-            codeSkipped = trusted(info.endpointName)
-            if (codeSkipped) { onState("Reconnecting to ${info.endpointName.take(32)}…"); confirm(true) }
-            else { onPair(info.authenticationDigits); onState("Compare the code on both devices") }
+            // Swarm is internal: every Swarm phone connects without a code. Its signed identity is checked when it arrives.
+            peerName = info.endpointName.take(40); onState("Connecting to ${peerName.take(32)}…"); confirm(true)
             scope.launch { delay(60000); if (isCurrent(token) && pending == id && !accepting) confirm(false) }
         }
         override fun onConnectionResult(id: String, result: ConnectionResolution) {
@@ -106,7 +104,7 @@ class NearbyTransport(context: Context, private val scope: CoroutineScope) : Pee
             log("connection-result", "peer=${endpointTag(id)} status=${result.status.statusCode} success=${result.status.isSuccess}")
             onPair(null); pending = null; accepting = false
             if (result.status.isSuccess) {
-                endpoint = id; connected = true; setLifecycle(Lifecycle.CONNECTED); stopScan(); onState("Connected nearby")
+                endpoint = id; connected = true; lastActivity = System.currentTimeMillis(); setLifecycle(Lifecycle.CONNECTED); stopScan(); onState("Connected nearby")
             } else { connected = false; endpoint = null; setLifecycle(if (activeAdvertise || activeAutomatic) Lifecycle.ADVERTISING else Lifecycle.DISCOVERING); onState("Pairing was declined or interrupted. Choose the person again when ready.") }
         }
         override fun onDisconnected(id: String) {
@@ -266,6 +264,7 @@ class NearbyTransport(context: Context, private val scope: CoroutineScope) : Pee
         val raw = frame.toString().toByteArray(Charsets.UTF_8)
         require(raw.size <= maximumFrameBytes)
         log("payload-send", "peer=${endpointTag(target)} bytes=${raw.size}")
+        lastActivity = System.currentTimeMillis()
         client.sendPayload(target, Payload.fromBytes(raw)).await()
     }
 

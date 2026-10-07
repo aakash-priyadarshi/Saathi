@@ -186,39 +186,21 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         session.onEnded = { endMedia() }
         nearby.onState = { status ->
             mutable.update { it.copy(nearbyStatus = status, connected = nearby.connected) }
-            if (nearby.connected) action { session.confirm() } else session.reset()
+            if (nearby.connected) { action { session.confirm() }; rotateWhenIdle() } else session.reset()
             refreshLocal()
         }
         nearby.onPeers = { peers -> mutable.update { it.copy(peers = peers) }; autoConnect(peers) }
-        nearby.trusted = { name -> name !in needsCode && runCatching { chat.contacts().any { it.getJSONObject("profile").getJSONObject("body").getString("name") == name } }.getOrDefault(false) }
-        chat.onUnknownPeer = { name -> needsCode.add(name); notice("$name is new to this phone. Compare the code to pair."); viewModelScope.launch { delay(2000); autoSearch() } }
         nearby.onPair = { code -> mutable.update { it.copy(pairCode = code) } }
         nearby.onFrame = { session.incoming(it) }; nearby.onError = { notice(it) }
-        nearby.onConnectionLost = { advertise, automatic ->
-            // iPhones speak Nearby only (not Swarm's Android Bluetooth fallback), so search Nearby again for them.
-            if (session.lastRemotePlatform == "ios") viewModelScope.launch { delay(1500); autoSearch() }
-            else { chat.peer?.let { session.requireSamePeer(ChatProtocol.participant(it)) }
-            viewModelScope.launch {
-                var waited = 0
-                while (state.value.busy && waited < 5000) { delay(100); waited += 100 }
-                if (state.value.busy || !preferences().optBoolean("nearbyVisible", true) || !ble.available || session.transport !== nearby) {
-                    if (!ble.available) notice("Nearby connection changed. Messages are saved; Bluetooth is unavailable on this phone.")
-                    return@launch
-                }
-                action {
-                    activate(ble, preservePeerIdentity = true)
-                    notice("Nearby connection changed. Looking for the same person by Bluetooth…")
-                    ble.start(advertise = if (automatic) false else advertise, auto = automatic)
-                }
-            } }
-        }
+        // Links end all the time in a moving crowd (or on purpose, see rotateWhenIdle): note who it was and find the next phone.
+        nearby.onConnectionLost = { _, _ -> lastMet[nearby.peerName] = System.currentTimeMillis(); viewModelScope.launch { delay(1500); autoSearch() } }
         ble.onState = { status ->
             mutable.update { it.copy(nearbyStatus = status, connected = ble.connected) }
             if (ble.connected) action { session.confirm() } else session.reset()
             refreshLocal()
         }
         ble.onPeers = { peers -> mutable.update { it.copy(peers = peers) } }
-        ble.onPair = { code -> mutable.update { it.copy(pairCode = code) } }
+        ble.onPair = { code -> if (code != null) ble.confirm(true) } // no code comparison: Swarm is internal
         ble.onFrame = { session.incoming(it) }; ble.onError = { notice(it) }
         SwarmAlerts.channels(getApplication())
         refreshLocal(); if(startServices){refreshInBackground(); foregroundActive()}
@@ -475,7 +457,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         if (session.transport === ble && ble.connected) return
         if (!preferences().optBoolean("nearbyVisible", true) || !repository.featureEnabled("nearby") || !nearbyPermitted()) return
         viewModelScope.launch {
-            runCatching { activate(nearby); nearby.scan(false, true, chat.profile().getJSONObject("body").getString("name")) }
+            runCatching { activate(nearby); searchSince = System.currentTimeMillis(); nearby.scan(false, true, chat.profile().getJSONObject("body").getString("name")) }
         }
     }
     private val swarmHotspot by lazy { SwarmHotspot(getApplication()) }
@@ -487,22 +469,40 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     }
     fun stopHotspot() { swarmHotspot.stop(); mutable.update { it.copy(hotspot = null) } }
     private val autoAttempts = mutableMapOf<String, Long>()
-    /** Names that failed the known-person check: they compare a code until Swarm restarts. */
-    private val needsCode = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    /** When each phone (by advertised name) was last connected, so a moving crowd keeps meeting new phones. */
+    private val lastMet = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private var searchSince = 0L
     private var autoRetry: Job? = null
-    /** People already met reconnect without a tap (the code check still follows). A random delay avoids both phones dialling at once. */
+    private var rotation: Job? = null
+    /** Swarm is internal, so any Swarm phone in range connects without a tap or code, least recently met first. A phone met in
+     *  the last two minutes waits 15 s so others nearby get a turn. A random delay avoids both phones dialling at once. */
     private fun autoConnect(peers: Map<String, String>) {
         if (!BuildConfig.CHAT_ENABLED || state.value.connected || state.value.pairCode != null) return
-        val known = runCatching { chat.contacts().map { it.getJSONObject("profile").getJSONObject("body").getString("name") }.toSet() }.getOrDefault(emptySet())
         val now = System.currentTimeMillis()
-        val target = peers.entries.firstOrNull { it.value in known && now - (autoAttempts[it.value] ?: 0L) > 30_000 } ?: return
-        autoAttempts[target.value] = now
-        viewModelScope.launch {
-            delay((2_000L..6_000L).random())
-            if (!state.value.connected && state.value.pairCode == null && state.value.peers.containsKey(target.key)) runCatching { nearby.connect(target.key) }
+        val target = peers.entries.filter { now - (autoAttempts[it.value] ?: 0L) > 30_000 }.minByOrNull { lastMet[it.value] ?: 0L }
+        if (target != null && (now - (lastMet[target.value] ?: 0L) > 120_000 || now - searchSince > 15_000)) {
+            autoAttempts[target.value] = now
+            viewModelScope.launch {
+                delay((2_000L..6_000L).random())
+                if (!state.value.connected && state.value.pairCode == null && state.value.peers.containsKey(target.key)) runCatching { nearby.connect(target.key) }
+            }
         }
-        // Discovery reports a phone once; if that attempt fails, try again while it is still in range.
-        autoRetry?.cancel(); autoRetry = viewModelScope.launch { delay(35_000); if (!state.value.connected) autoConnect(state.value.peers) }
+        // Discovery reports a phone once; look again while phones stay in range.
+        autoRetry?.cancel(); autoRetry = viewModelScope.launch { delay(10_000); if (!state.value.connected) autoConnect(state.value.peers) }
+    }
+    /** Point-to-point links hold one phone each, so a quiet link (25 s, everything exchanged) is let go to meet the next phone;
+     *  messages hop on from there. Calls, walkie-talkie and file offers keep the link. */
+    private fun rotateWhenIdle() {
+        rotation?.cancel(); rotation = viewModelScope.launch {
+            while (isActive) {
+                delay(5_000)
+                if (!nearby.connected || session.transport !== nearby) return@launch
+                val s = state.value
+                if (s.calling || s.callActive || s.media || session.offerInFlight() || System.currentTimeMillis() - nearby.lastActivity < 25_000) continue
+                lastMet[nearby.peerName] = System.currentTimeMillis()
+                nearby.disconnect(); delay(1_500); autoSearch(); return@launch
+            }
+        }
     }
     private fun checkRemoteFeatures() {
         if (reconnectCheck?.isActive == true) return
