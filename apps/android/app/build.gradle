@@ -15,10 +15,10 @@ android {
         applicationId 'org.saathi.android'
         minSdk 26
         targetSdk 36
-        // Keep QA updates installable over the same package. Reserve 1.0.0 for
-        // the first stable production release; increment versionCode on every build.
-        versionCode 13
-        versionName '0.1.11'
+        // 1.0.0 is the build for the 9-10 Oct 2026 event, the same on iPhone. Keep QA updates installable over
+        // the same package: increment versionCode on every build.
+        versionCode 14
+        versionName '1.0.0'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         buildConfigField 'String', 'CONFIG_ROOT', quote(configRoot)
         buildConfigField 'String', 'BOOTSTRAP', quote(bootstrap)
