@@ -14,6 +14,18 @@ Implement and report the actual capability boundaries: integrate and qualify Goo
 
 Run the Swift package and protocol-vector tests, add and build the native app target, and use Simulator plus real iPhone↔S24/Tab tests for each claimed transport and lifecycle behavior. Exercise offline reopen, pairing-code confirmation, text and media integrity, reconnect/inventory/receipts, BLE fallback limits, PTT release/interruption, and stale gateway-route handling. Test three-device forwarding only when three devices are available; otherwise record it as unverified. Do not claim 1,000-device scale from unit tests or two-device tests. Add macOS app-build CI after it builds reliably, keep signing credentials outside this public repository, and submit the implementation as a PR. If the Mac or iPhone is unavailable, leave the app explicitly unimplemented and report the blocker instead of claiming completion.
 
+## iPhone app status and device results (7 October 2026)
+
+`apps/ios/App` (XcodeGen, `xcodegen generate`) builds **CJP Swarm** (`org.cjp.swarm.staging`), which speaks the Android QA protocol (`org.saathi.nearby.v1.staging`). It implements signed identity, Nearby pairing with compared codes, end-to-end encrypted DMs, open/invite channel membership and posting (as a member), invites/admissions, receipts and inventory/need store-and-forward. Not yet: creating/administering channels, attachments, server sync, walkie-talkie, background operation.
+
+Measured with an iPhone 17 Pro Max (iOS 27.2) and a Pixel 8 (Android 17 beta, Swarm QA 0.1.1):
+
+- Same Wi-Fi network: discovery both ways; DMs and receipts both ways (WIFI_LAN medium).
+- Airplane mode with Bluetooth on: **the iPhone discovers the Android phone; the Android phone does not discover an advertising iPhone.** DMs, receipts and inventory/need work over BLE.
+- iPhone discovery reads the Android GATT advertisement; after repeated advertise/stop cycles on the Android phone those reads timed out until Bluetooth was restarted on both phones.
+- Bandwidth upgrade fails: Android offers WIFI_HOTSPOT and the iPhone cannot join it because `NEHotspotConfiguration` needs the Hotspot Configuration entitlement, which free (personal) teams cannot use. Without a paid Apple team the iPhone stays on BLE (probe: about 4.5 KB/s application throughput, 1 MiB in 3 m 49 s).
+- Free-team installs must be opened once with internet after each install before they launch offline; they expire after 7 days.
+
 ## Fetch and run the foundation on a Mac
 
 Install the Xcode version compatible with your macOS from [Apple's requirements](https://developer.apple.com/xcode/system-requirements), select its command-line tools, then:
