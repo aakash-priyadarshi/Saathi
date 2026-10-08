@@ -1346,15 +1346,9 @@ dd {
   color: var(--muted);
   margin: 15px 0 30px;
 }
-.demo-login {
-  padding: 18px;
-  margin-top: 25px;
-  background: var(--soft);
-  border-radius: 8px;
-  font-size: 12px;
-}
-.demo-login p {
-  margin-top: 10px;
+.turnstile-widget {
+  min-height: 66px;
+  margin: 0 0 18px;
 }
 .workspace-header {
   display: flex;

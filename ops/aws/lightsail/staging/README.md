@@ -48,7 +48,25 @@ egress or tax charges. See [Lightsail bundle pricing](https://docs.aws.amazon.co
 `SYNC_RECEIPT_KEYRING_JSON`, `SERVICE_CONFIG_JSON`, and
 `SERVICE_CONFIG_ROOT_PUBLIC_JWK`. Generate its values with
 `scripts/service-config.mjs`; keep the configuration-root private key offline.
-The API container alone receives this file.
+The API container alone receives this file. For web sign-in, add the existing
+Cloudflare Turnstile secret as `TURNSTILE_SECRET` in this file and set
+`TURNSTILE_HOSTNAMES=swarm.cockroachjantaparty.org`. The site key is public and
+is embedded in the web image; never put the secret in the web image, browser
+code, or repository. Web sign-in fails closed until the secret is configured.
+
+After the image containing the admin bootstrap command is deployed, create the
+first real administrator with a one-time generated password:
+
+```sh
+sudo docker compose run --rm --no-deps --entrypoint node api \
+  packages/database/dist/create-admin.js \
+  --email admin@example.org --name "Site Administrator"
+```
+
+The command is restricted to non-demo staging/production databases, refuses to
+overwrite an existing account, records an audit event, and prints the password
+once. Save it in a password manager. The old synthetic `@saathi.test` accounts
+are not changed by this bootstrap command.
 
 The image is published to `ghcr.io/aakash-priyadarshi/saathi` by the public
 repository's GitHub Actions workflow. The package must be marked public once in
