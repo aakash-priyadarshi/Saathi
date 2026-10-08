@@ -28,6 +28,8 @@ const schema = z.object({
   RESERVATION_MINUTES: z.coerce.number().int().min(1).max(120).default(20),
   SESSION_DAYS: z.coerce.number().int().min(1).max(30).default(7),
   DEMO_MODE: z.enum(['true', 'false']).default('false'),
+  TURNSTILE_SECRET: z.string().optional(),
+  TURNSTILE_HOSTNAMES: z.string().default(''),
   EMAIL_PROVIDER: z.enum(['log', 'resend']).default('log'),
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().default('Saathi <help@example.org>'),

@@ -82,7 +82,7 @@ class NativeDualTest {
             } }
         }
         try {
-            repository.refresh(); if (role == "author") repository.login("android-volunteer@saathi.test", args.getString("fixturePassword")!!, "")
+            repository.refresh(); if (role == "author") repository.login("android-volunteer@saathi.test", args.getString("fixturePassword")!!, "", "test-token")
             meet("prepared", obj("internetValidated" to internet()))
             pair()
             withContext(Dispatchers.Main) { session.message("Physical $role message ✓") }

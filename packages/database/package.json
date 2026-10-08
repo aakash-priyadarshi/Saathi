@@ -7,6 +7,7 @@
     "generate": "prisma generate",
     "migrate": "dotenv -e ../../.env -- prisma migrate deploy",
     "seed": "tsx src/seed.ts",
+    "create-admin": "tsx src/create-admin.ts",
     "clear-staging-demo-relief": "tsx src/clear-staging-demo-relief.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json"

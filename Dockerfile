@@ -4,8 +4,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 RUN corepack enable && corepack prepare pnpm@10.27.0 --activate
 ARG API_INTERNAL_URL=http://api:4000
 ARG NEXT_PUBLIC_PLATFORM_NAME=SWARM
+ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY=0x4AAAAAAFQ64yEFzML8_xSE
 ENV API_INTERNAL_URL=${API_INTERNAL_URL}
 ENV NEXT_PUBLIC_PLATFORM_NAME=${NEXT_PUBLIC_PLATFORM_NAME}
+ENV NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
 COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm db:generate && pnpm build

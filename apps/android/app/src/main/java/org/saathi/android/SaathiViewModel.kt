@@ -390,7 +390,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     }
     fun cancelVoice() { voiceTimeout?.cancel();runCatching {recorder?.stop()};runCatching {recorder?.release()};recorder=null;voiceFile?.delete();voiceFile=null;mutable.update {it.copy(recording=false)} }
     suspend fun loadDashboard() { mutable.update { it.copy(dashboard = JSONObject(repository.api("/volunteer/dashboard", authenticated = true))) } }
-    fun login(email: String, password: String, totp: String) = action { repository.login(email, password, totp); loadDashboard(); notice("This phone is ready for offline publishing.") }
+    fun login(email: String, password: String, totp: String, turnstileToken: String) = action { repository.login(email, password, totp, turnstileToken); loadDashboard(); notice("This phone is ready for offline publishing.") }
     fun saveDraft(id: String, draft: JSONObject) { viewModelScope.launch(Dispatchers.IO) { repository.store.put("drafts", id, JSONObject(draft.toString()).put("id", id)); refreshLocal() } }
     fun publish(id: String, draft: JSONObject, type: String, payload: JSONObject, organization: String, done: () -> Unit) = action {
         withContext(Dispatchers.IO) { repository.store.put("drafts", id, draft) }

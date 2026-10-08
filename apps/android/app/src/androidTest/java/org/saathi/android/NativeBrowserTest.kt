@@ -53,7 +53,7 @@ class NativeBrowserTest {
             }
         }
         try {
-            repository.refresh(); repository.login("android-volunteer@saathi.test", args.getString("fixturePassword")!!, "")
+            repository.refresh(); repository.login("android-volunteer@saathi.test", args.getString("fixturePassword")!!, "", "test-token")
             pair()
             withContext(Dispatchers.Main) { session.message("Native fixture message ✓") }
             bridge("message")

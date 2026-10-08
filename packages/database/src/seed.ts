@@ -22,8 +22,21 @@ export async function seed(db: PrismaClient) {
     create: { name: 'Medical Volunteers Group', verified: true },
     update: {},
   });
+  const realAdministrator = await db.user.findFirst({
+    where: { role: 'ADMIN', email: { not: 'admin@saathi.test' } },
+    select: { id: true },
+  });
   const accounts = [
-    { email: 'admin@saathi.test', name: 'Saathi Admin', role: 'ADMIN' as const, org: community },
+    ...(!realAdministrator
+      ? [
+          {
+            email: 'admin@saathi.test',
+            name: 'Saathi Admin',
+            role: 'ADMIN' as const,
+            org: community,
+          },
+        ]
+      : []),
     {
       email: 'coordinator@saathi.test',
       name: 'Ananya R.',
@@ -38,7 +51,12 @@ export async function seed(db: PrismaClient) {
       org: medical,
     },
     { email: 'public@saathi.test', name: 'Public user', role: 'PUBLIC' as const, org: community },
-    { email: 'android-volunteer@saathi.test', name: 'Android QA Volunteer', role: 'VOLUNTEER' as const, org: community },
+    {
+      email: 'android-volunteer@saathi.test',
+      name: 'Android QA Volunteer',
+      role: 'VOLUNTEER' as const,
+      org: community,
+    },
   ];
   const users = [];
   for (const account of accounts) {

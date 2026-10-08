@@ -1,7 +1,8 @@
 'use client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import Script from 'next/script';
+import { useEffect, useRef, useState } from 'react';
 import {
   LogOut,
   Plus,
@@ -24,6 +25,24 @@ import {
   MAX_MEDIA_BYTES,
 } from '../lib/api';
 import { clearPrivate, db, events, setting } from '../lib/offline/store';
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (
+        container: HTMLElement,
+        options: {
+          sitekey: string;
+          action: string;
+          callback: (token: string) => void;
+          'expired-callback': () => void;
+          'error-callback': () => void;
+        },
+      ) => string;
+      reset: (widgetId?: string) => void;
+      remove: (widgetId: string) => void;
+    };
+  }
+}
 type Point = { id: string; name: string; publicLocation: string; organizationId: string };
 type Incoming = {
   id: string;
@@ -45,16 +64,51 @@ type DashboardData = {
 export function LoginPage() {
   const router = useRouter(),
     mutation = useMutation();
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? '',
+    turnstileContainer = useRef<HTMLDivElement>(null),
+    turnstileWidget = useRef<string | null>(null);
   const [email, setEmail] = useState(''),
     [password, setPassword] = useState(''),
-    [totp, setTotp] = useState('');
-  const { data: config } = useResource<{ demo: boolean }>('/public/config');
+    [totp, setTotp] = useState(''),
+    [turnstileReady, setTurnstileReady] = useState(false),
+    [turnstileToken, setTurnstileToken] = useState(''),
+    [turnstileError, setTurnstileError] = useState(false);
+  useEffect(() => {
+    if (!turnstileSiteKey || !turnstileReady || !turnstileContainer.current || !window.turnstile)
+      return;
+    const widgetId = window.turnstile.render(turnstileContainer.current, {
+      sitekey: turnstileSiteKey,
+      action: 'login',
+      callback: setTurnstileToken,
+      'expired-callback': () => setTurnstileToken(''),
+      'error-callback': () => {
+        setTurnstileToken('');
+        setTurnstileError(true);
+      },
+    });
+    turnstileWidget.current = widgetId;
+    return () => {
+      if (turnstileWidget.current) window.turnstile?.remove(turnstileWidget.current);
+      turnstileWidget.current = null;
+    };
+  }, [turnstileReady, turnstileSiteKey]);
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    const result = await mutation.run('/auth/login', { email, password, totp: totp || undefined });
-    if (result) {
-      router.push('/dashboard');
-      router.refresh();
+    if (turnstileSiteKey && !turnstileToken) return;
+    try {
+      const result = await mutation.run('/auth/login', {
+        email,
+        password,
+        totp: totp || undefined,
+        ...(turnstileSiteKey ? { turnstileToken } : {}),
+      });
+      if (result) {
+        router.push('/dashboard');
+        router.refresh();
+      }
+    } finally {
+      if (turnstileWidget.current) window.turnstile?.reset(turnstileWidget.current);
+      setTurnstileToken('');
     }
   }
   return (
@@ -62,6 +116,22 @@ export function LoginPage() {
       <ShieldCheck size={35} strokeWidth={1.5} />
       <h1>Welcome back.</h1>
       <p>Sign in to coordinate help with your team.</p>
+      {turnstileSiteKey && (
+        <>
+          <Script
+            src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+            strategy="afterInteractive"
+            onReady={() => setTurnstileReady(true)}
+            onError={() => setTurnstileError(true)}
+          />
+          <div className="turnstile-widget" ref={turnstileContainer} />
+          {turnstileError && (
+            <p className="form-hint" role="status">
+              Security verification did not load. Refresh this page and try again.
+            </p>
+          )}
+        </>
+      )}
       <form className="stack-form" onSubmit={submit}>
         <label>
           Email
@@ -95,26 +165,14 @@ export function LoginPage() {
           />
         </label>
         {mutation.error && <ErrorNotice message={mutation.error} />}
-        <button className="button full" disabled={mutation.busy}>
+        <button
+          className="button full"
+          disabled={mutation.busy || (!!turnstileSiteKey && !turnstileToken)}
+        >
           {mutation.busy ? 'Signing in…' : 'Sign in'}
           <ArrowRight size={16} />
         </button>
       </form>
-      {config?.demo && (
-        <div className="demo-login">
-          <strong>Local demonstration accounts</strong>
-          <p>
-            volunteer@saathi.test
-            <br />
-            coordinator@saathi.test
-            <br />
-            admin@saathi.test
-          </p>
-          <p>
-            Password: <code>Saathi-demo-2026!</code>
-          </p>
-        </div>
-      )}
       <p className="form-hint">
         Volunteer accounts are invited and approved by an organization coordinator.
       </p>
@@ -427,7 +485,10 @@ function RequestFields({ points, prefix = '' }: { points: Point[]; prefix?: stri
           maxLength={200}
           placeholder="e.g. Gate 2, Jantar Mantar, New Delhi"
         />
-        <small>Shown publicly for this request. Use a safe public handoff point, never a personal or home address. Leave blank to use the relief point location.</small>
+        <small>
+          Shown publicly for this request. Use a safe public handoff point, never a personal or home
+          address. Leave blank to use the relief point location.
+        </small>
       </label>
       <label>
         What is needed?
@@ -739,7 +800,10 @@ export function EditRequestPage({ id }: { id: string }) {
                 maxLength={200}
                 aria-describedby="delivery-location-help"
               />
-              <small id="delivery-location-help">This appears on the public request. Use a safe public handoff point, never a personal or home address.</small>
+              <small id="delivery-location-help">
+                This appears on the public request. Use a safe public handoff point, never a
+                personal or home address.
+              </small>
             </label>
             {mutation.error && <ErrorNotice message={mutation.error} />}
             <button className="button" disabled={mutation.busy}>

@@ -37,6 +37,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   }
   const name = data?.platformName ?? process.env.NEXT_PUBLIC_PLATFORM_NAME ?? 'CJP Swarm';
   const display = name === 'CJP Swarm' ? 'SWARM' : name;
+  if (path === '/native-turnstile') return <main>{children}</main>;
   return (
     <>
       <a href="#main" className="skip-link">

@@ -34,6 +34,11 @@ class Repository(private val context: Context, storageScope: String = BuildConfi
     val environment get() = BuildConfig.ENVIRONMENT
     val preparation get() = store.get("account", "preparation")
     val featureFlags get() = configuration?.getJSONObject("body")?.getJSONObject("features")
+    fun nativeTurnstileChallengeUrl(): String? {
+        val origin = configuration?.getJSONObject("body")?.optString("webOrigin")
+            ?.takeIf { it.startsWith("https://") }?.trimEnd('/') ?: return null
+        return "$origin/native-turnstile"
+    }
     /** Offline-first: a feature is on unless current, verified service information turns it off. Missing or expired
      *  information (fresh install, no internet, past expiry) no longer disables nearby features; the remote switch still works. */
     fun featureEnabled(name: String) = featureFlags?.optBoolean(name, true) != false
@@ -177,10 +182,10 @@ class Repository(private val context: Context, storageScope: String = BuildConfi
             if (changed) refresh()
         }
     }
-    suspend fun login(email: String, password: String, totp: String) {
+    suspend fun login(email: String, password: String, totp: String, turnstileToken: String) {
         val previous = store.get("account", "user")
         require(previous == null || previous.optString("email").equals(email, ignoreCase = true)) { "Sign out and clear the previous person’s private work before switching accounts." }
-        api("/auth/login", obj("email" to email, "password" to password).apply { if (totp.isNotBlank()) put("totp", totp) })
+        api("/auth/login", obj("email" to email, "password" to password, "turnstileToken" to turnstileToken).apply { if (totp.isNotBlank()) put("totp", totp) })
         val user = JSONObject(api("/auth/me", authenticated = true))
         if (previous != null && previous.getString("id") != user.getString("id")) {
             store.remove("credentials", "session")

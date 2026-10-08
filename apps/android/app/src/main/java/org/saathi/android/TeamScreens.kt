@@ -1,5 +1,10 @@
 package org.saathi.android
 
+import android.net.Uri
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -12,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -26,7 +32,21 @@ import java.util.UUID
 
 @Composable fun TeamScreen(vm: SaathiViewModel, state: AppState, form: (String) -> Unit, logout: () -> Unit, modifier: Modifier) {
     var email by rememberSaveable { mutableStateOf("") }; var password by remember { mutableStateOf("") }; var code by remember { mutableStateOf("") }
+    var turnstileToken by remember { mutableStateOf("") }
+    var showTurnstile by remember { mutableStateOf(false) }
+    var turnstileError by remember { mutableStateOf(false) }
+    var turnstileExpired by remember { mutableStateOf(false) }
+    val challengeUrl = vm.repository.nativeTurnstileChallengeUrl()
     LaunchedEffect(state.account) { state.account?.optString("email")?.let { email = it } }
+    LaunchedEffect(turnstileToken) {
+        if (turnstileToken.isNotBlank()) {
+            kotlinx.coroutines.delay(240_000L)
+            if (turnstileToken.isNotBlank()) {
+                turnstileToken = ""
+                turnstileExpired = true
+            }
+        }
+    }
     LazyColumn(modifier, contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         item { Heading(if (state.preparation == null) "Volunteer sign in" else "My relief team", "Verified teams keep Swarm’s needs accurate and help deliveries reach the right place.") }
         if (!state.authenticated) item {
@@ -35,7 +55,43 @@ import java.util.UUID
                 OutlinedTextField(email, { email = it.take(254) }, label = { Text("Email address") }, readOnly = state.account != null, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(password, { password = it.take(256) }, label = { Text("Password") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(code, { code = it.filter(Char::isDigit).take(6) }, label = { Text("Authenticator code, if required") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
-                Button(onClick = { vm.login(email.trim(), password, code); password = ""; code = "" }, enabled = email.isNotBlank() && password.isNotBlank() && !state.busy, modifier = Modifier.fillMaxWidth()) { Text(if (state.account == null) "Sign in and prepare this phone" else "Sign in again and keep saved work") }
+                if (showTurnstile && challengeUrl != null) {
+                    val challengeHost = Uri.parse(challengeUrl).host
+                    AndroidView(
+                        factory = { context ->
+                            WebView(context).apply {
+                                settings.javaScriptEnabled = true
+                                settings.domStorageEnabled = true
+                                settings.allowFileAccess = false
+                                settings.allowContentAccess = false
+                                webViewClient = object : WebViewClient() {
+                                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                                        val target = request.url
+                                        if (request.isForMainFrame && target.scheme == "cjpswarm-turnstile" && target.host == "token") {
+                                            turnstileToken = target.getQueryParameter("response").orEmpty()
+                                            turnstileExpired = false
+                                            turnstileError = turnstileToken.isBlank() || target.getQueryParameter("status") == "error"
+                                            showTurnstile = false
+                                            return true
+                                        }
+                                        return request.isForMainFrame && (target.scheme != "https" || target.host != challengeHost)
+                                    }
+                                    override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                                        if (request.isForMainFrame) { turnstileError = true; showTurnstile = false }
+                                    }
+                                }
+                                loadUrl(challengeUrl)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(150.dp),
+                        onRelease = { it.stopLoading(); it.destroy() },
+                    )
+                }
+                if (turnstileToken.isNotBlank()) Text("Security check complete.", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                else if (!showTurnstile) OutlinedButton(onClick = { turnstileError = false; turnstileExpired = false; showTurnstile = true }, enabled = challengeUrl != null && !state.busy, modifier = Modifier.fillMaxWidth()) { Text("Verify before signing in") }
+                if (turnstileExpired) Text("Security check expired. Verify again before signing in.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                if (turnstileError) Text("Security check failed. Try again.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                Button(onClick = { val token = turnstileToken; turnstileToken = ""; vm.login(email.trim(), password, code, token); password = ""; code = "" }, enabled = email.isNotBlank() && password.isNotBlank() && turnstileToken.isNotBlank() && !state.busy, modifier = Modifier.fillMaxWidth()) { Text(if (state.account == null) "Sign in and prepare this phone" else "Sign in again and keep saved work") }
                 Text("Public relief information is available without an account.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
