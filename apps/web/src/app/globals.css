@@ -1350,6 +1350,13 @@ dd {
   min-height: 66px;
   margin: 0 0 18px;
 }
+.native-turnstile-page {
+  min-height: 130px;
+  padding: 12px;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 13px;
+}
 .workspace-header {
   display: flex;
   justify-content: space-between;

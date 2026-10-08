@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { verifyTurnstileResponse } from '../../apps/api/src/auth/turnstile';
+import {
+  loginWithTurnstileSchema,
+  verifyTurnstileResponse,
+} from '../../apps/api/src/auth/turnstile';
 
 function verifier(payload: unknown, status = 200) {
   const requests: RequestInit[] = [];
@@ -20,6 +23,18 @@ const config = {
 };
 
 describe('Turnstile web login verification', () => {
+  it('requires a token on hosted login requests but leaves local development usable', () => {
+    const credentials = { email: 'admin@example.org', password: 'example-password' };
+    expect(() => loginWithTurnstileSchema('staging').parse(credentials)).toThrow();
+    expect(
+      loginWithTurnstileSchema('staging').parse({ ...credentials, turnstileToken: 'token' })
+        .turnstileToken,
+    ).toBe('token');
+    expect(loginWithTurnstileSchema('development').parse(credentials).email).toBe(
+      credentials.email,
+    );
+  });
+
   it('accepts only a successful login token for the configured hostname', async () => {
     const { fetcher, requests } = verifier({
       success: true,

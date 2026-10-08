@@ -29,7 +29,6 @@ import { z } from 'zod';
 import type { Request, Response } from 'express';
 import { env } from '@saathi/config';
 import {
-  loginSchema,
   requestSchema,
   reservationSchema,
   orderSchema,
@@ -39,7 +38,7 @@ import {
 } from '@saathi/validation';
 import { Database } from '../database';
 import { AuthService } from '../auth/auth.service';
-import { verifyTurnstileResponse } from '../auth/turnstile';
+import { loginWithTurnstileSchema, verifyTurnstileResponse } from '../auth/turnstile';
 import { RequestsService } from '../requests/requests.service';
 import { DonationsService } from '../donations/donations.service';
 import { ManagementService } from '../management/management.service';
@@ -200,6 +199,7 @@ export class AuthController {
     @Inject(ManagementService) private readonly management: ManagementService,
   ) {}
   @Post('login')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @ApiBody({
     schema: {
       type: 'object',
@@ -208,32 +208,24 @@ export class AuthController {
         email: { type: 'string', format: 'email' },
         password: { type: 'string' },
         totp: { type: 'string' },
+        turnstileToken: { type: 'string' },
       },
     },
   })
-  login(@Body() body: unknown, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const b = loginSchema.parse(body);
-    return this.auth.login(b.email, b.password, b.totp, req, res);
-  }
-  @Post('web-login')
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
-  @ApiOperation({ summary: 'Sign in to the web workspace after Turnstile verification' })
-  async webLogin(
+  async login(
     @Body() body: unknown,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const b = z
-      .object({ ...loginSchema.shape, turnstileToken: z.string().min(1).max(2048) })
-      .strict()
-      .parse(body);
-    await verifyTurnstileResponse(b.turnstileToken, {
-      secret: env.TURNSTILE_SECRET,
-      hostnames: env.TURNSTILE_HOSTNAMES.split(',')
-        .map((host) => host.trim())
-        .filter(Boolean),
-      appEnv: env.APP_ENV,
-    });
+    const b = loginWithTurnstileSchema(env.APP_ENV).parse(body);
+    if (env.APP_ENV !== 'development')
+      await verifyTurnstileResponse(b.turnstileToken!, {
+        secret: env.TURNSTILE_SECRET,
+        hostnames: env.TURNSTILE_HOSTNAMES.split(',')
+          .map((host) => host.trim())
+          .filter(Boolean),
+        appEnv: env.APP_ENV,
+      });
     return this.auth.login(b.email, b.password, b.totp, req, res);
   }
   @Get('me') async me(@Req() req: Request) {

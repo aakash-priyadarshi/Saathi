@@ -1,4 +1,6 @@
 import { ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
+import { loginSchema } from '@saathi/validation';
+import { z } from 'zod';
 
 const siteverifyUrl = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 
@@ -14,6 +16,16 @@ type TurnstileOptions = {
   appEnv: 'development' | 'staging' | 'production';
   fetcher?: typeof fetch;
 };
+
+export function loginWithTurnstileSchema(appEnv: TurnstileOptions['appEnv']) {
+  return z
+    .object({
+      ...loginSchema.shape,
+      turnstileToken:
+        appEnv === 'development' ? z.string().max(2048).optional() : z.string().min(1).max(2048),
+    })
+    .strict();
+}
 
 export async function verifyTurnstileResponse(responseToken: string, options: TurnstileOptions) {
   if (!options.secret) {

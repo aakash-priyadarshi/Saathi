@@ -96,7 +96,7 @@ export function LoginPage() {
     e.preventDefault();
     if (turnstileSiteKey && !turnstileToken) return;
     try {
-      const result = await mutation.run(turnstileSiteKey ? '/auth/web-login' : '/auth/login', {
+      const result = await mutation.run('/auth/login', {
         email,
         password,
         totp: totp || undefined,
@@ -121,7 +121,7 @@ export function LoginPage() {
           <Script
             src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
             strategy="afterInteractive"
-            onLoad={() => setTurnstileReady(true)}
+            onReady={() => setTurnstileReady(true)}
             onError={() => setTurnstileError(true)}
           />
           <div className="turnstile-widget" ref={turnstileContainer} />

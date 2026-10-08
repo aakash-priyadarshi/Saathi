@@ -64,9 +64,11 @@ sudo docker compose run --rm --no-deps --entrypoint node api \
 ```
 
 The command is restricted to non-demo staging/production databases, refuses to
-overwrite an existing account, records an audit event, and prints the password
-once. Save it in a password manager. The old synthetic `@saathi.test` accounts
-are not changed by this bootstrap command.
+overwrite an existing account or add a second real administrator, records an
+audit event, and prints the password once. If staging contains only the seeded
+`admin@saathi.test` fixture, the transaction replaces that fixture with the
+requested administrator and revokes its old sessions. Save the password in a
+password manager.
 
 The image is published to `ghcr.io/aakash-priyadarshi/saathi` by the public
 repository's GitHub Actions workflow. The package must be marked public once in
