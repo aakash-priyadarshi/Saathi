@@ -643,7 +643,7 @@ private fun roleLabel(role:String)=when(role){"OWNER"->"Group creator";"ADMIN"->
             Text("Covers photos, voice and videos sent or fetched over the internet. Nearby transfers are free and not limited.",style=MaterialTheme.typography.bodySmall)
             Text("Saved media · "+(state.files.sumOf{it.optLong("size")}/1048576)+" MB",style=MaterialTheme.typography.bodySmall)
             Text("Relay allowance reserved today · "+state.relayReservedBytes/1_000_000+" MB",style=MaterialTheme.typography.bodySmall)
-            Text("The allowance includes request overhead; retries count. Bluetooth carries text only. Public media waits for a Wi-Fi-capable route.",style=MaterialTheme.typography.bodySmall)
+            Text("The allowance includes request overhead; retries count. Bluetooth carries text, control, receipts, and small voice clips. Public report media and larger files wait for Wi-Fi.",style=MaterialTheme.typography.bodySmall)
             TextButton({vm.clearSafeMedia()},enabled=!state.busy){Text("Clear safe public media caches")}
         }
         item {HorizontalDivider();TextButton(onClick=team){Icon(Icons.Outlined.VerifiedUser,null);Spacer(Modifier.width(8.dp));Text(if(state.preparation==null)"Team sign in" else "My relief team")};TextButton(onClick=saved){Icon(Icons.Outlined.Inventory2,null);Spacer(Modifier.width(8.dp));Text("Saved relief work and earlier messages")};TextButton(onClick=connection){Icon(Icons.Outlined.Link,null);Spacer(Modifier.width(8.dp));Text("Connection options")}}

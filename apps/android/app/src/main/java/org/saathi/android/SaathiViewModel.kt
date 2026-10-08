@@ -340,7 +340,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         require(repository.preparation!=null){"Prepare a verified relief account before creating an official need."};val id=java.util.UUID.randomUUID().toString();val quantity=rows.sumOf{it.getJSONObject("envelope").getJSONObject("body").getJSONObject("payload").getJSONObject("help").getInt("quantity")}
         repository.store.put("drafts",id,obj("id" to id,"draftType" to "request","title" to "${category.replace('_',' ')} near $area".take(100),"description" to "Review ${rows.size} temporary participant requests near $area. Confirm quantity, area and current conditions before publishing.","quantity" to quantity.toString(),"unit" to if(category=="WATER")"bottles"else"items","category" to when(category){"FIRST_AID"->"MEDICAL";"CHARGING"->"POWER";"ACCESSIBILITY"->"OTHER";else->category},"priority" to "NORMAL","hours" to "24","fromHelp" to true));open("draft:"+id)
     }
-    fun clearSafeMedia()=action{withContext(Dispatchers.IO){repository.store.all("attachments").filter{f->f.optBoolean("complete") && !f.optBoolean("chatOnly") && repository.store.all("community").none{r->r.getJSONObject("envelope").getJSONObject("body").getJSONObject("payload").optJSONObject("media")?.optString("id")==f.getString("id") && !r.optBoolean("mediaOnline")}}.forEach{session.removeFile(it.getString("id"))};getApplication<Application>().cacheDir.resolve("field-processing").listFiles()?.forEach{it.delete()}};notice("Reviewed public media caches cleared. Pending media and private chat files were kept.")}
+    fun clearSafeMedia()=action{withContext(Dispatchers.IO){val pendingPublicMediaIds=repository.store.all("community").filter{!it.optBoolean("mediaOnline")}.mapNotNull{it.optJSONObject("envelope")?.optJSONObject("body")?.optJSONObject("payload")?.optJSONObject("media")?.optString("id")?.takeIf(String::isNotBlank)}.toSet();repository.store.all("attachments").filter{PublicMediaCleanupPolicy.shouldClear(it,pendingPublicMediaIds)}.forEach{session.removeFile(it.getString("id"))};getApplication<Application>().cacheDir.resolve("field-processing").listFiles()?.forEach{it.delete()}};notice("Reviewed public media caches cleared. Pending media and private chat files were kept.")}
     fun chatName(name:String)=chatAction { chat.rename(name) }
     fun receiveInvite(link:String?){ if(BuildConfig.CHAT_ENABLED&&link!=null && link.length<=44000 && InviteLink.token(link)!=null)mutable.update{it.copy(incomingInvite=link)} }
     fun dismissInvite(){mutable.update{it.copy(incomingInvite=null)}}
@@ -562,6 +562,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     private suspend fun refreshConnectionState(forcePublicData: Boolean = false) {
         repository.checkReachability()
         refreshPublicDataSafely(forcePublicData)
+        refreshLocal()
         if (BuildConfig.CHAT_ENABLED) {
             if (repository.reachable) {
                 try { chat.sync() }
