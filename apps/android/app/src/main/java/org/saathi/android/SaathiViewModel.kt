@@ -292,31 +292,35 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
             catch (_: Exception) { /* Keep the last saved dashboard when its refresh fails. */ }
         }
     }
-    private suspend fun refreshPublicDataSafely(force: Boolean) {
-        try { refreshPublicData(force) }
+    private suspend fun refreshPublicDataSafely(force: Boolean): Boolean {
+        try { refreshPublicData(force); return repository.reachable }
         catch (e: CancellationException) { throw e }
-        catch (_: Exception) { /* Cached public data stays usable while the API is unavailable. */ }
+        catch (_: Exception) { return false /* Cached public data stays usable while the API is unavailable. */ }
     }
-    private suspend fun syncCommunity(force: Boolean) {
-        if (!BuildConfig.CHAT_ENABLED || !repository.reachable) return
+    private suspend fun syncCommunity(force: Boolean): Boolean {
+        if (!BuildConfig.CHAT_ENABLED) return true
+        if (!repository.reachable) return false
         val now = System.currentTimeMillis()
-        if (lastCommunitySyncAt > 0 && now - lastCommunitySyncAt < 30_000L) return
-        if (!force && lastCommunitySyncAt > 0 && now - lastCommunitySyncAt < 2 * 60_000L) return
+        if (lastCommunitySyncAt > 0 && now - lastCommunitySyncAt < 30_000L) return true
+        if (!force && lastCommunitySyncAt > 0 && now - lastCommunitySyncAt < 2 * 60_000L) return true
         try {
             community.sync()
             lastCommunitySyncAt = now
+            return true
         } catch (e: CancellationException) { throw e }
-        catch (_: Exception) { /* Retry community sync on the next refresh. */ }
+        catch (_: Exception) { return false /* Retry community sync on the next refresh. */ }
     }
-    private suspend fun refreshRemote(forcePublicData: Boolean = true) {
+    private suspend fun refreshRemote(forcePublicData: Boolean = true): List<String> {
+        val failures = mutableListOf<String>()
         repository.checkReachability()
-        refreshPublicDataSafely(forcePublicData)
+        if (!refreshPublicDataSafely(forcePublicData)) failures += "Live and Needs"
         if (BuildConfig.CHAT_ENABLED) {
             try { chat.sync() }
             catch (e: CancellationException) { throw e }
-            catch (_: Exception) { /* Keep trying public and community sync independently. */ }
+            catch (_: Exception) { failures += "Chats" /* Keep trying public and community sync independently. */ }
         }
-        syncCommunity(forcePublicData)
+        if (!syncCommunity(forcePublicData)) failures += "community help"
+        return failures
     }
     private fun refreshInBackground() {
         if (backgroundRefresh?.isActive == true) return
@@ -326,7 +330,12 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
             finally { mutable.update { it.copy(reachable = repository.reachable, needsEnabled = repository.needsEnabled) }; refreshLocal() }
         }
     }
-    fun refresh() = action { backgroundRefresh?.join(); refreshRemote(forcePublicData = true) }
+    fun refresh() = action {
+        backgroundRefresh?.join()
+        val failures = refreshRemote(forcePublicData = true)
+        notice(if (failures.isEmpty()) "No sync errors were reported. Saved work is safe."
+        else "Could not synchronize ${failures.joinToString()}. Saved work remains on this phone.")
+    }
     fun helpRequest(help:JSONObject,id:String?=null,saved:()->Unit={})=chatAction{community.saveHelp(help,id);saved();notice("Help saved on your phone. Sharing nearby when connected.");runCatching{community.sync()}}
     fun offerHelp(id:String)=chatAction{community.offer(id);runCatching{community.sync()}}
     fun checkHelpArea(area:String)=chatAction{require(CommunityProtocol.publicText(area,80)){"Choose an approximate public area without contact details."};repository.store.put("community-meta","area",obj("area" to area));community.sync()}
