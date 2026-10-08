@@ -68,9 +68,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent:Intent){super.onNewIntent(intent);setIntent(intent);model?.receiveInvite(intent.dataString)}
 }
 
-// Hidden for the Oct 2026 build: Updates and Needs tabs (only Chats, Nearby and More are shown). Restore the full list below to bring them back.
-// private val tabs = listOf(Triple("Updates", Icons.Outlined.Feed, "Public field updates"),Triple("Chats",Icons.Outlined.ChatBubbleOutline,"Conversations"),Triple("Nearby",Icons.Outlined.Groups,"Nearby people and channels"),Triple("Needs",Icons.Outlined.VolunteerActivism,"Relief needs"),Triple("More",Icons.Outlined.MoreHoriz,"Profile and saved work"))
-private val tabs = listOf(Triple("Chats",Icons.Outlined.ChatBubbleOutline,"Conversations"),Triple("Nearby",Icons.Outlined.Groups,"Nearby people and channels"),Triple("More",Icons.Outlined.MoreHoriz,"Profile and settings"))
+private val tabs = listOf(Triple("Live", Icons.Outlined.Feed, "Public field updates"),Triple("Chats",Icons.Outlined.ChatBubbleOutline,"Conversations"),Triple("Nearby",Icons.Outlined.Groups,"Nearby people and channels"),Triple("Needs",Icons.Outlined.VolunteerActivism,"Relief needs"),Triple("More",Icons.Outlined.MoreHoriz,"Profile and settings"))
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun SaathiApp(vm: SaathiViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -86,9 +84,8 @@ private val tabs = listOf(Triple("Chats",Icons.Outlined.ChatBubbleOutline,"Conve
             if (form == "request" || form?.startsWith("update:") == true || draftType == "request") form = null
         }
     }
-    // Hidden for the Oct 2026 build: the Needs tab is not in `tabs`, so the needsEnabled filter is not needed.
-    // val visibleTabs = if (state.needsEnabled) tabs else tabs.filterNot { it.first == "Needs" }
-    val visibleTabs = tabs
+    val visibleDestinations = NavigationPolicy.visibleDestinations(state.needsEnabled).toSet()
+    val visibleTabs = tabs.filter { it.first in visibleDestinations }
     val openChat:(String)->Unit={conversation=it;page="Chats";detail=null;form=null}
     var pendingPermission by remember { mutableStateOf<(() -> Unit)?>(null) }
     val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
@@ -129,8 +126,6 @@ private val tabs = listOf(Triple("Chats",Icons.Outlined.ChatBubbleOutline,"Conve
                 topBar = { if (!inConversation) TopAppBar(title = {
                     Image(painterResource(if (MaterialTheme.colorScheme.background.luminance() < .5f) R.drawable.swarm_header_dark else R.drawable.swarm_header), "${BuildConfig.BRAND_DISPLAY} ${BuildConfig.BRAND_BYLINE}", Modifier.height(40.dp))
                 }, navigationIcon = { if (detail != null || form != null || conversation!=null || page in listOf("Team","Saved","Connection")) IconButton(onClick = navigateBack) { Icon(Icons.Outlined.ArrowBack, "Back") } },
-                    // Hidden for the Oct 2026 build: Team sign in / My team top-bar action.
-                    // actions = { if(!inConversation) TextButton(onClick = { page = "Team"; detail = null; form = null;conversation=null }) { Text(if (state.preparation == null) "Team sign in" else "My team") } },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)) },
                 bottomBar = { if (!wide && !inConversation) NavigationBar(modifier=Modifier.heightIn(min=if(largeNavigationText)112.dp else 80.dp),containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) { visibleTabs.forEach { (name, icon, description) -> NavigationBarItem(page == name, { page = name; detail = null; form = null;conversation=null }, { Icon(icon, "$name · $description") }, label = { Text(name, maxLines=if(largeNavigationText)2 else 1, overflow=TextOverflow.Ellipsis,textAlign=TextAlign.Center) }) } } }
             ) { padding ->
@@ -144,19 +139,15 @@ private val tabs = listOf(Triple("Chats",Icons.Outlined.ChatBubbleOutline,"Conve
                             form != null -> DraftForm(vm, form!!, { form = null }, content)
                             detail != null -> RequestDetail(vm, JSONObject(detail!!), { form = "update:" + detail!! }, content,{need->vm.discuss(obj("type" to "NEED","id" to need.getString("publicId"),"title" to need.getString("title")),openChat)})
                             conversation!=null -> ConversationScreen(vm,state,conversation!!,askCall,askRecord,{message->if(state.needsEnabled)vm.needFromChat(message){form=it}else vm.notice("Public relief needs are temporarily paused.")},{id->if(!state.needsEnabled)vm.notice("Public relief needs are temporarily paused.")else state.requests.plus(state.completed).firstOrNull{it.optString("publicId")==id}?.let{detail=it.toString()}?:vm.notice("Refresh Needs to check this reference’s latest public status.")},content,back=navigateBack)
-                            // Hidden for the Oct 2026 build: Needs and Updates pages.
-                            // page == "Needs" && state.needsEnabled -> NeedsHub(vm,state,{detail=it.toString()},wide,content,{form=it})
-                            // page == "Needs" -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Notice("Relief needs are paused", "Connect to the internet later to check when this feature is available again.", Icons.Outlined.VolunteerActivism) }
-                            // page == "Updates" -> UpdatesHub(vm,state,content,{page="Team";form="field"},{post->vm.discuss(obj("type" to "UPDATE","id" to post.getString("id"),"title" to post.getString("caption").take(120)),openChat)})
+                            page == "Needs" && state.needsEnabled -> NeedsHub(vm,state,{detail=it.toString()},wide,content,{form=it})
+                            page == "Needs" -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Notice("Relief needs are paused", "Connect to the internet later to check when this feature is available again.", Icons.Outlined.VolunteerActivism) }
+                            page == "Live" -> UpdatesHub(vm,state,content,{form="field"},{post->vm.discuss(obj("type" to "UPDATE","id" to post.getString("id"),"title" to post.getString("caption").take(120)),openChat)})
                             page == "Chats" -> ChatsScreen(vm,state,openChat,{page="Nearby"},{createChannel=true},content)
                             page == "Nearby" -> NearbyPeopleScreen(vm,state,askNearby,openChat,{createChannel=true},{invite=true},{page="Connection"},content)
                             page == "Connection" -> NearbyScreen(vm, state, askNearby, askBle, askCall, content)
-                            // Hidden for the Oct 2026 build: there is no team sign-in, so More has no route into Team or Saved.
-                            // page == "More" -> MoreScreen(vm,state,{page="Team"},{page="Saved"},{page="Connection"},content)
-                            page == "More" -> MoreScreen(vm,state,{},{},{page="Connection"},content)
-                            // Hidden for the Oct 2026 build: Saved and Team pages. Any other page falls back to Chats.
-                            // page == "Saved" -> SavedScreen(vm, state, { form = it }, content)
-                            // else -> TeamScreen(vm, state, { form = it }, { logout = true }, content)
+                            page == "More" -> MoreScreen(vm,state,{page="Team"},{page="Saved"},{page="Connection"},content)
+                            page == "Saved" -> SavedScreen(vm, state, { form = it }, content)
+                            page == "Team" -> TeamScreen(vm, state, { form = it }, { logout = true }, content)
                             else -> ChatsScreen(vm,state,openChat,{page="Nearby"},{createChannel=true},content)
                         }
                     }
@@ -170,8 +161,7 @@ private val tabs = listOf(Triple("Chats",Icons.Outlined.ChatBubbleOutline,"Conve
     if (state.localCode.isNotBlank() && !state.confirmed) AlertDialog(onDismissRequest = { vm.disconnect() }, title = { Text("Compare both device codes") }, text = { Column { Text(state.localCode, style = MaterialTheme.typography.headlineMedium); Text("Confirm this same code with the other person before sharing.") } }, confirmButton = { TextButton(onClick = { vm.confirmLocal() }) { Text("Codes match") } }, dismissButton = { TextButton(onClick = { vm.disconnect() }) { Text("Decline") } })
     state.fileOffer?.let { offer -> AlertDialog(onDismissRequest = { vm.declineFile() }, title = { Text("Receive a nearby file?") }, text = { Text("${offer.getString("name")} · ${fileSize(offer.getLong("size"))}\n\nOnly accept files from someone you trust. Received files stay private on this phone.") }, confirmButton = { TextButton(onClick = { vm.acceptFile() }) { Text("Receive") } }, dismissButton = { TextButton(onClick = { vm.declineFile() }) { Text("Decline") } }) }
     state.incomingCall?.let { video -> AlertDialog(onDismissRequest = { vm.hangup() }, title = { Text(if (video) "Nearby video call" else "Nearby voice call") }, text = { Text("The connected person would like to call. Microphone${if (video) " and camera" else ""} access starts only when you accept.") }, confirmButton = { TextButton(onClick = { askCall(video, true) }) { Text("Accept") } }, dismissButton = { TextButton(onClick = { vm.hangup() }) { Text("Decline") } }) }
-    // Hidden for the Oct 2026 build: sign-out dialog (there is no team sign-in; only the hidden Team page opened it).
-    // if (logout) AlertDialog(onDismissRequest = { logout = false }, title = { Text("Sign out and clear private work?") }, text = { Text("Drafts, messages, events, attachments and this phone’s signing identity will be cleared. Synchronize or share pending work first. Other carriers may retain events already shared.") }, confirmButton = { TextButton(onClick = { logout = false; vm.logout(false) }) { Text("Sign out and clear") } }, dismissButton = { TextButton(onClick = { logout = false }) { Text("Keep my work") } })
+    if (logout) AlertDialog(onDismissRequest = { logout = false }, title = { Text("Sign out and clear private work?") }, text = { Text("Drafts, messages, events, attachments and this phone’s signing identity will be cleared. Synchronize or share pending work first. Other carriers may retain events already shared.") }, confirmButton = { TextButton(onClick = { logout = false; vm.logout(false) }) { Text("Sign out and clear") } }, dismissButton = { TextButton(onClick = { logout = false }) { Text("Keep my work") } })
 }
 
 @Composable internal fun ConnectionStatus(state:AppState) {

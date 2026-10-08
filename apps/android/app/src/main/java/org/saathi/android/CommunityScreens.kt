@@ -18,6 +18,7 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
@@ -79,7 +80,7 @@ private fun statementStatus(row:JSONObject):String {
     var compose by rememberSaveable{mutableStateOf(false)};var flag by remember{mutableStateOf<String?>(null)};var viewMedia by remember{mutableStateOf<JSONObject?>(null)};val context=LocalContext.current
     Column(modifier){FlowRow(Modifier.padding(horizontal=20.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){Button({compose=true},enabled=!state.busy && BuildConfig.CHAT_ENABLED){Icon(Icons.Outlined.Add,null);Text("Create Update")};if(state.preparation!=null)TextButton(verified){Text("Verified volunteer update")}}
         LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)){
-            item{Heading("Updates","Chronological field reports. Participant reports describe what people saw and are unverified.");Freshness(state.savedAt)}
+            item{Row(verticalAlignment=Alignment.CenterVertically){Text("Live",Modifier.weight(1f),style=MaterialTheme.typography.headlineMedium);IconButton(onClick={vm.refresh()},enabled=!state.busy){Icon(Icons.Outlined.Refresh,"Refresh live updates")}};Text("Chronological field reports. Participant reports describe what people saw and are unverified.",color=MaterialTheme.colorScheme.onSurfaceVariant);Freshness(state.savedAt)}
             val local=state.participantReports;val remote=state.posts.filter{p->vm.community.publicPostVisible(p.getString("id")) && !vm.chat.blocked(p.optString("participantId")) && local.none{it.getString("id")==p.getString("id")}};val combined=(local.map{it.getJSONObject("envelope").getJSONObject("body").getString("createdAt") to it}+remote.map{it.getString("createdAt") to it}).sortedByDescending{it.first}
             items(combined,key={it.second.getString("id")}){(_,row)->val participant=row.has("envelope");val b=if(participant)row.getJSONObject("envelope").getJSONObject("body")else row;val payload=if(participant)b.getJSONObject("payload")else row;var reveal by rememberSaveable(row.getString("id")){mutableStateOf(!payload.optBoolean("contentWarning"))}
                 Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Text(if(participant || row.optString("verificationState")=="PARTICIPANT")"Participant report · Unverified"else"Verified volunteer update",style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary);Text(payload.getString("caption"),style=MaterialTheme.typography.bodyLarge);Text(if(participant)"${b.getJSONObject("author").getJSONObject("body").getString("name")} · ${payload.getString("area")}"else"${row.getJSONObject("author").getString("displayName")} · ${row.getJSONObject("reliefPoint").getString("publicLocation")}",style=MaterialTheme.typography.bodySmall)
