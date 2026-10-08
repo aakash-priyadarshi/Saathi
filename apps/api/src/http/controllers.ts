@@ -35,6 +35,7 @@ import {
   deliverySchema,
   fieldSchema,
   editSchema,
+  reliefPointSchema,
 } from '@saathi/validation';
 import { Database } from '../database';
 import { AuthService } from '../auth/auth.service';
@@ -145,6 +146,9 @@ export class PublicController {
       reservationMinutes: env.RESERVATION_MINUTES,
       features: await platformFeatures(this.db),
     };
+  }
+  @Get('postal-codes/:pin') postalCode(@Param('pin') pin: string) {
+    return this.requests.lookupPostalCode(pin);
   }
   @Get('requests')
   @ApiOperation({ summary: 'Browse active verified needs or completed requests' })
@@ -404,17 +408,7 @@ export class ManagementController {
     );
   }
   @Post('coordinator/points') async point(@Req() req: Request, @Body() body: unknown) {
-    const b = z
-      .object({
-        organizationId: uuid,
-        name: z.string().min(3).max(100),
-        description: z.string().min(3).max(1000),
-        publicLocation: z.string().min(3).max(200),
-        instructions: z.string().min(3).max(1000),
-        operatingHours: z.string().min(3).max(100),
-      })
-      .strict()
-      .parse(body);
+    const b = reliefPointSchema.parse(body);
     return this.management.createPoint(await this.auth.actor(req, true), b);
   }
   @Post('coordinator/requests/:id/cancel') async cancel(

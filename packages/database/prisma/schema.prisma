@@ -116,6 +116,14 @@ model ReliefPoint {
   name String
   description String
   publicLocation String
+  addressLine1 String?
+  locality String?
+  landmark String?
+  postalCode String?
+  city String?
+  district String?
+  state String?
+  country String? @default("India")
   instructions String
   operatingHours String
   privacyLevel String @default("APPROXIMATE")

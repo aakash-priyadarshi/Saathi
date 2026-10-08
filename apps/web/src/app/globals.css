@@ -1096,6 +1096,7 @@ textarea {
 .detail-tools {
   display: flex;
   gap: 25px;
+  flex-wrap: wrap;
   border-top: 1px solid var(--line);
   padding-top: 22px;
   margin-top: 25px;
@@ -1488,6 +1489,42 @@ td a {
   color: var(--muted);
   font-size: 13px;
 }
+.selected-relief-point {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--soft);
+}
+.selected-relief-point-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--accent);
+}
+.selected-relief-point-heading div {
+  display: grid;
+  gap: 3px;
+}
+.selected-relief-point-heading span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.selected-relief-point address {
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.6;
+}
+.selected-relief-point p {
+  margin: 0;
+}
+.selected-relief-point .location-map iframe {
+  height: 220px;
+}
+.selected-point-map-link {
+  width: fit-content;
+}
 .checkbox-label {
   display: flex !important;
   flex-direction: row !important;
@@ -1546,6 +1583,148 @@ td a {
 }
 .management-forms h2 {
   margin-bottom: 22px;
+}
+.relief-point-section,
+.relief-point-section form {
+  min-width: 0;
+}
+.management-forms > .relief-point-section {
+  grid-column: 1 / -1;
+}
+.address-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  min-width: 0;
+}
+.address-fields > .address-lookup-status,
+.address-fields > .address-attribution {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.address-fields > .address-group-title {
+  grid-column: 1 / -1;
+  margin: 8px 0 -5px;
+  color: var(--accent);
+  font: 650 13px var(--font-sans);
+}
+.address-attribution a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.coordinate-fields {
+  width: 100%;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+.coordinate-fields legend {
+  font-size: 14px;
+  font-weight: 700;
+  padding-right: 8px;
+}
+.coordinate-fields > .form-hint {
+  margin: 0;
+}
+.stack-form .checkbox-label {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  font-weight: 650;
+}
+.stack-form .checkbox-label input {
+  width: 20px;
+  height: 20px;
+  min-height: 20px;
+  padding: 0;
+  flex: 0 0 20px;
+  accent-color: var(--accent);
+}
+.location-map {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--soft);
+}
+.location-map iframe {
+  display: block;
+  width: 100%;
+  height: 250px;
+  border: 0;
+}
+.location-map-caption {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.location-map-caption a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.location-picker-shell {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--soft);
+}
+.location-picker {
+  width: 100%;
+  height: 360px;
+  background: #e8e8e4;
+  z-index: 0;
+}
+.location-picker-shell .leaflet-container {
+  font: inherit;
+  color: var(--ink);
+}
+.swarm-map-marker {
+  border: 0;
+  background: transparent;
+}
+.swarm-map-pin {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border: 3px solid #fff;
+  border-radius: 50% 50% 50% 0;
+  background: #d75a2a;
+  box-shadow: 0 2px 8px #1d292344;
+  transform: rotate(-45deg);
+}
+.coordinate-fields > .button {
+  width: fit-content;
+  margin-bottom: 12px;
+}
+.map-links {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.selected-location {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.map-address-link {
+  width: fit-content;
+  margin-top: 14px;
+}
+.form-error,
+.copy-status {
+  color: var(--red);
+  font-size: 12px;
+}
+.delivery-app-hint {
+  max-width: 68ch;
 }
 .success-message {
   padding: 15px;
@@ -1860,6 +2039,23 @@ td a {
   }
   .management-forms {
     grid-template-columns: 1fr;
+  }
+  .address-fields {
+    grid-template-columns: 1fr;
+  }
+  .address-fields > .address-lookup-status,
+  .address-fields > .address-attribution {
+    grid-column: auto;
+  }
+  .location-map-caption {
+    flex-direction: column;
+  }
+  .location-picker {
+    height: 300px;
+  }
+  .map-address-link {
+    width: 100%;
+    justify-content: center;
   }
   .contribution-summary h2 {
     font-size: 24px;

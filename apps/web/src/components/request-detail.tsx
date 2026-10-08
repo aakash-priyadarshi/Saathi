@@ -17,6 +17,7 @@ import { terminalStatuses } from '@saathi/types';
 import type { PublicRequest } from '@saathi/types';
 import { useResource, useMutation, count, formatDate, deadline } from '../lib/api';
 import { useConnection } from './connectivity-provider';
+import { LocationMap, openStreetMapDirectionsUrl, openStreetMapSearchUrl } from './location-map';
 export function StatusNotice({
   request: r,
   verified = r.organization.verified,
@@ -76,6 +77,7 @@ export function RequestDetail({ id }: { id: string }) {
   const [quantity, setQuantity] = useState(10),
     [email, setEmail] = useState(''),
     [copied, setCopied] = useState(false),
+    [deliveryCopyStatus, setDeliveryCopyStatus] = useState(''),
     [reportOpen, setReportOpen] = useState(false),
     [reason, setReason] = useState(''),
     [reported, setReported] = useState(false);
@@ -94,6 +96,11 @@ export function RequestDetail({ id }: { id: string }) {
     );
   const closed = terminalStatuses.includes(r.status),
     progress = Math.min(100, (r.committedQuantity / r.requestedQuantity) * 100);
+  const request = r;
+  const exactPoint =
+    r.reliefPoint.latitude !== undefined && r.reliefPoint.longitude !== undefined
+      ? { latitude: r.reliefPoint.latitude, longitude: r.reliefPoint.longitude }
+      : undefined;
   async function reserve(e: React.FormEvent) {
     e.preventDefault();
     if (stale || !connection.internet) return;
@@ -114,6 +121,27 @@ export function RequestDetail({ id }: { id: string }) {
     if (result) {
       setReported(true);
       setReportOpen(false);
+    }
+  }
+  async function copyDeliveryDetails() {
+    const address = request.deliveryLocation ?? request.reliefPoint.publicLocation;
+    const map = exactPoint
+      ? `Directions: ${openStreetMapDirectionsUrl(exactPoint.latitude, exactPoint.longitude)}`
+      : `Find address on map: ${openStreetMapSearchUrl(address)}`;
+    const text = [
+      `${request.title} · ${request.publicId}`,
+      request.reliefPoint.name,
+      request.deliveryLocation ?? request.reliefPoint.publicLocation,
+      request.reliefPoint.instructions,
+      map,
+    ]
+      .filter(Boolean)
+      .join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setDeliveryCopyStatus('Delivery details copied. Paste them into your delivery app.');
+    } catch {
+      setDeliveryCopyStatus('Could not copy automatically. Select and copy the address above.');
     }
   }
   return (
@@ -168,6 +196,27 @@ export function RequestDetail({ id }: { id: string }) {
             <p>{r.deliveryLocation ?? r.reliefPoint.publicLocation}</p>
             <p>{r.reliefPoint.instructions}</p>
             <p className="muted">Receiving hours: {r.reliefPoint.operatingHours}</p>
+            {exactPoint && (
+              <LocationMap
+                latitude={exactPoint.latitude}
+                longitude={exactPoint.longitude}
+                label="Public handoff pin"
+              />
+            )}
+            {!exactPoint && (
+              <a
+                className="button secondary map-address-link"
+                href={openStreetMapSearchUrl(r.deliveryLocation ?? r.reliefPoint.publicLocation)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <MapPin size={16} /> Find this address on OpenStreetMap
+              </a>
+            )}
+            <p className="muted delivery-app-hint">
+              You can copy these details into Zomato, Swiggy or Blinkit. Delivery availability is
+              decided by each service.
+            </p>
             <div className="deadline-note">
               <Clock size={18} />
               <div>
@@ -177,6 +226,9 @@ export function RequestDetail({ id }: { id: string }) {
             </div>
           </div>
           <div className="detail-tools">
+            <button className="text-link" onClick={() => void copyDeliveryDetails()}>
+              <Copy size={15} /> Copy delivery details
+            </button>
             <button
               className="text-link"
               onClick={() => {
@@ -191,6 +243,11 @@ export function RequestDetail({ id }: { id: string }) {
               Report a concern
             </button>
           </div>
+          {deliveryCopyStatus && (
+            <p className="copy-status" role="status">
+              {deliveryCopyStatus}
+            </p>
+          )}
           {reported && <p role="status">Your concern has been sent to the moderation team.</p>}
           {reportOpen && (
             <form className="stack-form" onSubmit={report}>

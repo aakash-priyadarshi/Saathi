@@ -1,9 +1,15 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Database, audit } from '../database';
 import { Actor, AuthService } from '../auth/auth.service';
 import { requestInclude, publicRequest } from '../requests/requests.service';
 import { MediaService } from '../media/media.service';
 import { platformFeatures } from '../public/platform-features';
+import { formatPublicAddress } from './relief-point-address';
 @Injectable()
 export class ManagementService {
   constructor(
@@ -34,7 +40,26 @@ export class ManagementService {
       }),
       this.db.reliefPoint.findMany({
         where: { ...where, active: true },
-        select: { id: true, name: true, publicLocation: true, organizationId: true },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          publicLocation: true,
+          addressLine1: true,
+          locality: true,
+          landmark: true,
+          postalCode: true,
+          city: true,
+          district: true,
+          state: true,
+          country: true,
+          instructions: true,
+          operatingHours: true,
+          exactLocationApproved: true,
+          latitude: true,
+          longitude: true,
+          organizationId: true,
+        },
       }),
       this.db.donationCommitment.findMany({
         where: {
@@ -64,7 +89,12 @@ export class ManagementService {
     ]);
     return {
       requests: requests.map(publicRequest),
-      points,
+      points: points.map(({ latitude, longitude, ...point }) => ({
+        ...point,
+        ...(point.exactLocationApproved && latitude !== null && longitude !== null
+          ? { latitude, longitude }
+          : {}),
+      })),
       posts,
       deliveries: deliveries.map((c) => ({
         id: c.id,
@@ -193,14 +223,26 @@ export class ManagementService {
       organizationId: string;
       name: string;
       description: string;
-      publicLocation: string;
+      addressLine1: string;
+      locality: string;
+      landmark?: string;
+      postalCode: string;
+      city: string;
+      district: string;
+      state: string;
+      country: 'India';
       instructions: string;
       operatingHours: string;
+      latitude?: number;
+      longitude?: number;
+      exactLocationApproved: boolean;
     },
   ) {
     this.auth.requireOrg(actor, input.organizationId, true);
+    const publicLocation = formatPublicAddress(input);
+    if (publicLocation.length > 500) throw new BadRequestException('Address is too long.');
     return this.db.atomic(async (tx) => {
-      const p = await tx.reliefPoint.create({ data: input });
+      const p = await tx.reliefPoint.create({ data: { ...input, publicLocation } });
       await audit(tx, 'RELIEF_POINT_CREATED', 'ReliefPoint', p.id, actor.id, undefined, input);
       return p;
     });

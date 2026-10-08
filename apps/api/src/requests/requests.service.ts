@@ -33,6 +33,9 @@ export class RequestsService {
   get(publicId: string) {
     return this.publicRead.get(publicId);
   }
+  lookupPostalCode(pin: string) {
+    return this.publicRead.lookupPostalCode(pin);
+  }
   async createIn(tx: Prisma.TransactionClient, actor: Actor, input: z.infer<typeof requestSchema>) {
     if (!(await platformFeatures(tx)).needs)
       throw new ForbiddenException('Relief needs are temporarily paused by an administrator.');

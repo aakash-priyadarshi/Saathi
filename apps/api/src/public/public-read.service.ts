@@ -6,6 +6,7 @@ import type { PublicRequest, PublicPost } from '@saathi/types';
 import { Database } from '../database';
 import { closed } from '../domain/request';
 import { platformFeatures } from './platform-features';
+import { lookupIndianPostalCode } from './postal-code-lookup';
 export const requestInclude = {
   organization: true,
   reliefPoint: true,
@@ -42,7 +43,8 @@ export function publicRequest(r: ExpandedRequest): PublicRequest {
       publicLocation: r.deliveryLocation ?? r.reliefPoint.publicLocation,
       instructions: r.reliefPoint.instructions,
       operatingHours: r.reliefPoint.operatingHours,
-      ...(r.reliefPoint.exactLocationApproved &&
+      ...(r.deliveryLocation === null &&
+      r.reliefPoint.exactLocationApproved &&
       r.reliefPoint.latitude !== null &&
       r.reliefPoint.longitude !== null
         ? { latitude: r.reliefPoint.latitude, longitude: r.reliefPoint.longitude }
@@ -53,6 +55,9 @@ export function publicRequest(r: ExpandedRequest): PublicRequest {
 @Injectable()
 export class PublicReadService {
   constructor(private readonly db: Database) {}
+  lookupPostalCode(pin: string) {
+    return lookupIndianPostalCode(pin);
+  }
   async configuration() {
     return {
       platformName: env.PLATFORM_NAME,

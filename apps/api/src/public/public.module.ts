@@ -10,6 +10,9 @@ export class ReadOnlyPublicController {
   @Get('config') config() {
     return this.read.configuration();
   }
+  @Get('postal-codes/:pin') postalCode(@Param('pin') pin: string) {
+    return this.read.lookupPostalCode(pin);
+  }
   @Get('requests') list(
     @Query('completed') completed?: string,
     @Query('category') category?: string,

@@ -70,3 +70,37 @@ export const editSchema = z
     priority: z.enum(['NORMAL', 'HIGH', 'URGENT']).optional(),
   })
   .strict();
+
+export const reliefPointSchema = z
+  .object({
+    organizationId: z.string().uuid(),
+    name: z.string().trim().min(3).max(100),
+    description: z.string().trim().min(3).max(1000),
+    addressLine1: z.string().trim().min(3).max(120),
+    locality: z.string().trim().min(2).max(80),
+    landmark: z.string().trim().max(100).optional(),
+    postalCode: z.string().regex(/^\d{6}$/),
+    city: z.string().trim().min(2).max(60),
+    district: z.string().trim().min(2).max(60),
+    state: z.string().trim().min(2).max(60),
+    country: z.literal('India'),
+    instructions: z.string().trim().min(3).max(1000),
+    operatingHours: z.string().trim().min(3).max(100),
+    latitude: z.number().finite().min(-90).max(90).optional(),
+    longitude: z.number().finite().min(-180).max(180).optional(),
+    exactLocationApproved: z.boolean().default(false),
+  })
+  .strict()
+  .superRefine((point, ctx) => {
+    if ((point.latitude === undefined) !== (point.longitude === undefined))
+      ctx.addIssue({ code: 'custom', message: 'Enter both map coordinates.', path: ['latitude'] });
+    if (
+      point.exactLocationApproved &&
+      (point.latitude === undefined || point.longitude === undefined)
+    )
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Add the exact map coordinates before publishing them.',
+        path: ['exactLocationApproved'],
+      });
+  });

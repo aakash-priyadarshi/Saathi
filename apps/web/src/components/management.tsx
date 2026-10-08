@@ -4,6 +4,8 @@ import { ErrorNotice, Loading } from '@saathi/ui';
 import type { CurrentUser } from '@saathi/types';
 import { api, useMutation, useResource, formatDate } from '../lib/api';
 import { DashboardFrame } from './dashboard';
+import { IndiaAddressFields } from './india-address-fields';
+import { LocationPicker } from './location-map';
 type Volunteer = {
   id: string;
   organizationId: string;
@@ -36,6 +38,7 @@ function ManagementContent({ user }: { user: CurrentUser }) {
     orgs = useResource<Organization[]>(user.role === 'ADMIN' ? '/admin/organizations' : '/auth/me'),
     mutation = useMutation();
   const [message, setMessage] = useState('');
+  const [pointFormKey, setPointFormKey] = useState(0);
   const organizations =
     user.role === 'ADMIN' && Array.isArray(orgs.data)
       ? orgs.data
@@ -68,6 +71,28 @@ function ManagementContent({ user }: { user: CurrentUser }) {
       setMessage('Saved successfully.');
       void orgs.refresh();
       void volunteers.refresh();
+    }
+  }
+  async function submitPoint(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const values = new FormData(form);
+    const body: Record<string, string | number | boolean | undefined> = {};
+    values.forEach((value, key) => {
+      body[key] = String(value);
+    });
+    for (const key of ['latitude', 'longitude']) {
+      const value = String(values.get(key) ?? '').trim();
+      body[key] = value ? Number(value) : undefined;
+    }
+    body.landmark = String(values.get('landmark') ?? '').trim() || undefined;
+    body.exactLocationApproved = values.get('exactLocationApproved') === 'on';
+    const result = await mutation.run('/coordinator/points', body);
+    if (result) {
+      form.reset();
+      setPointFormKey((key) => key + 1);
+      setMessage('Relief point saved. Its formatted address will appear on linked requests.');
+      void orgs.refresh();
     }
   }
   return (
@@ -125,7 +150,13 @@ function ManagementContent({ user }: { user: CurrentUser }) {
                   window.open(r.url, '_blank', 'noopener,noreferrer');
                 }}
               >
-                Review {m.mimeType.startsWith('audio') ? 'audio' : m.mimeType.startsWith('video') ? 'video' : 'photo'} ({m.processingState})
+                Review{' '}
+                {m.mimeType.startsWith('audio')
+                  ? 'audio'
+                  : m.mimeType.startsWith('video')
+                    ? 'video'
+                    : 'photo'}{' '}
+                ({m.processingState})
               </button>
             ))}
             <div className="button-row">
@@ -232,9 +263,13 @@ function ManagementContent({ user }: { user: CurrentUser }) {
             </button>
           </form>
         </section>
-        <section>
+        <section className="relief-point-section">
           <h2>Designate a relief point</h2>
-          <form className="stack-form" onSubmit={(e) => void submit(e, '/coordinator/points')}>
+          <p className="form-hint">
+            Enter the full public receiving address. The PIN lookup fills in the area details; the
+            map lets you set the exact handoff point.
+          </p>
+          <form className="stack-form" onSubmit={(e) => void submitPoint(e)}>
             <label>
               Organization
               <select name="organizationId">
@@ -245,25 +280,63 @@ function ManagementContent({ user }: { user: CurrentUser }) {
                 ))}
               </select>
             </label>
-            {[
-              ['name', 'Public name'],
-              ['description', 'Description'],
-              ['publicLocation', 'Approximate public location'],
-              ['instructions', 'Delivery instructions'],
-              ['operatingHours', 'Receiving hours'],
-            ].map(([key, label]) => (
-              <label key={key}>
-                {label}
+            <div className="address-fields">
+              <label>
+                Public name
+                <input name="name" required minLength={3} maxLength={100} />
+              </label>
+              <label>
+                Description
+                <input name="description" required minLength={3} maxLength={1000} />
+              </label>
+              <h3 className="address-group-title">Street and locality</h3>
+              <label>
+                Building and street address
                 <input
-                  name={key}
+                  name="addressLine1"
+                  autoComplete="street-address"
+                  placeholder="Building, gate, street or road"
                   required
                   minLength={3}
-                  maxLength={key === 'description' || key === 'instructions' ? 1000 : 100}
+                  maxLength={120}
                 />
               </label>
-            ))}
+              <label>
+                Area / locality
+                <input
+                  name="locality"
+                  autoComplete="address-level3"
+                  required
+                  minLength={2}
+                  maxLength={80}
+                />
+              </label>
+              <label>
+                Landmark <span className="optional">Optional</span>
+                <input name="landmark" maxLength={100} placeholder="Nearby public landmark" />
+              </label>
+              <h3 className="address-group-title">PIN code and area</h3>
+              <IndiaAddressFields key={pointFormKey} />
+              <h3 className="address-group-title">Delivery arrangements</h3>
+              <label>
+                Delivery instructions
+                <textarea name="instructions" required minLength={3} maxLength={1000} />
+              </label>
+              <label>
+                Receiving hours
+                <input
+                  name="operatingHours"
+                  placeholder="e.g. Daily, 9 am–6 pm IST"
+                  required
+                  minLength={3}
+                  maxLength={100}
+                />
+              </label>
+            </div>
+            <MapCoordinateFields key={`map-${pointFormKey}`} />
             <p className="form-hint">
-              Use public receiving locations. Never enter a volunteer’s home address.
+              This address is shown on public requests so people can arrange a delivery. Use a
+              public receiving point, never a volunteer’s home address.
             </p>
             <button className="button" disabled={mutation.busy}>
               Create relief point
@@ -273,6 +346,114 @@ function ManagementContent({ user }: { user: CurrentUser }) {
       </div>
       {user.role === 'ADMIN' && <AdminReview />}
     </>
+  );
+}
+
+function MapCoordinateFields() {
+  const [latitude, setLatitude] = useState('');
+  const [longitude, setLongitude] = useState('');
+  const [publishExact, setPublishExact] = useState(false);
+  const [locationError, setLocationError] = useState('');
+  const [focusVersion, setFocusVersion] = useState(0);
+  const lat = Number(latitude);
+  const lon = Number(longitude);
+  const coordinatesReady =
+    latitude.trim() !== '' &&
+    longitude.trim() !== '' &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lon) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lon >= -180 &&
+    lon <= 180;
+
+  function useCurrentLocation() {
+    setLocationError('');
+    if (!navigator.geolocation) {
+      setLocationError(
+        'This browser cannot read the device location. Tap the map to place the pin.',
+      );
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        setLatitude(coords.latitude.toFixed(6));
+        setLongitude(coords.longitude.toFixed(6));
+        setFocusVersion((version) => version + 1);
+      },
+      () =>
+        setLocationError(
+          'Location unavailable or permission denied. Tap the map to place the pin instead.',
+        ),
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 },
+    );
+  }
+
+  return (
+    <fieldset className="coordinate-fields">
+      <legend>
+        Exact handoff point <span className="optional">Optional</span>
+      </legend>
+      <p className="form-hint">
+        A PIN code covers an area. Place the pin on the public handoff desk: tap the map or drag the
+        marker to the right spot. Zoom with the map controls or pinch, and use GPS if you are at the
+        location.
+      </p>
+      <input type="hidden" name="latitude" value={latitude} />
+      <input type="hidden" name="longitude" value={longitude} />
+      <button className="button secondary" type="button" onClick={useCurrentLocation}>
+        Use my current location
+      </button>
+      <LocationPicker
+        latitude={coordinatesReady ? lat : null}
+        longitude={coordinatesReady ? lon : null}
+        focusVersion={focusVersion}
+        onSelect={(selectedLatitude, selectedLongitude) => {
+          setLatitude(selectedLatitude.toFixed(6));
+          setLongitude(selectedLongitude.toFixed(6));
+          setLocationError('');
+        }}
+      />
+      {coordinatesReady ? (
+        <p className="selected-location" role="status">
+          Pin selected · {lat.toFixed(6)}, {lon.toFixed(6)}
+          <button
+            className="text-link"
+            type="button"
+            onClick={() => {
+              setLatitude('');
+              setLongitude('');
+              setPublishExact(false);
+            }}
+          >
+            Remove pin
+          </button>
+        </p>
+      ) : (
+        <p className="form-hint">
+          No exact pin selected. The public page will show the address only.
+        </p>
+      )}
+      {locationError && (
+        <p className="form-error" role="alert">
+          {locationError}
+        </p>
+      )}
+      <label className="checkbox-label">
+        <input
+          type="checkbox"
+          name="exactLocationApproved"
+          checked={publishExact}
+          disabled={!coordinatesReady}
+          onChange={(event) => setPublishExact(event.target.checked)}
+        />
+        <span>Show this exact pin on public request pages</span>
+      </label>
+      <p className="form-hint">
+        Only check this for a public handoff point. People viewing its requests will see the exact
+        coordinates and map.
+      </p>
+    </fieldset>
   );
 }
 function AdminReview() {

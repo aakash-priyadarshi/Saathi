@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   Settings,
   RefreshCw,
+  MapPin,
 } from 'lucide-react';
 import { Loading, ErrorNotice, Verified } from '@saathi/ui';
 import { categories } from '@saathi/types';
@@ -25,6 +26,7 @@ import {
   MAX_MEDIA_BYTES,
 } from '../lib/api';
 import { clearPrivate, db, events, setting } from '../lib/offline/store';
+import { LocationMap, openStreetMapSearchUrl } from './location-map';
 declare global {
   interface Window {
     turnstile?: {
@@ -43,7 +45,26 @@ declare global {
     };
   }
 }
-type Point = { id: string; name: string; publicLocation: string; organizationId: string };
+type Point = {
+  id: string;
+  name: string;
+  description: string;
+  publicLocation: string;
+  addressLine1: string | null;
+  locality: string | null;
+  landmark: string | null;
+  postalCode: string | null;
+  city: string | null;
+  district: string | null;
+  state: string | null;
+  country: string | null;
+  instructions: string;
+  operatingHours: string;
+  exactLocationApproved: boolean;
+  latitude?: number;
+  longitude?: number;
+  organizationId: string;
+};
 type Incoming = {
   id: string;
   quantity: number;
@@ -458,15 +479,23 @@ export function DashboardPage() {
   );
 }
 function RequestFields({ points, prefix = '' }: { points: Point[]; prefix?: string }) {
+  const [selectedPointId, setSelectedPointId] = useState(points[0]?.id ?? '');
+  const selectedPoint = points.find((point) => point.id === selectedPointId) ?? points[0];
   return (
     <>
       <div className="form-grid">
         <label>
-          Relief point
-          <select name={`${prefix}reliefPointId`} required>
+          Public relief point
+          <select
+            name={`${prefix}reliefPointId`}
+            value={selectedPoint?.id ?? ''}
+            onChange={(event) => setSelectedPointId(event.target.value)}
+            required
+          >
             {points.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name} · {p.publicLocation}
+                {p.name} · {p.postalCode ? `${p.postalCode} · ` : ''}
+                {p.city ?? p.publicLocation}
               </option>
             ))}
           </select>
@@ -482,16 +511,20 @@ function RequestFields({ points, prefix = '' }: { points: Point[]; prefix?: stri
           </select>
         </label>
       </div>
+      {selectedPoint && <SelectedReliefPoint point={selectedPoint} />}
+      <p className="form-hint">
+        Need another delivery address? Ask a coordinator to designate it under Manage team first.
+      </p>
       <label>
-        Current public delivery point <span className="optional">optional</span>
+        Alternate full delivery address <span className="optional">optional</span>
         <input
           name={`${prefix}deliveryLocation`}
           maxLength={200}
-          placeholder="e.g. Gate 2, Jantar Mantar, New Delhi"
+          placeholder="Street, gate, locality, city and PIN"
         />
         <small>
-          Shown publicly for this request. Use a safe public handoff point, never a personal or home
-          address. Leave blank to use the relief point location.
+          Enter a complete public address. This replaces the selected point’s address and map pin
+          for this request. Leave blank to use the designated address and approved pin.
         </small>
       </label>
       <label>
@@ -546,6 +579,61 @@ function RequestFields({ points, prefix = '' }: { points: Point[]; prefix?: stri
     </>
   );
 }
+
+function SelectedReliefPoint({ point }: { point: Point }) {
+  const addressParts = [
+    point.addressLine1,
+    point.locality,
+    point.landmark,
+    point.postalCode ? `PIN ${point.postalCode}` : null,
+    point.city,
+    point.district &&
+    point.district.toLocaleLowerCase('en-IN') !== point.city?.toLocaleLowerCase('en-IN')
+      ? point.district
+      : null,
+    point.state,
+    point.country,
+  ].filter((part): part is string => Boolean(part?.trim()));
+  const address = addressParts.length ? addressParts.join(', ') : point.publicLocation;
+  const exactPin =
+    point.exactLocationApproved && point.latitude !== undefined && point.longitude !== undefined;
+
+  return (
+    <section className="selected-relief-point" aria-live="polite">
+      <div className="selected-relief-point-heading">
+        <MapPin size={18} />
+        <div>
+          <strong>{point.name}</strong>
+          <span>Public delivery address</span>
+        </div>
+      </div>
+      <address>{address}</address>
+      <p>{point.description}</p>
+      <p className="muted">
+        {point.instructions}
+        <br />
+        Receiving hours: {point.operatingHours}
+      </p>
+      {exactPin ? (
+        <LocationMap
+          latitude={point.latitude!}
+          longitude={point.longitude!}
+          label="Approved public handoff pin"
+        />
+      ) : (
+        <a
+          className="text-link selected-point-map-link"
+          href={openStreetMapSearchUrl(address)}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <MapPin size={15} /> Find this address on OpenStreetMap
+        </a>
+      )}
+    </section>
+  );
+}
+
 function requestFromForm(f: FormData, prefix = '') {
   return {
     reliefPointId: String(f.get(`${prefix}reliefPointId`)),

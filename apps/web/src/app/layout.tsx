@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import '@fontsource-variable/manrope';
 import '@fontsource-variable/lora';
+import 'leaflet/dist/leaflet.css';
 import './globals.css';
 import { Shell } from '../components/shell';
 import { ConnectionProvider } from '../components/connectivity-provider';
