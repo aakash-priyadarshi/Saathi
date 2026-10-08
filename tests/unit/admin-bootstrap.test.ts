@@ -12,7 +12,7 @@ type FakeUser = {
 function fixture(initialUsers: FakeUser[] = []) {
   const users = [...initialUsers];
   const tx = {
-    $queryRaw: vi.fn(async () => []),
+    $queryRaw: vi.fn(async (..._query: unknown[]) => []),
     user: {
       findUnique: vi.fn(
         async ({ where }: { where: { email: string } }) =>
@@ -57,6 +57,8 @@ describe('admin bootstrap', () => {
       email: account.email,
     });
     expect(tx.$queryRaw).toHaveBeenCalledOnce();
+    const queryStrings = tx.$queryRaw.mock.calls[0]?.[0] as string[] | undefined;
+    expect(queryStrings?.join('?')).toContain('pg_advisory_xact_lock(?::int, ?::int)');
     expect(tx.user.create).toHaveBeenCalledOnce();
     expect(tx.auditEvent.create).toHaveBeenCalledOnce();
   });
