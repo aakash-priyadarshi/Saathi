@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import org.webrtc.VideoTrack
 import android.media.MediaRecorder
@@ -72,6 +74,9 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var deliveryRetry: Job? = null
     private var backgroundRefresh: Job? = null
+    private val publicRefreshLock = Mutex()
+    private var lastPublicRefreshAt = 0L
+    private var lastCommunitySyncAt = 0L
     private var lastChatAnnounceAt = 0L
     private var ringTimeout: Job? = null
     private var visibleConversation: String? = null
@@ -274,13 +279,27 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
                     events=events,messages=messages,files=files,drafts=drafts,donations=donations,operations=operations,preparation=preparation,account=account,confirmed=confirmed,media=media,walkieAvailable=media&&session.remoteWalkieTalkie,needsEnabled=repository.needsEnabled,localWifiAddress=localWifiAddress,gatewayStatus=community.gatewayStatus()) }
             } catch (_: Exception) { notice("Saved information could not be unlocked. Do not clear app storage if you need to recover work.") }
     }
-    private suspend fun refreshRemote() {
-        // Hidden for the Oct 2026 build: no public Needs/Updates lists, team dashboard or community relay fetches
-        // (only Chats, Nearby and More are shown). checkReachability still loads the service configuration chat sync needs.
-        // repository.refresh()
-        // if (repository.preparation != null) loadDashboard()
+    private suspend fun refreshPublicData(force: Boolean) = publicRefreshLock.withLock {
+        if (!repository.reachable) return@withLock
+        val now = System.currentTimeMillis()
+        if (lastPublicRefreshAt > 0 && now - lastPublicRefreshAt < 30_000L) return@withLock
+        if (!force && lastPublicRefreshAt > 0 && now - lastPublicRefreshAt < 5 * 60_000L) return@withLock
+        repository.refresh()
+        lastPublicRefreshAt = now
+        if (repository.preparation != null) runCatching { loadDashboard() }
+    }
+    private suspend fun syncCommunity(force: Boolean) {
+        if (!BuildConfig.CHAT_ENABLED || !repository.reachable) return
+        val now = System.currentTimeMillis()
+        if (lastCommunitySyncAt > 0 && now - lastCommunitySyncAt < 30_000L) return
+        if (!force && lastCommunitySyncAt > 0 && now - lastCommunitySyncAt < 2 * 60_000L) return
+        runCatching { community.sync() }.onSuccess { lastCommunitySyncAt = now }
+    }
+    private suspend fun refreshRemote(forcePublicData: Boolean = true) {
         repository.checkReachability()
-        if (BuildConfig.CHAT_ENABLED) { runCatching { chat.sync() } /* ; runCatching { community.sync() } */ }
+        refreshPublicData(forcePublicData)
+        if (BuildConfig.CHAT_ENABLED) runCatching { chat.sync() }
+        syncCommunity(forcePublicData)
     }
     private fun refreshInBackground() {
         if (backgroundRefresh?.isActive == true) return
@@ -290,7 +309,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
             finally { mutable.update { it.copy(reachable = repository.reachable, needsEnabled = repository.needsEnabled) }; refreshLocal() }
         }
     }
-    fun refresh() = action { backgroundRefresh?.join(); refreshRemote() }
+    fun refresh() = action { backgroundRefresh?.join(); refreshRemote(forcePublicData = true) }
     fun helpRequest(help:JSONObject,id:String?=null,saved:()->Unit={})=chatAction{community.saveHelp(help,id);saved();notice("Help saved on your phone. Sharing nearby when connected.");runCatching{community.sync()}}
     fun offerHelp(id:String)=chatAction{community.offer(id);runCatching{community.sync()}}
     fun checkHelpArea(area:String)=chatAction{require(CommunityProtocol.publicText(area,80)){"Choose an approximate public area without contact details."};repository.store.put("community-meta","area",obj("area" to area));community.sync()}
@@ -448,9 +467,9 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         if (networkCallback == null && Build.VERSION.SDK_INT >= 24) {
             val manager = getApplication<Application>().getSystemService(ConnectivityManager::class.java)
             val callback = object : ConnectivityManager.NetworkCallback() {
-                override fun onAvailable(network: Network) = checkRemoteFeatures()
+                override fun onAvailable(network: Network) = checkRemoteFeatures(forcePublicData = true)
                 override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
-                    if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) checkRemoteFeatures()
+                    if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) checkRemoteFeatures(forcePublicData = true)
                 }
             }
             runCatching { manager.registerDefaultNetworkCallback(callback) }.onSuccess { networkCallback = callback }
@@ -519,15 +538,15 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
             }
         }
     }
-    private fun checkRemoteFeatures() {
+    private fun checkRemoteFeatures(forcePublicData: Boolean = false) {
         if (reconnectCheck?.isActive == true) return
-        reconnectCheck = viewModelScope.launch { refreshConnectionState() }
+        reconnectCheck = viewModelScope.launch { refreshConnectionState(forcePublicData) }
     }
-    private suspend fun refreshConnectionState() {
+    private suspend fun refreshConnectionState(forcePublicData: Boolean = false) {
         repository.checkReachability()
+        refreshPublicData(forcePublicData)
         if (BuildConfig.CHAT_ENABLED) {
-            // Hidden for the Oct 2026 build: periodic community relay sync (public updates are not shown).
-            if (repository.reachable) { runCatching { chat.sync(); chat.autoMedia() } /* ; runCatching { community.sync() } */ }
+            if (repository.reachable) { runCatching { chat.sync(); chat.autoMedia() }; syncCommunity(forcePublicData) }
             if (session.confirmed) {
                 val now = System.currentTimeMillis()
                 if (now - lastChatAnnounceAt >= 120_000) { runCatching { chat.announce() }; lastChatAnnounceAt = now }
