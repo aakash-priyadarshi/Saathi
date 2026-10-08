@@ -127,7 +127,7 @@ fun chatStatus(message:JSONObject)=when {
         }
         if(ordered.isEmpty())item {EmptyState("People first. Conversations that stay.","Meet someone in Nearby to start a direct message, or create a channel for your group.",Icons.Outlined.ChatBubbleOutline);Button(onClick=nearby){Text("Find people nearby")}}
         if(search.isNotBlank() && ordered.none(matches))item {Text("No matching saved conversations. Search stays on this phone.",color=MaterialTheme.colorScheme.onSurfaceVariant)}
-        item {Text("Direct messages and invite-only channels are encrypted between participants. Open channels are readable by their members. Chatting does not verify a relief volunteer.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+        item {Text("Direct messages and invite-only channels are encrypted between participants. Open channels are readable by their members.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
     }
     deletingChat?.let{c->AlertDialog(onDismissRequest={deletingChat=null},title={Text("Delete this chat?")},text={Text(deleteChatText(c.getString("type")=="CHANNEL"))},
         confirmButton={TextButton(onClick={vm.deleteChat(c.getString("id"));deletingChat=null}){Text("Delete chat",color=MaterialTheme.colorScheme.error)}},dismissButton={TextButton(onClick={deletingChat=null}){Text("Cancel")}})}
@@ -609,7 +609,7 @@ private fun roleLabel(role:String)=when(role){"OWNER"->"Group creator";"ADMIN"->
             TextButton(onClick={vm.blockChat(peer)}){Text(if(blocked)"Unblock "+c.getString("title") else "Block "+c.getString("title"),color=MaterialTheme.colorScheme.error)}
             TextButton(onClick={reportPerson=true}){Text("Report "+c.getString("title"),color=MaterialTheme.colorScheme.error)}
             TextButton(onClick={clearing=true}){Text("Clear chat",color=MaterialTheme.colorScheme.error)}
-            Text("Blocking stops their messages and calls on this phone. Reports reach the team when Swarm is online.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Blocking stops their messages and calls on this phone. Reports are sent when Swarm is online.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
     if(reportPerson)ReportReason({reason->vm.reportPerson(peer,when(reason){"HARASSMENT"->"ABUSE";"UNSAFE"->"SAFETY";else->reason});reportPerson=false},{reportPerson=false})
@@ -621,7 +621,7 @@ private fun roleLabel(role:String)=when(role){"OWNER"->"Group creator";"ADMIN"->
         // Hidden for the Oct 2026 build: relief work and saved information are not shown.
         // item {Heading("More","Your profile, relief work and saved information.")}
         item {Heading("More","Your profile and settings.")}
-        if(BuildConfig.CHAT_ENABLED)item {Column(verticalArrangement=Arrangement.spacedBy(10.dp)){Text("Nearby profile",style=MaterialTheme.typography.titleLarge);OutlinedTextField(name,{name=it.take(32)},Modifier.fillMaxWidth(),label={Text("Display name")},singleLine=true);Button(onClick={vm.chatName(name)},enabled=name.isNotBlank()&&!state.busy){Text("Save name")};Text("Nearby devices see this name while you search and after you connect. It is not a verified volunteer identity; choose a name your group can recognize.",style=MaterialTheme.typography.bodySmall);state.chatProfile?.let {Text("Chat identity "+ChatProtocol.participant(it).chunked(8).joinToString(" "),style=MaterialTheme.typography.bodySmall)}}}
+        if(BuildConfig.CHAT_ENABLED)item {Column(verticalArrangement=Arrangement.spacedBy(10.dp)){Text("Nearby profile",style=MaterialTheme.typography.titleLarge);OutlinedTextField(name,{name=it.take(32)},Modifier.fillMaxWidth(),label={Text("Display name")},singleLine=true);Button(onClick={vm.chatName(name)},enabled=name.isNotBlank()&&!state.busy){Text("Save name")};Text("Nearby devices see this name while you search and after you connect. It is not a verified identity; choose a name people you know will recognise.",style=MaterialTheme.typography.bodySmall);state.chatProfile?.let {Text("Chat identity "+ChatProtocol.participant(it).chunked(8).joinToString(" "),style=MaterialTheme.typography.bodySmall)}}}
         item {HorizontalDivider();Text("Appearance",style=MaterialTheme.typography.titleLarge);listOf("SYSTEM" to "System","LIGHT" to "Light","DARK" to "Dark").forEach{(value,label)->Row(Modifier.fillMaxWidth().clickable{vm.preference("appearance",value)},verticalAlignment=Alignment.CenterVertically){RadioButton(state.preferences.optString("appearance","SYSTEM")==value,{vm.preference("appearance",value)});Text(label)}}}
         item {HorizontalDivider();Text("Privacy & Nearby",style=MaterialTheme.typography.titleLarge);Row(verticalAlignment=Alignment.CenterVertically){Text("Nearby visibility",Modifier.weight(1f));Switch(state.preferences.optBoolean("nearbyVisible",true),{vm.preference("nearbyVisible",it)})};Text("Searching runs while Swarm is open and stops in the background. Turning visibility off ends nearby discovery and its active connection.",style=MaterialTheme.typography.bodySmall)}
         // Hidden for the Oct 2026 build: relay of public community updates (Updates is not shown).

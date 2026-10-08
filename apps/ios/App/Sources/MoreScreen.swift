@@ -35,7 +35,7 @@ struct MoreView: View {
                             Button("Save name") { Task { do { try await chat.setName(name) } catch { chat.notice = error.localizedDescription } } }
                                 .buttonStyle(PrimaryButtonStyle()).disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || name == chat.name)
                         }
-                        Text("Nearby devices see this name while you search and after you connect. It is not a verified volunteer identity; choose a name your group can recognize.")
+                        Text("Nearby devices see this name while you search and after you connect. It is not a verified identity; choose a name people you know will recognise.")
                             .font(Type.bodySmall).foregroundStyle(Palette.muted)
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Chat identity").font(Type.label).foregroundStyle(Palette.ink)
