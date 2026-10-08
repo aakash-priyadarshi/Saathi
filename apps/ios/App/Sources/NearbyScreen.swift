@@ -72,7 +72,7 @@ struct NearbyView: View {
                 Text("You're on a Wi-Fi network. Swarm phones on it find each other in both directions, and photos move at Wi-Fi speed.")
                     .font(Type.bodySmall).foregroundStyle(Palette.muted)
             } else {
-                Text("Without shared Wi-Fi, Android phones can't see this iPhone (it can still find them). For two-way discovery, ask an Android teammate to tap Start Swarm hotspot, point your iPhone Camera at its QR code and tap Join. Swarm searches the new network by itself.")
+                Text("Without shared Wi-Fi, Android phones can't see this iPhone (it can still find them). For two-way discovery, ask someone with an Android phone to tap Start Swarm hotspot, point your iPhone Camera at its QR code and tap Join. Swarm searches the new network by itself.")
                     .font(Type.bodySmall).foregroundStyle(Palette.muted)
             }
         }
@@ -82,7 +82,7 @@ struct NearbyView: View {
 
     @ViewBuilder func people(peer: JSON?) -> some View {
         if let peer {
-            let name = ((peer["body"] as? JSON)?["name"] as? String) ?? "Team member"
+            let name = ((peer["body"] as? JSON)?["name"] as? String) ?? "Swarm user"
             HStack(spacing: 12) {
                 Avatar(name: name)
                 VStack(alignment: .leading, spacing: 4) {

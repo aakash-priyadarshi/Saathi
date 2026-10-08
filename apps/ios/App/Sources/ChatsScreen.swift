@@ -48,7 +48,7 @@ struct ChatsView: View {
                     if !pinned.isEmpty { section("Pinned", pinned) }
                     if !direct.isEmpty { section("Direct messages", direct) }
                     if !channels.isEmpty { section("Channels", channels) }
-                    Text("Direct messages and invite-only channels are encrypted between participants. Open channels are readable by their members. Chatting does not verify a relief volunteer.")
+                    Text("Direct messages and invite-only channels are encrypted between participants. Open channels are readable by their members.")
                         .font(Type.bodySmall).foregroundStyle(Palette.muted).padding(.top, 8)
                 }.padding(20)
             }
@@ -642,7 +642,7 @@ struct ContactInfoView: View {
                 Button((chat.blocked(peer) ? "Unblock " : "Block ") + title) { try? chat.toggleBlock(peer) }.font(Type.label).foregroundStyle(Palette.error)
                 Button("Report " + title) { reporting = true }.font(Type.label).foregroundStyle(Palette.error)
                 Button("Clear chat") { clearing = true }.font(Type.label).foregroundStyle(Palette.error)
-                Text("Blocking stops their messages and calls on this phone. Reports reach the team when Swarm is online.").font(Type.bodySmall).foregroundStyle(Palette.muted)
+                Text("Blocking stops their messages and calls on this phone. Reports are sent when Swarm is online.").font(Type.bodySmall).foregroundStyle(Palette.muted)
             }.padding(20)
         }
         .background(Palette.background.ignoresSafeArea())

@@ -115,7 +115,7 @@ struct NameView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Image("SwarmLockupImage").resizable().scaledToFit().frame(maxWidth: .infinity).padding(24)
                     .background(Palette.forest, in: RoundedRectangle(cornerRadius: 16)).accessibilityLabel("SWARM by CJP")
-                Heading(title: "People first.", text: "Choose the name nearby team members will see. Your identity is created on this phone and never leaves it.")
+                Heading(title: "People first.", text: "Choose the name people nearby will see. Your identity is created on this phone and never leaves it.")
                 TextField("Your name", text: $name)
                     .font(Type.bodyLarge).textInputAutocapitalization(.words).submitLabel(.done)
                     .padding(14).background(Palette.surface, in: RoundedRectangle(cornerRadius: 10))

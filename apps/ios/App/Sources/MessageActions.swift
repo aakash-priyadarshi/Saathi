@@ -95,7 +95,7 @@ extension ChatEngine {
         var r: JSON = ["id": id, "reason": reason]
         if let messageID { r["messageId"] = messageID }
         if let personID { r["personId"] = personID }
-        try save("chat-reports", id, r); notice = "Report saved. It reaches the team when Swarm is online."
+        try save("chat-reports", id, r); notice = "Report saved. It is sent when Swarm is online."
     }
     func toggleBlock(_ personID: String) throws {
         if blocked(personID) { store.remove("chat-blocks", personID) } else { try save("chat-blocks", personID, ["id": personID]) }

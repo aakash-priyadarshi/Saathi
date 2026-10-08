@@ -364,7 +364,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     fun leaveChat(id:String)=chatAction { chat.membership(id,null);runCatching {chat.sync()} }
     fun removeChatMember(id:String,person:String)=chatAction { chat.membership(id,person);runCatching {chat.sync()} }
     fun deleteChannel(id:String)=chatAction { chat.membership(id,null,true);runCatching {chat.sync()} }
-    fun reportChat(id:String,reason:String="ABUSE")=chatAction { chat.report(id,reason);runCatching {chat.sync()};notice("Report saved. It will reach the team when connected.") }
+    fun reportChat(id:String,reason:String="ABUSE")=chatAction { chat.report(id,reason);runCatching {chat.sync()};notice("Report saved. It is sent when Swarm is online.") }
     fun reportPerson(id:String,reason:String)=chatAction{chat.reportPerson(id,reason);runCatching{chat.sync()};notice("Report saved for review. Sending waits for an online connection.")}
     fun syncChats()=chatAction { chat.sync();notice("Chats checked. Recipient confirmations determine delivery.") }
     fun attachChat(id:String,uri:Uri,threadRootId:String?=null)=chatAction { chat.attach(id,uri,threadRootId=threadRootId);runCatching {chat.sync()} }
