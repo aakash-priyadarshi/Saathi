@@ -22,7 +22,7 @@ class NativeSyncTest {
         try {
             repository.refresh()
             assertTrue(repository.requests().isNotEmpty())
-            repository.login("android-volunteer@saathi.test", arguments.getString("fixturePassword")!!, "")
+            repository.login("android-volunteer@saathi.test", arguments.getString("fixturePassword")!!, "", "test-token")
             val prepared = repository.preparation!!
             val point = prepared.getJSONArray("points").getJSONObject(0)
             val title = "Native QA ${UUID.randomUUID().toString().take(8)}"
@@ -36,11 +36,11 @@ class NativeSyncTest {
             val identity = repository.store.publicKey(savedUser.getString("id")).encoded
             // The same email must not rebind existing private work to a replacement account ID.
             repository.store.put("account", "user", org.json.JSONObject(savedUser.toString()).put("id", UUID.randomUUID().toString()))
-            assertThrows(Exception::class.java) { runBlocking { repository.login("android-volunteer@saathi.test", arguments.getString("fixturePassword")!!, "") } }
+            assertThrows(Exception::class.java) { runBlocking { repository.login("android-volunteer@saathi.test", arguments.getString("fixturePassword")!!, "", "test-token") } }
             assertNull(repository.store.get("credentials", "session"))
             assertEquals(id, repository.events().single().getString("id"))
             repository.store.put("account", "user", savedUser)
-            repository.login("android-volunteer@saathi.test", arguments.getString("fixturePassword")!!, "")
+            repository.login("android-volunteer@saathi.test", arguments.getString("fixturePassword")!!, "", "test-token")
             assertEquals(savedDevice, repository.store.get("account", "device")!!.getString("id"))
             assertArrayEquals(identity, repository.store.publicKey(savedUser.getString("id")).encoded)
             assertEquals(title, repository.store.get("drafts", "fixture")!!.getString("title"))
