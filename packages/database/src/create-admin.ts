@@ -60,7 +60,7 @@ async function main() {
       return created;
     });
     console.log(`Admin created: ${user.email}`);
-    console.log(`One-time password: ${password}`);
+    console.log(`Initial password: ${password}`);
     console.log('Save this password in a password manager; it will not be shown again.');
   } finally {
     await db.$disconnect();

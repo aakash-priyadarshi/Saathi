@@ -55,7 +55,7 @@ is embedded in the web image; never put the secret in the web image, browser
 code, or repository. Web sign-in fails closed until the secret is configured.
 
 After the image containing the admin bootstrap command is deployed, create the
-first real administrator with a one-time generated password:
+first real administrator with a randomly generated initial password:
 
 ```sh
 sudo docker compose run --rm --no-deps --entrypoint node api \
