@@ -58,7 +58,7 @@ describe('admin bootstrap', () => {
     });
     expect(tx.$queryRaw).toHaveBeenCalledOnce();
     const queryStrings = tx.$queryRaw.mock.calls[0]?.[0] as string[] | undefined;
-    expect(queryStrings?.join('?')).toContain('pg_advisory_xact_lock(?::int, ?::int)');
+    expect(queryStrings?.join('?')).toContain('pg_advisory_xact_lock(?::int, ?::int) IS NULL');
     expect(tx.user.create).toHaveBeenCalledOnce();
     expect(tx.auditEvent.create).toHaveBeenCalledOnce();
   });
