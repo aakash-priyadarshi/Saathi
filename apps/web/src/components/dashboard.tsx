@@ -124,12 +124,6 @@ export function LoginPage() {
             onReady={() => setTurnstileReady(true)}
             onError={() => setTurnstileError(true)}
           />
-          <div className="turnstile-widget" ref={turnstileContainer} />
-          {turnstileError && (
-            <p className="form-hint" role="status">
-              Security verification did not load. Refresh this page and try again.
-            </p>
-          )}
         </>
       )}
       <form className="stack-form" onSubmit={submit}>
@@ -164,6 +158,16 @@ export function LoginPage() {
             onChange={(e) => setTotp(e.target.value)}
           />
         </label>
+        {turnstileSiteKey && (
+          <>
+            <div className="turnstile-widget" ref={turnstileContainer} />
+            {turnstileError && (
+              <p className="form-hint" role="status">
+                Security verification did not load. Refresh this page and try again.
+              </p>
+            )}
+          </>
+        )}
         {mutation.error && <ErrorNotice message={mutation.error} />}
         <button
           className="button full"
