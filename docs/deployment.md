@@ -30,7 +30,7 @@ Run schema migration with a dedicated migrator role before deploying the runtime
 
 The production application DB role must not own schemas or tables, disable triggers, truncate history, or run migrations. Grant it SELECT/INSERT/UPDATE on operational tables, SELECT/INSERT on AuditEvent, and no DELETE on ReliefRequest. Test its permissions explicitly after provisioning. Audit triggers supplement least privilege; they cannot protect history from a superuser.
 
-Bootstrap the first production admin using an operator-controlled database provisioning procedure: create a scrypt password with packages/auth, a verified email and ADMIN role. Production seeding intentionally refuses to run. Self-service MFA secret encryption/enrollment, recovery and password-reset flows are still incomplete; resolve those before onboarding live teams. There is no default production admin password.
+Bootstrap the first production admin using the operator-controlled `create-admin` command. Add a separate administrator only when explicitly authorized, using `--allow-additional-admin`; this creates and audits the account without changing existing administrators. Production seeding intentionally refuses to run. Self-service MFA secret encryption/enrollment, recovery and password-reset flows are still incomplete; resolve those before onboarding live teams. There is no default production admin password.
 
 ## Failure recovery
 
