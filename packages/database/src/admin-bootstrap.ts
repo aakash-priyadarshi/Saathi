@@ -9,7 +9,7 @@ export async function bootstrapAdmin(
 ) {
   return db.$transaction(
     async (tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(${bootstrapLock[0]}::int, ${bootstrapLock[1]}::int)`;
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(${bootstrapLock[0]}::int, ${bootstrapLock[1]}::int) IS NULL`;
       const existingAccount = await tx.user.findUnique({ where: { email: account.email } });
       if (existingAccount)
         throw new Error('That email already has an account; no changes were made.');
