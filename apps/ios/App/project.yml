@@ -37,8 +37,8 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
-        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: Swarm finds and talks to nearby team phones over Bluetooth, without internet.
-        INFOPLIST_KEY_NSLocalNetworkUsageDescription: Swarm finds and talks to nearby team phones on local Wi-Fi, without internet.
+        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: Swarm finds and talks to nearby Swarm phones over Bluetooth, without internet.
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: Swarm finds and talks to nearby Swarm phones on local Wi-Fi, without internet.
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: iOS requires location access to join a nearby phone's fast Wi-Fi link.
         INFOPLIST_KEY_NSMicrophoneUsageDescription: Hold the mic to talk; Swarm records only while you hold it and sends the clip to the chat.
         INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: Swarm saves a photo from a chat to your library when you choose Save.
