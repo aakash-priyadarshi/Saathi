@@ -5,7 +5,12 @@ const seededAdminEmail = 'admin@saathi.test';
 
 export async function bootstrapAdmin(
   db: PrismaClient,
-  account: { email: string; displayName: string; passwordHash: string },
+  account: {
+    email: string;
+    displayName: string;
+    passwordHash: string;
+    allowAdditionalAdministrators?: boolean;
+  },
 ) {
   return db.$transaction(
     async (tx) => {
@@ -21,7 +26,8 @@ export async function bootstrapAdmin(
       const seededAdmins = administrators.filter((admin) => admin.email === seededAdminEmail);
       if (
         seededAdmins.length > 1 ||
-        administrators.some((admin) => admin.email !== seededAdminEmail)
+        (!account.allowAdditionalAdministrators &&
+          administrators.some((admin) => admin.email !== seededAdminEmail))
       )
         throw new Error('An administrator already exists; no changes were made.');
 
@@ -58,7 +64,7 @@ export async function bootstrapAdmin(
         });
       await tx.auditEvent.create({
         data: {
-          event: 'ADMIN_BOOTSTRAPPED',
+          event: account.allowAdditionalAdministrators ? 'ADMIN_CREATED' : 'ADMIN_BOOTSTRAPPED',
           entityType: 'User',
           entityId: user.id,
           previous: demoAdmin

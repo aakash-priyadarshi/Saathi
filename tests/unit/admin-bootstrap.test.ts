@@ -98,6 +98,25 @@ describe('admin bootstrap', () => {
     expect(tx.user.update).not.toHaveBeenCalled();
   });
 
+  it('adds an explicitly authorized administrator without changing existing admins', async () => {
+    const existingAdmin = {
+      id: 'existing-admin',
+      email: 'owner@example.org',
+      role: 'ADMIN',
+      displayName: 'Existing Admin',
+      passwordHash: 'old-hash',
+    };
+    const { db, tx, users } = fixture([existingAdmin]);
+    await bootstrapAdmin(db, { ...account, allowAdditionalAdministrators: true });
+    expect(users.filter((user) => user.role === 'ADMIN')).toHaveLength(2);
+    expect(users[0]).toEqual(existingAdmin);
+    expect(tx.user.create).toHaveBeenCalledOnce();
+    expect(tx.user.update).not.toHaveBeenCalled();
+    expect(tx.auditEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ event: 'ADMIN_CREATED' }),
+    });
+  });
+
   it('does not overwrite an account that already owns the requested email', async () => {
     const { db, tx } = fixture([
       {
