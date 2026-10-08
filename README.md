@@ -16,7 +16,7 @@ The web/API, browser offline foundation and native Android product use real Post
 
 ## Download the apps
 
-[Download CJP Swarm for Android 0.1.12](https://github.com/aakash-priyadarshi/Saathi/releases/tag/android-v0.1.12) and install `CJP-Swarm-Android.apk` (package `org.saathi.android.qa`, so it installs over earlier test builds). iPhone 1.0.0 is on TestFlight as "Swarm by CJP". Both apps use the service at swarm.cockroachjantaparty.org, which is the live system for the 9–10 October 2026 event.
+[Download CJP Swarm for Android](https://github.com/aakash-priyadarshi/Saathi/releases/latest) and install `CJP-Swarm-Android.apk` (package `org.saathi.android.qa`, so it installs over earlier test builds). iPhone 1.0.0 is on TestFlight as "Swarm by CJP". Both apps use the service at swarm.cockroachjantaparty.org, which is the live system for the 9–10 October 2026 event.
 
 ### Chat changes in 1.0.0 (Android and iPhone)
 

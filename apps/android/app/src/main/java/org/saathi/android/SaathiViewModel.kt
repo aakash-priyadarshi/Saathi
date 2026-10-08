@@ -286,19 +286,36 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         if (!force && lastPublicRefreshAt > 0 && now - lastPublicRefreshAt < 5 * 60_000L) return@withLock
         repository.refresh()
         lastPublicRefreshAt = now
-        if (repository.preparation != null) runCatching { loadDashboard() }
+        if (repository.preparation != null) {
+            try { loadDashboard() }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) { /* Keep the last saved dashboard when its refresh fails. */ }
+        }
+    }
+    private suspend fun refreshPublicDataSafely(force: Boolean) {
+        try { refreshPublicData(force) }
+        catch (e: CancellationException) { throw e }
+        catch (_: Exception) { /* Cached public data stays usable while the API is unavailable. */ }
     }
     private suspend fun syncCommunity(force: Boolean) {
         if (!BuildConfig.CHAT_ENABLED || !repository.reachable) return
         val now = System.currentTimeMillis()
         if (lastCommunitySyncAt > 0 && now - lastCommunitySyncAt < 30_000L) return
         if (!force && lastCommunitySyncAt > 0 && now - lastCommunitySyncAt < 2 * 60_000L) return
-        runCatching { community.sync() }.onSuccess { lastCommunitySyncAt = now }
+        try {
+            community.sync()
+            lastCommunitySyncAt = now
+        } catch (e: CancellationException) { throw e }
+        catch (_: Exception) { /* Retry community sync on the next refresh. */ }
     }
     private suspend fun refreshRemote(forcePublicData: Boolean = true) {
         repository.checkReachability()
-        refreshPublicData(forcePublicData)
-        if (BuildConfig.CHAT_ENABLED) runCatching { chat.sync() }
+        refreshPublicDataSafely(forcePublicData)
+        if (BuildConfig.CHAT_ENABLED) {
+            try { chat.sync() }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) { /* Keep trying public and community sync independently. */ }
+        }
         syncCommunity(forcePublicData)
     }
     private fun refreshInBackground() {
@@ -544,9 +561,17 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     }
     private suspend fun refreshConnectionState(forcePublicData: Boolean = false) {
         repository.checkReachability()
-        refreshPublicData(forcePublicData)
+        refreshPublicDataSafely(forcePublicData)
         if (BuildConfig.CHAT_ENABLED) {
-            if (repository.reachable) { runCatching { chat.sync(); chat.autoMedia() }; syncCommunity(forcePublicData) }
+            if (repository.reachable) {
+                try { chat.sync() }
+                catch (e: CancellationException) { throw e }
+                catch (_: Exception) { /* Continue with independent sync work. */ }
+                try { chat.autoMedia() }
+                catch (e: CancellationException) { throw e }
+                catch (_: Exception) { /* Retry media on a later connection check. */ }
+                syncCommunity(forcePublicData)
+            }
             if (session.confirmed) {
                 val now = System.currentTimeMillis()
                 if (now - lastChatAnnounceAt >= 120_000) { runCatching { chat.announce() }; lastChatAnnounceAt = now }
