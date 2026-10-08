@@ -113,7 +113,16 @@ jobs:
           test -s "$apk"
           cp "$apk" "$public_apk"
           sha256sum "$public_apk" > "$public_apk.sha256"
-          gh release create "$GITHUB_REF_NAME" "$public_apk" "$public_apk.sha256" \
-            --title "CJP Swarm for Android ${GITHUB_REF_NAME#android-v}" \
-            --latest \
-            --notes "CJP Swarm for Android. Package org.saathi.android.qa, so it installs over earlier test builds and keeps their chats. Verify the APK with the attached SHA-256 file."
+          release_title="CJP Swarm for Android ${GITHUB_REF_NAME#android-v}"
+          release_notes="CJP Swarm for Android. Package org.saathi.android.qa, so it installs over earlier test builds and keeps their chats. Verify the APK with the attached SHA-256 file."
+
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$public_apk" "$public_apk.sha256" \
+              --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --title "$release_title" --latest --notes "$release_notes"
+          else
+            gh release create "$GITHUB_REF_NAME" "$public_apk" "$public_apk.sha256" \
+              --repo "$GITHUB_REPOSITORY" --title "$release_title" --latest \
+              --notes "$release_notes" --verify-tag
+          fi
