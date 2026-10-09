@@ -75,16 +75,20 @@ private val tabs = listOf(Triple("Live", Icons.Outlined.Feed, "Public field upda
     var page by rememberSaveable { mutableStateOf("Chats") }; var detail by rememberSaveable { mutableStateOf<String?>(null) }
     var conversation by rememberSaveable{mutableStateOf<String?>(null)};var createChannel by rememberSaveable{mutableStateOf(false)};var invite by rememberSaveable{mutableStateOf(false)}
     var form by rememberSaveable { mutableStateOf<String?>(null) }; var logout by remember { mutableStateOf(false) }
-    LaunchedEffect(state.needsEnabled) {
+    LaunchedEffect(state.liveEnabled, state.needsEnabled) {
+        val draftId = form?.takeIf { it.startsWith("draft:") }?.substringAfter(':')
+        val draftType = draftId?.let { vm.repository.store.get("drafts", it)?.optString("draftType") }
+        if (!state.liveEnabled) {
+            if (page == "Live") page = "Chats"
+            if (form == "field" || draftType == "field") form = null
+        }
         if (!state.needsEnabled) {
             if (page == "Needs") page = "Chats"
             detail = null
-            val draftId = form?.takeIf { it.startsWith("draft:") }?.substringAfter(':')
-            val draftType = draftId?.let { vm.repository.store.get("drafts", it)?.optString("draftType") }
             if (form == "request" || form?.startsWith("update:") == true || draftType == "request") form = null
         }
     }
-    val visibleDestinations = NavigationPolicy.visibleDestinations(state.needsEnabled).toSet()
+    val visibleDestinations = NavigationPolicy.visibleDestinations(state.liveEnabled, state.needsEnabled).toSet()
     val visibleTabs = tabs.filter { it.first in visibleDestinations }
     val openChat:(String)->Unit={conversation=it;page="Chats";detail=null;form=null}
     var pendingPermission by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -141,7 +145,8 @@ private val tabs = listOf(Triple("Live", Icons.Outlined.Feed, "Public field upda
                             conversation!=null -> ConversationScreen(vm,state,conversation!!,askCall,askRecord,{message->if(state.needsEnabled)vm.needFromChat(message){form=it}else vm.notice("Public relief needs are temporarily paused.")},{id->if(!state.needsEnabled)vm.notice("Public relief needs are temporarily paused.")else state.requests.plus(state.completed).firstOrNull{it.optString("publicId")==id}?.let{detail=it.toString()}?:vm.notice("Refresh Needs to check this reference’s latest public status.")},content,back=navigateBack)
                             page == "Needs" && state.needsEnabled -> NeedsHub(vm,state,{detail=it.toString()},wide,content,{form=it})
                             page == "Needs" -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Notice("Relief needs are paused", "Connect to the internet later to check when this feature is available again.", Icons.Outlined.VolunteerActivism) }
-                            page == "Live" -> UpdatesHub(vm,state,content,{form="field"},{post->vm.discuss(obj("type" to "UPDATE","id" to post.getString("id"),"title" to post.getString("caption").take(120)),openChat)})
+                            page == "Live" && state.liveEnabled -> UpdatesHub(vm,state,content,{form="field"},{post->vm.discuss(obj("type" to "UPDATE","id" to post.getString("id"),"title" to post.getString("caption").take(120)),openChat)})
+                            page == "Live" -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Notice("Field updates are paused", "An administrator must enable this feature before it is available.", Icons.Outlined.Feed) }
                             page == "Chats" -> ChatsScreen(vm,state,openChat,{page="Nearby"},{createChannel=true},content)
                             page == "Nearby" -> NearbyPeopleScreen(vm,state,askNearby,openChat,{createChannel=true},{invite=true},{page="Connection"},content)
                             page == "Connection" -> NearbyScreen(vm, state, askNearby, askBle, askCall, content)

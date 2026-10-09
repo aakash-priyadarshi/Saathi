@@ -20,6 +20,7 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { createHash } from 'node:crypto';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { MAX_MEDIA_BYTES, communityText } from '@saathi/protocol';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -68,6 +69,7 @@ export class UploadsController {
   constructor(
     @Inject(AuthService) private readonly auth: AuthService,
     @Inject(MediaService) private readonly media: MediaService,
+    @Inject(RequestsService) private readonly requests: RequestsService,
   ) {}
   /** Team uploads name their organization; uploads without one are guest uploads. */
   private async owner(req: Request, organizationId: string | null) {
@@ -87,6 +89,7 @@ export class UploadsController {
       })
       .strict()
       .parse(body);
+    await this.requests.assertLiveEnabled();
     const org = b.organizationId ?? null;
     return this.media.beginUpload(await this.owner(req, org), org, b.size);
   }
@@ -97,6 +100,7 @@ export class UploadsController {
   ) {
     const uploadId = uuid.parse(id),
       owner = await this.owner(req, await this.media.uploadOrganization(uploadId));
+    await this.requests.assertLiveEnabled();
     return this.media.putPart(
       uploadId,
       owner,
@@ -107,6 +111,7 @@ export class UploadsController {
   @Post(':id/complete') async complete(@Req() req: Request, @Param('id') id: string) {
     const uploadId = uuid.parse(id),
       owner = await this.owner(req, await this.media.uploadOrganization(uploadId));
+    await this.requests.assertLiveEnabled();
     return this.media.completeUpload(uploadId, owner);
   }
 }
@@ -353,9 +358,15 @@ export class VolunteerController {
     @UploadedFile() file: UploadFile,
     @Body('organizationId') org: string,
   ) {
-    return this.media.upload(await this.auth.actor(req, true), uuid.parse(org), file);
+    try {
+      await this.requests.assertLiveEnabled();
+      return await this.media.upload(await this.auth.actor(req, true), uuid.parse(org), file);
+    } finally {
+      if (file?.path) await rm(file.path, { force: true });
+    }
   }
   @Post('media/:id/retry') async retry(@Req() req: Request, @Param('id') id: string) {
+    await this.requests.assertLiveEnabled();
     return this.media.retry(await this.auth.actor(req, true), uuid.parse(id));
   }
 }
@@ -470,6 +481,10 @@ export class ManagementController {
   @Patch('admin/features/needs') async setNeedsFeature(@Req() req: Request, @Body() body: unknown) {
     const b = z.object({ enabled: z.boolean() }).strict().parse(body);
     return this.management.setNeedsFeature(await this.auth.actor(req, true), b.enabled);
+  }
+  @Patch('admin/features/live') async setLiveFeature(@Req() req: Request, @Body() body: unknown) {
+    const b = z.object({ enabled: z.boolean() }).strict().parse(body);
+    return this.management.setLiveFeature(await this.auth.actor(req, true), b.enabled);
   }
   @Get('admin/reports') async reports(@Req() req: Request) {
     return this.management.reports(await this.auth.actor(req));

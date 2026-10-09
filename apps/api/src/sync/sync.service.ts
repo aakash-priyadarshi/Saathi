@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ConflictException,
   HttpException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
@@ -27,6 +28,7 @@ import { Database, audit, json } from '../database';
 import { AuthService, actorInclude, type Actor } from '../auth/auth.service';
 import { RequestsService } from '../requests/requests.service';
 import { MediaService } from '../media/media.service';
+import { platformFeatures } from '../public/platform-features';
 
 @Injectable()
 export class SyncService {
@@ -360,6 +362,9 @@ export class SyncService {
         return accepted;
       });
     } catch (error) {
+      // A temporary feature pause must leave the signed event unrecorded so its
+      // owner or a later carrier can retry it after the administrator resumes Live.
+      if (error instanceof ServiceUnavailableException) throw error;
       if (!(error instanceof HttpException)) throw error;
       // Domain failure rolls back every mutation; retain a separately signed rejection for carriers.
       receipt = await this.receipt(
@@ -491,6 +496,8 @@ export class SyncService {
   }
   async attachMedia(actor: Actor, id: string, mediaIds: string[]) {
     return this.db.atomic(async (tx) => {
+      if (!(await platformFeatures(tx)).live)
+        throw new ForbiddenException('Field updates are temporarily paused by an administrator.');
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${id}))`;
       const record = await tx.offlineEvent.findUniqueOrThrow({ where: { id } });
       const previous = record.receipt as unknown as Receipt;

@@ -22,6 +22,7 @@ pnpm lint
 pnpm typecheck
 pnpm test
 pnpm test:integration # local isolated test database, not production
+pnpm db:check         # read-only compare of the database schema with Prisma
 pnpm build
 docker build -t saathi:release .
 ```

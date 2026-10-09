@@ -191,10 +191,9 @@ export function DashboardFrame({
   title?: string;
 }) {
   const { data: user, error, loading } = useResource<CurrentUser>('/auth/me'),
-    { data: platformConfig } = useResource<{ features?: { needs?: boolean } }>(
-      '/public/config',
-      true,
-    ),
+    { data: platformConfig } = useResource<{
+      features?: { live?: boolean; needs?: boolean };
+    }>('/public/config', true),
     mutation = useMutation(),
     router = useRouter();
   useEffect(() => {
@@ -263,16 +262,18 @@ export function DashboardFrame({
           <PackageCheck size={17} />
           Deliveries & requests
         </Link>
-        {platformConfig?.features?.needs !== false && (
+        {platformConfig?.features?.needs === true && (
           <Link href="/dashboard/new">
             <Plus size={17} />
             Create a need
           </Link>
         )}
-        <Link href="/dashboard/post">
-          <Radio size={17} />
-          Publish an update
-        </Link>
+        {platformConfig?.features?.live === true && (
+          <Link href="/dashboard/post">
+            <Radio size={17} />
+            Publish an update
+          </Link>
+        )}
         {['ADMIN', 'COORDINATOR'].includes(user.role) && (
           <Link href="/dashboard/manage">
             <Settings size={17} />
@@ -368,6 +369,7 @@ function DeliveryRow({
   );
 }
 export function DashboardPage() {
+  const { data: config } = useResource<{ features?: { needs?: boolean } }>('/public/config', true);
   const { data, error, loading, refresh } = useResource<DashboardData>(
     '/volunteer/dashboard',
     true,
@@ -406,10 +408,12 @@ export function DashboardPage() {
                 <h2>Your team’s requests</h2>
                 <p>Active and archived requests, with their current quantities.</p>
               </div>
-              <Link className="button" href="/dashboard/new">
-                <Plus size={16} />
-                Create need
-              </Link>
+              {config?.features?.needs === true && (
+                <Link className="button" href="/dashboard/new">
+                  <Plus size={16} />
+                  Create need
+                </Link>
+              )}
             </div>
             <div className="table-wrap">
               <table>
@@ -560,6 +564,7 @@ function requestFromForm(f: FormData, prefix = '') {
   };
 }
 export function NewRequestPage() {
+  const { data: config } = useResource<{ features?: { needs?: boolean } }>('/public/config', true);
   const { data, error, loading } = useResource<DashboardData>('/volunteer/dashboard'),
     mutation = useMutation(),
     router = useRouter();
@@ -573,7 +578,12 @@ export function NewRequestPage() {
   }
   return (
     <DashboardFrame title="Create a verified need">
-      {loading ? (
+      {config?.features?.needs !== true ? (
+        <div className="empty-state" role="status">
+          <h2>Relief needs are paused.</h2>
+          <p>An administrator must enable this feature before your team can publish requests.</p>
+        </div>
+      ) : loading ? (
         <Loading />
       ) : error ? (
         <ErrorNotice message={error} />
@@ -597,6 +607,7 @@ export function NewRequestPage() {
   );
 }
 export function PostPage() {
+  const { data: config } = useResource<{ features?: { live?: boolean } }>('/public/config', true);
   const { data, error, loading } = useResource<DashboardData>('/volunteer/dashboard'),
     mutation = useMutation(),
     router = useRouter();
@@ -640,7 +651,12 @@ export function PostPage() {
   }
   return (
     <DashboardFrame title="Publish a field update">
-      {loading ? (
+      {config?.features?.live !== true ? (
+        <div className="empty-state" role="status">
+          <h2>Field updates are paused.</h2>
+          <p>An administrator must enable this feature before your team can publish updates.</p>
+        </div>
+      ) : loading ? (
         <Loading />
       ) : error ? (
         <ErrorNotice message={error} />

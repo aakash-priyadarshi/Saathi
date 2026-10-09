@@ -52,6 +52,31 @@ services:
       postgres:
         condition: service_healthy
 
+  db-check:
+    image: ${SAATHI_IMAGE:?Set SAATHI_IMAGE in .env}
+    profiles: ['tools']
+    restart: 'no'
+    command:
+      - pnpm
+      - --filter
+      - '@saathi/database'
+      - exec
+      - prisma
+      - migrate
+      - diff
+      - --from-schema-datasource
+      - prisma/schema.prisma
+      - --to-schema-datamodel
+      - prisma/schema.prisma
+      - --exit-code
+    environment:
+      NODE_ENV: production
+      APP_ENV: staging
+      DATABASE_URL: postgresql://saathi:${POSTGRES_PASSWORD}@postgres:5432/saathi?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   seed:
     image: ${SAATHI_IMAGE:?Set SAATHI_IMAGE in .env}
     profiles: ['tools']

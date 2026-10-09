@@ -23,7 +23,16 @@ const links = [
 export function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname(),
     [dark, setDark] = useState(false);
-  const { data } = useResource<{ demo: boolean; platformName: string }>('/public/config');
+  const { data, refresh: refreshConfig } = useResource<{
+    demo: boolean;
+    platformName: string;
+    features?: { live?: boolean; needs?: boolean };
+  }>('/public/config', true);
+  useEffect(() => {
+    const refresh = () => void refreshConfig();
+    window.addEventListener('saathi-feature-changed', refresh);
+    return () => window.removeEventListener('saathi-feature-changed', refresh);
+  }, [refreshConfig]);
   useEffect(() => {
     const enabled = localStorage.getItem('saathi-theme') === 'dark';
     setDark(enabled);
@@ -35,6 +44,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
     localStorage.setItem('saathi-theme', next ? 'dark' : 'light');
     document.documentElement.dataset.theme = next ? 'dark' : 'light';
   }
+  const visibleLinks = links.filter((link) =>
+    link.href === '/live'
+      ? data?.features?.live === true
+      : link.href === '/' || link.href === '/completed'
+        ? data?.features?.needs === true
+        : true,
+  );
   const name = data?.platformName ?? process.env.NEXT_PUBLIC_PLATFORM_NAME ?? 'CJP Swarm';
   const display = name === 'CJP Swarm' ? 'SWARM' : name;
   if (path === '/native-turnstile') return <main>{children}</main>;
@@ -58,7 +74,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </span>
           </Link>
           <nav aria-label="Main navigation" className="desktop-nav">
-            {links.map((l) => (
+            {visibleLinks.map((l) => (
               <Link key={l.href} href={l.href} aria-current={path === l.href ? 'page' : undefined}>
                 {l.label === 'Live' && <span className="live-dot" />}
                 {l.label}
@@ -104,7 +120,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </p>
       </footer>
       <nav className="mobile-nav" aria-label="Mobile navigation">
-        {links.map((l) => (
+        {visibleLinks.map((l) => (
           <Link key={l.href} href={l.href} aria-current={path === l.href ? 'page' : undefined}>
             <l.icon size={21} />
             {l.label}

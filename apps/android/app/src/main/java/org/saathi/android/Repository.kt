@@ -26,7 +26,8 @@ class Repository(private val context: Context, storageScope: String = BuildConfi
     private val bulkClient = client.newBuilder().readTimeout(2, TimeUnit.MINUTES).writeTimeout(2, TimeUnit.MINUTES).callTimeout(10, TimeUnit.MINUTES).build()
     private val launchClock = Instant.now(); private val launchElapsed = SystemClock.elapsedRealtime()
     var configuration: JSONObject? = null; private set
-    var needsEnabled: Boolean = store.get("public", "runtime-config")?.optJSONObject("features")?.optBoolean("needs", true) ?: true; private set
+    var liveEnabled: Boolean = store.get("public", "runtime-config")?.optJSONObject("features")?.optBoolean("live", false) ?: false; private set
+    var needsEnabled: Boolean = store.get("public", "runtime-config")?.optJSONObject("features")?.optBoolean("needs", false) ?: false; private set
     var reachable = false; private set
     var lastChecked: String? = null; private set
     private val root = JSONObject(BuildConfig.CONFIG_ROOT)
@@ -128,16 +129,25 @@ class Repository(private val context: Context, storageScope: String = BuildConfi
         reachable = false; throw failure ?: IllegalStateException("Swarm is unavailable.")
     }
     private suspend fun applyRuntimeConfig(value: JSONObject): Boolean = withContext(Dispatchers.IO) {
-        val enabled = value.optJSONObject("features")?.optBoolean("needs", true) ?: true
-        val changed = enabled != needsEnabled
-        needsEnabled = enabled
+        val features = value.optJSONObject("features")
+        val live = features?.optBoolean("live", false) ?: false
+        val needs = features?.optBoolean("needs", false) ?: false
+        val changed = live != liveEnabled || needs != needsEnabled
+        liveEnabled = live
+        needsEnabled = needs
         store.put("public", "runtime-config", value, false)
-        if (!enabled) {
+        if (!needs) {
             store.transaction {
                 for (bucket in listOf("requests", "completed")) {
                     store.all(bucket).forEach { row -> store.remove(bucket, row.optString("publicId", row.optString("id"))) }
                     store.remove("public", "$bucket-order")
                 }
+            }
+        }
+        if (!live) {
+            store.transaction {
+                store.all("feed").forEach { row -> store.remove("feed", row.optString("id")) }
+                store.remove("public", "feed-order")
             }
         }
         changed

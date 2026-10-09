@@ -202,11 +202,11 @@ model FieldUpdate {
   id String @id @default(uuid())
   caption String
   authorId String?
-  author User? @relation(fields:[authorId], references:[id])
+  author User? @relation(fields:[authorId], references:[id], onDelete: Restrict)
   organizationId String?
-  organization Organization? @relation(fields:[organizationId], references:[id])
+  organization Organization? @relation(fields:[organizationId], references:[id], onDelete: Restrict)
   reliefPointId String?
-  reliefPoint ReliefPoint? @relation(fields:[reliefPointId], references:[id])
+  reliefPoint ReliefPoint? @relation(fields:[reliefPointId], references:[id], onDelete: Restrict)
   participantName String?
   publicArea String?
   contentWarning Boolean @default(false)
@@ -391,7 +391,7 @@ model ChatPolicy {
   conversationId String
   version Int
   policy Json
-  conversation ChatConversation @relation(fields:[conversationId],references:[id],onDelete:Cascade)
+  conversation ChatConversation @relation(fields:[conversationId],references:[id],onDelete:Cascade,onUpdate:NoAction)
   @@unique([conversationId,version])
 }
 
@@ -401,8 +401,8 @@ model ChatMembership {
   role String
   joinedAt DateTime
   removedAt DateTime?
-  conversation ChatConversation @relation(fields:[conversationId], references:[id], onDelete:Cascade)
-  participant ChatParticipant @relation(fields:[participantId], references:[id], onDelete:Cascade)
+  conversation ChatConversation @relation(fields:[conversationId], references:[id], onDelete:Cascade, onUpdate:NoAction)
+  participant ChatParticipant @relation(fields:[participantId], references:[id], onDelete:Cascade, onUpdate:NoAction)
   @@id([conversationId, participantId])
   @@index([participantId,removedAt])
 }
@@ -415,8 +415,8 @@ model ChatMessage {
   envelopeHash String
   receivedAt DateTime @default(now())
   expiresAt DateTime
-  conversation ChatConversation @relation(fields:[conversationId], references:[id], onDelete:Cascade)
-  author ChatParticipant @relation(fields:[authorId], references:[id])
+  conversation ChatConversation @relation(fields:[conversationId], references:[id], onDelete:Cascade, onUpdate:NoAction)
+  author ChatParticipant @relation(fields:[authorId], references:[id], onDelete:NoAction, onUpdate:NoAction)
   receipts ChatDeliveryReceipt[]
   @@index([conversationId,receivedAt,id])
   @@index([expiresAt])
@@ -440,7 +440,7 @@ model ChatAttachmentChunk {
   attachmentId String @db.Uuid
   part Int
   bytes Bytes
-  attachment ChatAttachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+  attachment ChatAttachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   @@id([attachmentId, part])
 }
 
@@ -449,7 +449,7 @@ model ChatDeliveryReceipt {
   participantId String
   status String
   receipt Json
-  message ChatMessage @relation(fields:[messageId], references:[id], onDelete:Cascade)
+  message ChatMessage @relation(fields:[messageId], references:[id], onDelete:Cascade,onUpdate:NoAction)
   @@id([messageId,participantId,status])
 }
 
@@ -462,7 +462,7 @@ model ChatJoinRequest {
   decision String @default("PENDING")
   action String @default("JOIN")
   createdAt DateTime @default(now())
-  conversation ChatConversation @relation(fields:[conversationId], references:[id], onDelete:Cascade)
+  conversation ChatConversation @relation(fields:[conversationId], references:[id], onDelete:Cascade,onUpdate:NoAction)
   @@unique([conversationId,participantId])
 }
 
@@ -478,7 +478,7 @@ model ChatAction {
   envelopeHash String
   receivedAt DateTime @default(now())
   expiresAt DateTime
-  conversation ChatConversation @relation(fields:[conversationId], references:[id], onDelete:Cascade)
+  conversation ChatConversation @relation(fields:[conversationId], references:[id], onDelete:Cascade,onUpdate:NoAction)
   @@index([conversationId, receivedAt, id])
   @@index([conversationId, version])
   @@index([expiresAt])

@@ -7,7 +7,7 @@ import type { CurrentUser } from '@saathi/types';
 import { api, formatDate, useMutation, useResource } from '../lib/api';
 import { DashboardFrame } from './dashboard';
 
-type FeatureState = { features: { needs: boolean }; updatedAt: string | null };
+type FeatureState = { features: { live: boolean; needs: boolean }; updatedAt: string | null };
 type FeedReview = {
   id: string;
   caption: string;
@@ -75,6 +75,8 @@ function AdminContent({ user }: { user: CurrentUser }) {
   async function act(path: string, body: unknown = {}, method = 'POST') {
     const result = await mutation.run(path, body, false, method);
     if (!result) return;
+    if (path.startsWith('/admin/features/'))
+      window.dispatchEvent(new Event('saathi-feature-changed'));
     setMessage('Saved. Connected apps will receive the change the next time they sync.');
     await Promise.all([features.refresh(), feed.refresh(), help.refresh(), audits.refresh()]);
   }
@@ -88,8 +90,8 @@ function AdminContent({ user }: { user: CurrentUser }) {
         <div>
           <h2>Keep the network safe and useful.</h2>
           <p>
-            Review public updates, review nearby help requests once they sync to the server, and
-            pause official relief needs when operations require it.
+            Control which public features are available. Both field updates and relief needs start
+            paused and can be enabled here when your team is ready.
           </p>
         </div>
         <Link className="button secondary" href="/dashboard/manage">
@@ -108,7 +110,10 @@ function AdminContent({ user }: { user: CurrentUser }) {
         <div className="admin-section-heading">
           <div>
             <h2 id="feature-heading">Feature availability</h2>
-            <p>Changes are enforced by the API and published to Android when it reconnects.</p>
+            <p>
+              Changes take effect on the server immediately. Connected apps hide paused features
+              after their next sync.
+            </p>
           </div>
           <ShieldCheck size={24} aria-hidden="true" />
         </div>
@@ -117,36 +122,50 @@ function AdminContent({ user }: { user: CurrentUser }) {
         ) : features.error ? (
           <ErrorNotice message={features.error} retry={() => void features.refresh()} />
         ) : (
-          <div className="feature-control">
-            <div>
-              <h3>Public relief needs</h3>
-              <p>
-                {features.data?.features.needs
-                  ? 'People can browse and contribute to verified relief requests. Android removes the Needs destination and cached public requests after its next successful connection when paused.'
-                  : 'Browsing and new contributions are paused. Android hides Needs and clears its saved request lists after it reconnects.'}
-              </p>
-              {features.data?.updatedAt && (
-                <small>Last changed {formatDate(features.data.updatedAt)}</small>
-              )}
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={features.data?.features.needs ?? false}
-              aria-label="Enable public relief needs"
-              className={`admin-switch ${features.data?.features.needs ? 'is-on' : ''}`}
-              disabled={mutation.busy || !features.data}
-              onClick={() =>
-                void act(
-                  '/admin/features/needs',
-                  { enabled: !features.data?.features.needs },
-                  'PATCH',
-                )
-              }
-            >
-              <span />
-            </button>
-          </div>
+          <>
+            {(
+              [
+                {
+                  key: 'live',
+                  title: 'Live field updates',
+                  on: 'People can view and submit field updates. New submissions remain subject to moderation.',
+                  off: 'The public feed and new field update submissions are paused.',
+                },
+                {
+                  key: 'needs',
+                  title: 'Relief needs',
+                  on: 'People can browse verified relief requests and make contributions.',
+                  off: 'Public request browsing, creation, and contributions are paused.',
+                },
+              ] as const
+            ).map(({ key, title, on, off }) => {
+              const enabled = features.data?.features[key] === true;
+              return (
+                <div className="feature-control" key={key}>
+                  <div>
+                    <h3>{title}</h3>
+                    <p>{enabled ? on : off}</p>
+                    {features.data?.updatedAt && (
+                      <small>Last changed {formatDate(features.data.updatedAt)}</small>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={enabled}
+                    aria-label={`Enable ${title.toLowerCase()}`}
+                    className={`admin-switch ${enabled ? 'is-on' : ''}`}
+                    disabled={mutation.busy || !features.data}
+                    onClick={() =>
+                      void act(`/admin/features/${key}`, { enabled: !enabled }, 'PATCH')
+                    }
+                  >
+                    <span />
+                  </button>
+                </div>
+              );
+            })}
+          </>
         )}
       </section>
 

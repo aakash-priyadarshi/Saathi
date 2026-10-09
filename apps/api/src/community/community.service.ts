@@ -18,6 +18,7 @@ import { Database, json, audit } from '../database';
 import { SyncService } from '../sync/sync.service';
 import { MediaService } from '../media/media.service';
 import { S3Storage } from '../media/storage';
+import { platformFeatures } from '../public/platform-features';
 // ponytail: database-held media; move to object storage if these quotas need to grow further.
 const MEDIA_QUOTA_BYTES = 8 * 1024 * 1024 * 1024,
   AUTHOR_QUOTA_BYTES = 1024 * 1024 * 1024,
@@ -161,6 +162,8 @@ export class CommunityService {
         throw new ConflictException('Your offer is already saved.');
       area = prior.area ?? undefined;
     } else if (b.type === 'REPORT') {
+      if (!(await platformFeatures(tx)).live)
+        throw new ForbiddenException('Field updates are temporarily paused by an administrator.');
       if (prior) throw new ConflictException('Report identifier was reused.');
       area = b.payload.area;
       if (b.payload.media) {
@@ -305,7 +308,10 @@ export class CommunityService {
         rejected.push({
           id: event.body.id,
           reason: error.message,
-          retryable: /original .*missing/i.test(error.message),
+          retryable:
+            /original .*missing|field updates are temporarily paused by an administrator/i.test(
+              error.message,
+            ),
         });
       }
     }
@@ -327,7 +333,7 @@ export class CommunityService {
         hidden: false,
         AND: [{ OR: [{ moderation: 'APPROVED' }, { authorId: b.profile.body.id }] }],
         authorId: { notIn: blocked },
-        type: { not: 'FLAG' },
+        type: { notIn: (await platformFeatures(this.db)).live ? ['FLAG'] : ['FLAG', 'REPORT'] },
         expiresAt: { gt: new Date(now) },
         OR: [
           { area: { in: b.areas } },
@@ -456,6 +462,8 @@ export class CommunityService {
       !(await verify(b, request.signature, b.profile.body.publicKey))
     )
       throw new BadRequestException('Media carrier request could not be verified.');
+    if (!(await platformFeatures(this.db)).live)
+      throw new ForbiddenException('Field updates are temporarily paused by an administrator.');
     const result = await this.db.atomic(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('community-media-quota',0))`;
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'community:object:' + b.reportId},0))`;

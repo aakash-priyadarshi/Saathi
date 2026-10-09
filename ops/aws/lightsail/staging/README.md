@@ -35,10 +35,15 @@ egress or tax charges. See [Lightsail bundle pricing](https://docs.aws.amazon.co
    docker compose pull
    docker compose up -d --wait postgres redis
    docker compose --profile tools run --rm migrate
+   docker compose --profile tools run --rm db-check
    docker compose --profile tools run --rm seed
    docker compose up -d --wait api web caddy
    docker compose ps
    ```
+
+   `db-check` is read-only and compares the connected database against every
+   Prisma-managed table, column, index and enum. It exits nonzero and prints
+   the schema diff if anything is missing or out of sync.
 
 6. Verify `/health` and `/ready` on the API hostname and the web root over
    HTTPS. Test signed service discovery from the staging Android build before

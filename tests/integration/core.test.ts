@@ -38,6 +38,7 @@ let app: Awaited<ReturnType<typeof createApp>>,
   volunteer: Actor,
   doctor: Actor;
 let pointId: string;
+let management: ManagementService;
 const origin = 'http://localhost:3000';
 /** Uploads arrive on disk (multer or assembled parts), so tests hand the service a file. */
 async function onDisk(bytes: Buffer) {
@@ -87,7 +88,7 @@ beforeAll(async () => {
   requests = app.get(RequestsService);
   auth = app.get(AuthService);
   await db.$executeRawUnsafe(
-    'TRUNCATE TABLE "User", "Organization", "FieldUpdate", "MediaAsset", "AuditEvent", "Notification", "IdempotencyRecord", "ModerationReport", "LoginAttempt", "OfflineEvent" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "User", "Organization", "FieldUpdate", "MediaAsset", "AuditEvent", "Notification", "IdempotencyRecord", "ModerationReport", "LoginAttempt", "OfflineEvent", "PlatformSetting" RESTART IDENTITY CASCADE',
   );
   await seed(db);
   volunteer = await db.user.findUniqueOrThrow({
@@ -99,6 +100,14 @@ beforeAll(async () => {
     include: actorInclude,
   });
   pointId = (await db.reliefPoint.findFirstOrThrow({ where: { name: 'Point A' } })).id;
+  management = app.get(ManagementService);
+  const admin = await db.user.findUniqueOrThrow({
+    where: { email: 'admin@saathi.test' },
+    include: actorInclude,
+  });
+  expect((await management.features(admin)).features).toEqual({ live: false, needs: false });
+  await management.setLiveFeature(admin, true);
+  await management.setNeedsFeature(admin, true);
 });
 afterAll(async () => {
   await app?.close();
@@ -175,18 +184,20 @@ describe('Real PostgreSQL core workflow', () => {
       'FAILED',
     );
   });
-  it('lets only admins pause relief needs across public reads, creation and contributions', async () => {
+  it('lets only admins enable or pause Live and Needs across public reads and writes', async () => {
     const admin = await db.user.findUniqueOrThrow({
       where: { email: 'admin@saathi.test' },
       include: actorInclude,
     });
-    const management = app.get(ManagementService);
     const need = await makeNeed();
     await expect(management.setNeedsFeature(volunteer, false)).rejects.toThrow();
+    await expect(management.setLiveFeature(volunteer, true)).rejects.toThrow();
+    await management.setLiveFeature(admin, false);
     await management.setNeedsFeature(admin, false);
     try {
-      expect((await management.features(admin)).features.needs).toBe(false);
+      expect((await management.features(admin)).features).toEqual({ live: false, needs: false });
       expect(await new PublicReadService(db).list()).toEqual([]);
+      expect(await new PublicReadService(db).feed()).toEqual([]);
       await expect(requests.get(need.publicId)).rejects.toThrow('temporarily paused');
       await expect(
         requests.create(volunteer, {
@@ -200,6 +211,14 @@ describe('Real PostgreSQL core workflow', () => {
           deadline: new Date(Date.now() + 3600000).toISOString(),
         }),
       ).rejects.toThrow('temporarily paused');
+      await expect(
+        requests.publishGuest('guest:test', {
+          caption: 'A field update should be blocked.',
+          area: 'Integration fixture',
+          contentWarning: false,
+          mediaIds: [],
+        }),
+      ).rejects.toThrow('Field updates are temporarily paused');
       await expect(donations.reserve(need.publicId, 1, undefined, randomUUID())).rejects.toThrow(
         'temporarily paused',
       );
@@ -207,8 +226,40 @@ describe('Real PostgreSQL core workflow', () => {
         .get('/api/v1/public/config')
         .set('Origin', origin);
       expect(config.body.features.needs).toBe(false);
+      expect(config.body.features.live).toBe(false);
     } finally {
+      await management.setLiveFeature(admin, true);
       await management.setNeedsFeature(admin, true);
+    }
+  });
+  it('keeps signed offline field updates retryable while Live is paused', async () => {
+    const admin = await db.user.findUniqueOrThrow({
+      where: { email: 'admin@saathi.test' },
+      include: actorInclude,
+    });
+    const { sync, keys, device } = await signedNeed();
+    const envelope = await createEnvelope(
+      {
+        type: 'FIELD_PUBLISHED',
+        authorId: volunteer.id,
+        deviceId: device.id,
+        organizationId: volunteer.memberships[0]!.organizationId,
+        payload: {
+          reliefPointId: pointId,
+          caption: 'Saved offline while Live was paused.',
+          mediaIds: [],
+        },
+      },
+      keys,
+    );
+    await management.setLiveFeature(admin, false);
+    try {
+      await expect(sync.ingest(envelope, randomUUID())).rejects.toMatchObject({ status: 503 });
+      expect(await db.offlineEvent.findUnique({ where: { id: envelope.body.id } })).toBeNull();
+      await management.setLiveFeature(admin, true);
+      expect((await sync.ingest(envelope, randomUUID())).body.status).toBe('ACCEPTED');
+    } finally {
+      await management.setLiveFeature(admin, true);
     }
   });
   it('prunes only aged unreferenced media while preserving references, fresh uploads and active work', async () => {

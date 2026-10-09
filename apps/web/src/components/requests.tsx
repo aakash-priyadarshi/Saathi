@@ -172,8 +172,12 @@ export function FieldPost({ post: p, compact = false }: { post: PublicPost; comp
 }
 export function NeedsPage({ completed = false }: { completed?: boolean }) {
   const connection = useConnection();
-  const config = useResource<{ features?: { needs?: boolean } }>('/public/config', true);
-  const needsEnabled = config.data?.features?.needs !== false;
+  const config = useResource<{ features?: { live?: boolean; needs?: boolean } }>(
+    '/public/config',
+    true,
+  );
+  const needsEnabled = config.data?.features?.needs === true;
+  const liveEnabled = config.data?.features?.live === true;
   const { data, error, loading, refresh, stale, savedAt } = useResource<PublicRequest[]>(
     `/public/requests${completed ? '?completed=true' : ''}`,
     true,
@@ -298,35 +302,37 @@ export function NeedsPage({ completed = false }: { completed?: boolean }) {
             </div>
           )}
         </section>
-        <aside className="live-column">
-          <div className="live-heading">
-            <h2>
-              <span className="live-dot" />
-              From the field
-            </h2>
-            <Link href="/live" aria-label="View all field updates">
-              <ArrowUpRightIcon />
-            </Link>
-          </div>
-          <p className="muted">Updates from people on the ground.</p>
-          {feed.error ? (
-            <ErrorNotice message={feed.error} />
-          ) : feed.loading ? (
-            <Loading />
-          ) : feed.data?.length ? (
-            feed.data.slice(0, 3).map((p) => <FieldPost key={p.id} post={p} compact />)
-          ) : (
-            <p className="muted">No field updates yet.</p>
-          )}
-          <div className="verify-note">
-            <ShieldCheck size={23} />
-            <h3>Seen a request shared online?</h3>
-            <p>A screenshot can get old. Check the request ID for its current status.</p>
-            <Link className="button secondary" href="/verify">
-              Verify a request <ArrowRight size={15} />
-            </Link>
-          </div>
-        </aside>
+        {liveEnabled && (
+          <aside className="live-column">
+            <div className="live-heading">
+              <h2>
+                <span className="live-dot" />
+                From the field
+              </h2>
+              <Link href="/live" aria-label="View all field updates">
+                <ArrowUpRightIcon />
+              </Link>
+            </div>
+            <p className="muted">Updates from people on the ground.</p>
+            {feed.error ? (
+              <ErrorNotice message={feed.error} />
+            ) : feed.loading ? (
+              <Loading />
+            ) : feed.data?.length ? (
+              feed.data.slice(0, 3).map((p) => <FieldPost key={p.id} post={p} compact />)
+            ) : (
+              <p className="muted">No field updates yet.</p>
+            )}
+            <div className="verify-note">
+              <ShieldCheck size={23} />
+              <h3>Seen a request shared online?</h3>
+              <p>A screenshot can get old. Check the request ID for its current status.</p>
+              <Link className="button secondary" href="/verify">
+                Verify a request <ArrowRight size={15} />
+              </Link>
+            </div>
+          </aside>
+        )}
       </div>
       {needsEnabled && (
         <div className="trust-note mobile-trust">
@@ -352,40 +358,51 @@ function ArrowUpRightIcon() {
 }
 export function LivePage() {
   const connection = useConnection();
+  const config = useResource<{ features?: { live?: boolean } }>('/public/config', true);
+  const liveEnabled = config.data?.features?.live === true;
   const { data, error, loading, refresh, stale, savedAt } = useResource<PublicPost[]>(
     '/public/feed',
     true,
   );
   return (
     <div className="page-wrap narrow">
-      <div className="page-heading">
-        <h1>From the field</h1>
-        <p>
-          Reports from the field. Volunteer updates and unverified participant reports are labeled
-          separately.
-        </p>
-        <Link className="button" href="/share">
-          Share a photo or video
-        </Link>
-      </div>
-      <div className="feed-status">
-        <span className="live-dot" />
-        {stale || !connection.internet ? 'Saved updates' : 'Live updates'} · Times shown in IST
-      </div>
-      {data && (stale || !connection.internet) && (
-        <p className="status-notice closed">
-          Last saved{savedAt ? ` ${formatDate(savedAt)}` : ''}. New field information may be missing
-          until you reconnect.
-        </p>
-      )}
-      {loading ? (
-        <Loading />
-      ) : error ? (
-        <ErrorNotice message={error} retry={() => void refresh()} />
-      ) : data?.length ? (
-        data.map((p) => <FieldPost key={p.id} post={p} />)
+      {!liveEnabled ? (
+        <div className="empty-state" role="status">
+          <h1>Field updates are paused.</h1>
+          <p>An administrator will make this feature available when it is needed.</p>
+        </div>
       ) : (
-        <div className="empty-state">No field updates have been published yet.</div>
+        <>
+          <div className="page-heading">
+            <h1>From the field</h1>
+            <p>
+              Reports from the field. Volunteer updates and unverified participant reports are
+              labeled separately.
+            </p>
+            <Link className="button" href="/share">
+              Share a photo or video
+            </Link>
+          </div>
+          <div className="feed-status">
+            <span className="live-dot" />
+            {stale || !connection.internet ? 'Saved updates' : 'Live updates'} · Times shown in IST
+          </div>
+          {data && (stale || !connection.internet) && (
+            <p className="status-notice closed">
+              Last saved{savedAt ? ` ${formatDate(savedAt)}` : ''}. New field information may be
+              missing until you reconnect.
+            </p>
+          )}
+          {loading ? (
+            <Loading />
+          ) : error ? (
+            <ErrorNotice message={error} retry={() => void refresh()} />
+          ) : data?.length ? (
+            data.map((p) => <FieldPost key={p.id} post={p} />)
+          ) : (
+            <div className="empty-state">No field updates have been published yet.</div>
+          )}
+        </>
       )}
     </div>
   );
