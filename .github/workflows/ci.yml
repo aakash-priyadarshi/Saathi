@@ -46,6 +46,8 @@ jobs:
       - run: pnpm build
       - run: pnpm exec playwright install --with-deps chromium
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Enable public features in the isolated E2E database
+        run: pnpm --filter @saathi/database exec dotenv -e ../../.env -- prisma db execute --schema prisma/schema.prisma --file prisma/test-enable-public-features.sql
       - run: pnpm test:e2e
         env:
           STORAGE_PROVIDER: local
