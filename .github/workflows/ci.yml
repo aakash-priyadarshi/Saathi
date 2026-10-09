@@ -42,7 +42,7 @@ jobs:
       - run: pnpm build:packages
       - run: pnpm lint && pnpm typecheck && pnpm test
       - run: pnpm test:integration
-      - run: pnpm db:migrate && pnpm db:seed
+      - run: pnpm db:migrate && pnpm db:seed && pnpm db:check
       - run: pnpm build
       - run: pnpm exec playwright install --with-deps chromium
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
