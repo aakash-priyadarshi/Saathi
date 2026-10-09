@@ -17,8 +17,8 @@ android {
         targetSdk 36
         // Increment versionCode for every installable Android update. The GitHub QA build
         // keeps the org.saathi.android.qa package so testers update the existing app.
-        versionCode 16
-        versionName '0.1.12'
+        versionCode 17
+        versionName '0.1.13'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         buildConfigField 'String', 'CONFIG_ROOT', quote(configRoot)
         buildConfigField 'String', 'BOOTSTRAP', quote(bootstrap)
