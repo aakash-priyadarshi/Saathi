@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ConflictException,
   HttpException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
@@ -361,6 +362,9 @@ export class SyncService {
         return accepted;
       });
     } catch (error) {
+      // A temporary feature pause must leave the signed event unrecorded so its
+      // owner or a later carrier can retry it after the administrator resumes Live.
+      if (error instanceof ServiceUnavailableException) throw error;
       if (!(error instanceof HttpException)) throw error;
       // Domain failure rolls back every mutation; retain a separately signed rejection for carriers.
       receipt = await this.receipt(

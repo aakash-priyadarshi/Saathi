@@ -232,6 +232,36 @@ describe('Real PostgreSQL core workflow', () => {
       await management.setNeedsFeature(admin, true);
     }
   });
+  it('keeps signed offline field updates retryable while Live is paused', async () => {
+    const admin = await db.user.findUniqueOrThrow({
+      where: { email: 'admin@saathi.test' },
+      include: actorInclude,
+    });
+    const { sync, keys, device } = await signedNeed();
+    const envelope = await createEnvelope(
+      {
+        type: 'FIELD_PUBLISHED',
+        authorId: volunteer.id,
+        deviceId: device.id,
+        organizationId: volunteer.memberships[0]!.organizationId,
+        payload: {
+          reliefPointId: pointId,
+          caption: 'Saved offline while Live was paused.',
+          mediaIds: [],
+        },
+      },
+      keys,
+    );
+    await management.setLiveFeature(admin, false);
+    try {
+      await expect(sync.ingest(envelope, randomUUID())).rejects.toMatchObject({ status: 503 });
+      expect(await db.offlineEvent.findUnique({ where: { id: envelope.body.id } })).toBeNull();
+      await management.setLiveFeature(admin, true);
+      expect((await sync.ingest(envelope, randomUUID())).body.status).toBe('ACCEPTED');
+    } finally {
+      await management.setLiveFeature(admin, true);
+    }
+  });
   it('prunes only aged unreferenced media while preserving references, fresh uploads and active work', async () => {
     expect(env.STORAGE_PROVIDER).toBe('local');
     const root = await mkdtemp(join(tmpdir(), 'saathi-orphan-test-'));

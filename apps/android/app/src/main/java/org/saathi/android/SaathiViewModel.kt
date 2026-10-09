@@ -340,7 +340,12 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
     fun offerHelp(id:String)=chatAction{community.offer(id);runCatching{community.sync()}}
     fun checkHelpArea(area:String)=chatAction{require(CommunityProtocol.publicText(area,80)){"Choose an approximate public area without contact details."};repository.store.put("community-meta","area",obj("area" to area));community.sync()}
     fun helpStatus(id:String,status:String,responder:String?=null)=chatAction{community.status(id,status,responder);runCatching{community.sync()}}
-    fun participantReport(caption:String,area:String,warning:Boolean,uri:Uri?,video:Boolean,audio:Boolean,saved:()->Unit)=chatAction{val derivative=uri?.let{notice(if(video)"Optimising video…"else if(audio)"Preparing private-metadata-free audio…"else"Preparing a private-metadata-free photo…");FieldMedia.prepare(getApplication(),it,video,audio)};community.report(caption,area,warning,derivative);saved();notice("Saved on this phone. When it reaches Swarm online, it waits for administrator review before appearing publicly.");runCatching{community.sync()}.onFailure{notice(it.message)} }
+    fun participantReport(caption:String,area:String,warning:Boolean,uri:Uri?,video:Boolean,audio:Boolean,saved:()->Unit)=chatAction{
+        require(repository.liveEnabled){"Field updates are temporarily paused by an administrator."}
+        val derivative=uri?.let{notice(if(video)"Optimising video…"else if(audio)"Preparing private-metadata-free audio…"else"Preparing a private-metadata-free photo…");FieldMedia.prepare(getApplication(),it,video,audio)}
+        try{community.report(caption,area,warning,derivative)}finally{derivative?.file?.delete()}
+        saved();notice("Saved on this phone. When it reaches Swarm online, it waits for administrator review before appearing publicly.");runCatching{community.sync()}.onFailure{notice(it.message)}
+    }
     fun withdrawReport(id:String)=chatAction{community.withdraw(id);runCatching{community.sync()}}
     fun shareReportMedia(id:String)=chatAction{community.announce();community.shareMedia(id)}
     fun flagStatement(id:String,reason:String)=chatAction{community.flag(id,reason);notice("Report saved for review. Offline review waits for a connection.")}

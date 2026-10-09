@@ -4,6 +4,7 @@ import {
   ConflictException,
   NotFoundException,
   ForbiddenException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
@@ -207,7 +208,9 @@ export class RequestsService {
   }
   async publishIn(tx: Prisma.TransactionClient, actor: Actor, input: z.infer<typeof fieldSchema>) {
     if (!(await platformFeatures(tx)).live)
-      throw new ForbiddenException('Field updates are temporarily paused by an administrator.');
+      throw new ServiceUnavailableException(
+        'Field updates are temporarily paused by an administrator.',
+      );
     const point = await tx.reliefPoint.findUnique({ where: { id: input.reliefPointId } });
     if (!point?.active) throw new BadRequestException('Relief point unavailable.');
     this.auth.requireOrg(actor, point.organizationId);

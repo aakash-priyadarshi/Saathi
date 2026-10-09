@@ -80,7 +80,7 @@ private val tabs = listOf(Triple("Live", Icons.Outlined.Feed, "Public field upda
         val draftType = draftId?.let { vm.repository.store.get("drafts", it)?.optString("draftType") }
         if (!state.liveEnabled) {
             if (page == "Live") page = "Chats"
-            if (form == "field" || form?.startsWith("update:") == true || draftType == "field") form = null
+            if (form == "field" || draftType == "field") form = null
         }
         if (!state.needsEnabled) {
             if (page == "Needs") page = "Chats"
