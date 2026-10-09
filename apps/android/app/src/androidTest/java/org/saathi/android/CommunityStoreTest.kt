@@ -18,8 +18,16 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class CommunityStoreTest {
+    private fun enabledRepository(context: android.content.Context, name: String): Repository {
+        SecureStore(context, name).apply {
+            put("public", "runtime-config", obj("features" to obj("live" to true, "needs" to true)), false)
+            close()
+        }
+        return Repository(context, name)
+    }
+
     @Test fun durableHelpOfferResolutionDedupAndOriginalAuthor():Unit=runBlocking {
-        val context=InstrumentationRegistry.getInstrumentation().targetContext;val names=List(2){"test-community-${UUID.randomUUID()}"};val scope=CoroutineScope(SupervisorJob()+Dispatchers.Default);val repositories=names.map{Repository(context,it)};val sessions=repositories.map{PeerSession(context,it,scope)};val chats=repositories.mapIndexed{i,r->ChatRepository(context,r,sessions[i])};val community=repositories.mapIndexed{i,r->CommunityRepository(context,r,chats[i],sessions[i])}
+        val context=InstrumentationRegistry.getInstrumentation().targetContext;val names=List(2){"test-community-${UUID.randomUUID()}"};val scope=CoroutineScope(SupervisorJob()+Dispatchers.Default);val repositories=names.map{enabledRepository(context,it)};val sessions=repositories.map{PeerSession(context,it,scope)};val chats=repositories.mapIndexed{i,r->ChatRepository(context,r,sessions[i])};val community=repositories.mapIndexed{i,r->CommunityRepository(context,r,chats[i],sessions[i])}
         try{
             chats[0].rename("Fictional requester");chats[1].rename("Fictional responder")
             repositories[0].store.put("trust","clock",obj("time" to java.time.Instant.now().plusSeconds(30).toString()))
@@ -41,7 +49,7 @@ class CommunityStoreTest {
         }finally{photo.delete()}
     }
     @Test fun rejectsContactsCoordinatesAndUnsignedAlteration():Unit=runBlocking {
-        val context=InstrumentationRegistry.getInstrumentation().targetContext;val name="test-community-validation-${UUID.randomUUID()}";val r=Repository(context,name);val scope=CoroutineScope(SupervisorJob()+Dispatchers.Default);val session=PeerSession(context,r,scope);val chat=ChatRepository(context,r,session);val community=CommunityRepository(context,r,chat,session)
+        val context=InstrumentationRegistry.getInstrumentation().targetContext;val name="test-community-validation-${UUID.randomUUID()}";val r=enabledRepository(context,name);val scope=CoroutineScope(SupervisorJob()+Dispatchers.Default);val session=PeerSession(context,r,scope);val chat=ChatRepository(context,r,session);val community=CommunityRepository(context,r,chat,session)
         try{chat.rename("Fictional participant");for(area in listOf("a@example.org","+91 9876543210","19.12345, 73.54321"))assertTrue(runCatching{community.report("Fictional report",area,false)}.isFailure)
             val id=community.report("Fictional report","Fictional Gate 2",false);val event=JSONObject(r.store.get("community",id)!!.getJSONObject("envelope").toString());event.getJSONObject("body").getJSONObject("payload").put("caption","Altered report");assertFalse(CommunityProtocol.valid(event,r.clock()))
         }finally{scope.cancel();r.store.clearPrivate();r.store.close();context.deleteDatabase("saathi-$name.db")}
