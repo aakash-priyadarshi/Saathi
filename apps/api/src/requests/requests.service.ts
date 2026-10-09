@@ -33,6 +33,10 @@ export class RequestsService {
   get(publicId: string) {
     return this.publicRead.get(publicId);
   }
+  async assertLiveEnabled() {
+    if (!(await platformFeatures(this.db)).live)
+      throw new ForbiddenException('Field updates are temporarily paused by an administrator.');
+  }
   async createIn(tx: Prisma.TransactionClient, actor: Actor, input: z.infer<typeof requestSchema>) {
     if (!(await platformFeatures(tx)).needs)
       throw new ForbiddenException('Relief needs are temporarily paused by an administrator.');
@@ -164,6 +168,8 @@ export class RequestsService {
     input: { caption: string; area: string; contentWarning: boolean; mediaIds: string[] },
   ) {
     return this.db.atomic(async (tx) => {
+      if (!(await platformFeatures(tx)).live)
+        throw new ForbiddenException('Field updates are temporarily paused by an administrator.');
       const assets = await tx.mediaAsset.findMany({
         where: {
           id: { in: input.mediaIds },
@@ -200,6 +206,8 @@ export class RequestsService {
     return this.db.atomic((tx) => this.publishIn(tx, actor, input));
   }
   async publishIn(tx: Prisma.TransactionClient, actor: Actor, input: z.infer<typeof fieldSchema>) {
+    if (!(await platformFeatures(tx)).live)
+      throw new ForbiddenException('Field updates are temporarily paused by an administrator.');
     const point = await tx.reliefPoint.findUnique({ where: { id: input.reliefPointId } });
     if (!point?.active) throw new BadRequestException('Relief point unavailable.');
     this.auth.requireOrg(actor, point.organizationId);

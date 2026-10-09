@@ -27,7 +27,7 @@ data class AppState(
     val requests: List<JSONObject> = emptyList(), val completed: List<JSONObject> = emptyList(), val posts: List<JSONObject> = emptyList(),
     val events: List<JSONObject> = emptyList(), val messages: List<JSONObject> = emptyList(), val files: List<JSONObject> = emptyList(), val drafts: List<JSONObject> = emptyList(), val donations: List<JSONObject> = emptyList(), val operations: List<JSONObject> = emptyList(),
     val preparation: JSONObject? = null, val account: JSONObject? = null, val dashboard: JSONObject? = null, val devices: List<JSONObject> = emptyList(), val savedAt: String? = null,
-    val reachable: Boolean = false, val needsEnabled: Boolean = true, val authenticated: Boolean = false, val busy: Boolean = false, val notice: String? = null,
+    val reachable: Boolean = false, val liveEnabled: Boolean = false, val needsEnabled: Boolean = false, val authenticated: Boolean = false, val busy: Boolean = false, val notice: String? = null,
     val nearbyStatus: String = "Ready to connect nearby", val connected: Boolean = false, val confirmed: Boolean = false, val media: Boolean = false,
     val peers: Map<String, String> = emptyMap(), val pairCode: String? = null, val localCode: String = "", val invitation: String = "",
     val fileOffer: JSONObject? = null, val incomingCall: Boolean? = null, val calling: Boolean = false, val callActive: Boolean = false,
@@ -49,7 +49,7 @@ data class AppState(
 
 class SaathiViewModel @JvmOverloads constructor(application: Application, storageScope:String=BuildConfig.ENVIRONMENT, startServices:Boolean=true) : AndroidViewModel(application) {
     val repository = Repository(application,storageScope)
-    private val mutable = MutableStateFlow(AppState(preferences=preferences(), needsEnabled=repository.needsEnabled))
+    private val mutable = MutableStateFlow(AppState(preferences=preferences(), liveEnabled=repository.liveEnabled, needsEnabled=repository.needsEnabled))
     private val preferenceVersions=mutableMapOf<String,Long>()
     private val localRefreshes=Channel<Unit>(Channel.CONFLATED)
     val state = mutable.asStateFlow()
@@ -276,7 +276,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
                 mutable.update { it.copy(requests=requests,completed=completed,posts=posts,savedAt=savedAt,authenticated=authenticated,
                     chatProfile=profile,chatContacts=contacts,conversations=conversations,chatMessages=chatMessages,chatPeer=peer,nearbyChannels=channels,
                     chatActions=actions,localHelp=help,participantReports=reports,chatPolicies=policies,chatBlocks=blocks,chatJoinInbox=joins,chatReportInbox=reportInbox,chatDeleted=deleted,transfers=transfers,chatPins=pins,pinnedChats=pinnedChats,relayReservedBytes=reserved,
-                    events=events,messages=messages,files=files,drafts=drafts,donations=donations,operations=operations,preparation=preparation,account=account,confirmed=confirmed,media=media,walkieAvailable=media&&session.remoteWalkieTalkie,needsEnabled=repository.needsEnabled,localWifiAddress=localWifiAddress,gatewayStatus=community.gatewayStatus()) }
+                    events=events,messages=messages,files=files,drafts=drafts,donations=donations,operations=operations,preparation=preparation,account=account,confirmed=confirmed,media=media,walkieAvailable=media&&session.remoteWalkieTalkie,liveEnabled=repository.liveEnabled,needsEnabled=repository.needsEnabled,localWifiAddress=localWifiAddress,gatewayStatus=community.gatewayStatus()) }
             } catch (_: Exception) { notice("Saved information could not be unlocked. Do not clear app storage if you need to recover work.") }
     }
     private suspend fun refreshPublicData(force: Boolean) = publicRefreshLock.withLock {
@@ -326,8 +326,8 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
         if (backgroundRefresh?.isActive == true) return
         backgroundRefresh = viewModelScope.launch {
             try { refreshRemote() }
-            catch (e: Exception) { if (e !is CancellationException) mutable.update { it.copy(reachable = repository.reachable, needsEnabled = repository.needsEnabled) } }
-            finally { mutable.update { it.copy(reachable = repository.reachable, needsEnabled = repository.needsEnabled) }; refreshLocal() }
+            catch (e: Exception) { if (e !is CancellationException) mutable.update { it.copy(reachable = repository.reachable, liveEnabled = repository.liveEnabled, needsEnabled = repository.needsEnabled) } }
+            finally { mutable.update { it.copy(reachable = repository.reachable, liveEnabled = repository.liveEnabled, needsEnabled = repository.needsEnabled) }; refreshLocal() }
         }
     }
     fun refresh() = action {
@@ -588,7 +588,7 @@ class SaathiViewModel @JvmOverloads constructor(application: Application, storag
                 runCatching { community.announce() }
             }
         }
-        mutable.update { it.copy(reachable = repository.reachable, needsEnabled = repository.needsEnabled) }
+        mutable.update { it.copy(reachable = repository.reachable, liveEnabled = repository.liveEnabled, needsEnabled = repository.needsEnabled) }
     }
     fun foregroundLost() {
         appInForeground = false

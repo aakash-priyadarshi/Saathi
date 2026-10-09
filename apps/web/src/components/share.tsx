@@ -2,9 +2,10 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { ErrorNotice } from '@saathi/ui';
-import { api, guestToken, uploadMedia, MAX_MEDIA_BYTES } from '../lib/api';
+import { api, guestToken, uploadMedia, MAX_MEDIA_BYTES, useResource } from '../lib/api';
 /** Guest posts are labelled unverified and remain private until administrator approval. */
 export function SharePage() {
+  const config = useResource<{ features?: { live?: boolean } }>('/public/config', true);
   const [files, setFiles] = useState<File[]>([]),
     [busy, setBusy] = useState(false),
     [progress, setProgress] = useState(0),
@@ -55,6 +56,15 @@ export function SharePage() {
           <Link className="button secondary" href="/live">
             Browse published updates
           </Link>
+        </div>
+      </div>
+    );
+  if (config.data?.features?.live !== true)
+    return (
+      <div className="page-wrap narrow">
+        <div className="empty-state" role="status">
+          <h1>Field updates are paused.</h1>
+          <p>An administrator will make submissions available when this feature is enabled.</p>
         </div>
       </div>
     );

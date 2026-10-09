@@ -93,6 +93,7 @@ export class PublicReadService {
     return { ...publicRequest(r), verified: r.organization.verified && r.organization.active };
   }
   async feed(): Promise<PublicPost[]> {
+    if (!(await platformFeatures(this.db)).live) return [];
     const posts = await this.db.fieldUpdate.findMany({
       where: {
         moderation: 'APPROVED',

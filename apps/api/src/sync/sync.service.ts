@@ -27,6 +27,7 @@ import { Database, audit, json } from '../database';
 import { AuthService, actorInclude, type Actor } from '../auth/auth.service';
 import { RequestsService } from '../requests/requests.service';
 import { MediaService } from '../media/media.service';
+import { platformFeatures } from '../public/platform-features';
 
 @Injectable()
 export class SyncService {
@@ -491,6 +492,8 @@ export class SyncService {
   }
   async attachMedia(actor: Actor, id: string, mediaIds: string[]) {
     return this.db.atomic(async (tx) => {
+      if (!(await platformFeatures(tx)).live)
+        throw new ForbiddenException('Field updates are temporarily paused by an administrator.');
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${id}))`;
       const record = await tx.offlineEvent.findUniqueOrThrow({ where: { id } });
       const previous = record.receipt as unknown as Receipt;

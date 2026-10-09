@@ -146,35 +146,49 @@ export class ManagementService {
     if (actor.role !== 'ADMIN') throw new ForbiddenException();
     const [features, setting] = await Promise.all([
       platformFeatures(this.db),
-      this.db.platformSetting.findUnique({ where: { key: 'feature.needs' } }),
+      this.db.platformSetting.findMany({
+        where: { key: { in: ['feature.live', 'feature.needs'] } },
+        orderBy: { updatedAt: 'desc' },
+        take: 1,
+      }),
     ]);
-    return { features, updatedAt: setting?.updatedAt.toISOString() ?? null };
+    return { features, updatedAt: setting[0]?.updatedAt.toISOString() ?? null };
   }
   async setNeedsFeature(actor: Actor, enabled: boolean) {
+    return this.setFeature(actor, 'needs', enabled);
+  }
+  async setLiveFeature(actor: Actor, enabled: boolean) {
+    return this.setFeature(actor, 'live', enabled);
+  }
+  private async setFeature(actor: Actor, feature: 'live' | 'needs', enabled: boolean) {
     if (actor.role !== 'ADMIN') throw new ForbiddenException();
+    const key = `feature.${feature}`;
     return this.db.atomic(async (tx) => {
-      const previous = await tx.platformSetting.findUnique({ where: { key: 'feature.needs' } });
+      const previous = await tx.platformSetting.findUnique({ where: { key } });
       const oldValue = previous?.value as { enabled?: boolean } | undefined;
-      if ((oldValue?.enabled ?? true) === enabled)
+      if ((oldValue?.enabled ?? false) === enabled)
         return {
-          features: { needs: enabled },
+          features: { ...(await platformFeatures(tx)), [feature]: enabled },
           updatedAt: previous?.updatedAt.toISOString() ?? null,
         };
       const setting = await tx.platformSetting.upsert({
-        where: { key: 'feature.needs' },
-        create: { key: 'feature.needs', value: { enabled }, updatedBy: actor.id },
+        where: { key },
+        create: { key, value: { enabled }, updatedBy: actor.id },
         update: { value: { enabled }, updatedBy: actor.id },
       });
       await audit(
         tx,
         'PLATFORM_FEATURE_CHANGED',
         'PlatformSetting',
-        'feature.needs',
+        key,
         actor.id,
-        { enabled: oldValue?.enabled ?? true },
+        { enabled: oldValue?.enabled ?? false },
         { enabled },
       );
-      return { features: { needs: enabled }, updatedAt: setting.updatedAt.toISOString() };
+      return {
+        features: { ...(await platformFeatures(tx)), [feature]: enabled },
+        updatedAt: setting.updatedAt.toISOString(),
+      };
     });
   }
   async createOrg(actor: Actor, name: string) {
